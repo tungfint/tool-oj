@@ -1,0 +1,17 @@
+.runtime/
+__pycache__/
+*.py[cod]
+*$py.class
+
+*_upload_artifacts/
+transfer_artifacts/
+
+*.zip
+*.7z
+*.rar
+
+.env
+.env.*
+
+Thumbs.db
+.DS_Store

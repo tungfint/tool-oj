@@ -1,0 +1,265 @@
+Với mỗi bài sau sinh ra 3 file: sinhtest.py, sol.py, debai.md
+Ví dụ: # Bài 1. Tổng bi | tht26_tongbi
+Tạo ra 3 file:
+- gentest_1_tht26_tongbi.py
+- sol_1_tht26_tongbi.py
+- 1_tht26_tongbi.md
+Chú ý:
+- file sinh test thì code chuẩn để sinh test trong code nên code bằng C++. Hãy chú ý bộ test đủ mạnh, đủ các trường hợp, đúng giới hạn, đúng tỉ lệ subtask
+- file debai.md thì bỏ dòng đầu tiên đi, viết đề bài vào thôi
+=> Hãy gửi lại tôi file zip gồm các data.
+
+Đề 5 bài như sau:
+
+# Bài 1. Tổng bi | tht26_tongbi
+
+Ban đầu, An có ~2~ viên bi, Bình có ~6~ viên bi.
+
+Mỗi ngày, bố cho **mỗi bạn** thêm ~2~ viên bi.
+
+***Yêu cầu:*** Hãy tính tổng số viên bi của An và Bình sau ~N~ ngày.
+
+## **Dữ liệu nhập vào từ bàn phím**
+* Gồm một số tự nhiên ~N~ (~0 \le N \le 10^{12}~).
+
+## **Kết quả ghi ra màn hình**
+* Một số tự nhiên là tổng số viên bi của An và Bình sau ~N~ ngày.
+
+## Ví dụ
+
+**Input 1**
+
+    3
+
+**Output 1**
+
+    20
+
+**Giải thích 1:**
+
+Sau ~3~ ngày thì An có ~2 + 3 \times 2 = 8~
+Sau ~3~ ngày thì Bình có ~6 + 3 \times 2 = 12~
+Sau ~3~ ngày, tổng số viên bi là: ~8 + 12 = 20~
+
+**Input 2**
+
+    0
+
+**Output 2**
+
+    8
+
+**Giải thích 2:**
+Sau ~0~ ngày, tổng số viên bi vẫn là: ~2 + 6 = 8~
+
+
+# Bài 2. Khoảng cách gần nhất | tht26_kcgannhat
+
+Trên một tia số, bốn bạn đứng ở bốn vị trí khác nhau.
+
+Khoảng cách giữa hai bạn được tính bằng độ chênh lệch giữa hai vị trí của họ.
+
+***Yêu cầu:*** Cho vị trí của bốn bạn, hãy tìm khoảng cách nhỏ nhất giữa hai bạn đứng gần nhau nhất.
+
+## **Dữ liệu nhập vào từ bàn phím**
+* Gồm bốn số tự nhiên ~A, B, C, D~, là vị trí của bốn bạn trên tia số. Mỗi số trên một dòng;
+* Các số thỏa mãn: ~0 \le A, B, C, D \le 10^{12}~ và bốn số này đôi một khác nhau.
+
+## **Kết quả ghi ra màn hình**
+* Một số tự nhiên là khoảng cách nhỏ nhất giữa hai bạn đứng gần nhau nhất.
+
+## Ví dụ
+
+**Input 1**
+
+    4
+    1
+    3
+    6
+
+**Output 1**
+
+    1
+
+**Giải thích 1:**
+Sắp xếp bốn vị trí theo thứ tự tăng dần, ta được:
+
+~1, 3, 4, 6~
+
+Các khoảng cách giữa hai vị trí liên tiếp là:
+
+~3 - 1 = 2~, ~4 - 3 = 1~, ~6 - 4 = 2~
+
+Khoảng cách nhỏ nhất là ~1~.
+
+**Input 2**
+
+    10
+    2
+    20
+    7
+
+**Output 2**
+
+    3
+
+**Giải thích 2:**
+Sắp xếp bốn vị trí theo thứ tự tăng dần, ta được:
+
+~2, 7, 10, 20~
+
+Các khoảng cách giữa hai vị trí liên tiếp là:
+
+~7 - 2 = 5~, ~10 - 7 = 3~, ~20 - 10 = 10~
+
+Khoảng cách nhỏ nhất là ~3~.
+
+
+# Bài 3. Quà tặng  | tht26_quatang
+
+Mỗi phần quà có giá ~26~ đồng.
+
+Cứ mua đủ ~5~ phần quà thì được tặng thêm ~1~ phần quà.
+
+***Yêu cầu:*** Cho số tiền ~N~, hãy tính số phần quà nhiều nhất có thể nhận được.
+
+## **Dữ liệu nhập vào từ bàn phím**
+* Gồm một số tự nhiên ~N~ (~0 \le N \le 10^{12}~).
+
+## **Kết quả ghi ra màn hình**
+* Một số tự nhiên là số phần quà nhiều nhất có thể nhận được.
+
+## Ví dụ
+
+**Input 1**
+
+    130
+
+**Output 1**
+
+    6
+
+**Giải thích 1:**
+Với ~130~ đồng, mua được:
+
+~130 \div 26 = 5~
+
+phần quà.
+
+Vì mua đủ ~5~ phần quà nên được tặng thêm ~1~ phần quà.
+
+Vậy nhận được tất cả ~6~ phần quà.
+
+**Input 2**
+
+    300
+
+**Output 2**
+
+    13
+
+**Giải thích 2:**
+Với ~300~ đồng, mua được: ~300 \div 26 = 11~ phần quà.
+
+Vì trong ~11~ phần quà đã mua có hai nhóm đủ ~5~ phần quà, nên được tặng thêm ~2~ phần quà.
+
+Vậy nhận được tất cả: ~11 + 2 = 13~ phần quà.
+
+## **Ràng buộc:**
+* Có ~70\%~ số test ứng với ~70\%~ số điểm của bài thoả mãn: ~0 \le N \le 10^4~;
+* ~30\%~ số test còn lại ứng với ~30\%~ số điểm của bài không có ràng buộc gì thêm.
+
+
+# Bài 4. Dãy số dư | tht26_dsdu
+
+Cho một số tự nhiên ~N~. Ta tạo một dãy số mới từ các số tự nhiên từ ~1~ đến ~N~ bằng cách chia chúng thành ~3~ nhóm theo thứ tự sau:
+
+* Nhóm ~1~: Các số chia hết cho ~3~, xếp theo thứ tự tăng dần.
+* Nhóm ~2~: Các số chia cho ~3~ dư ~1~, xếp theo thứ tự tăng dần.
+* Nhóm ~3~: Các số chia cho ~3~ dư ~2~, xếp theo thứ tự tăng dần.
+
+Ví dụ với ~N = 10~, ta thu được dãy số:
+
+~3, 6, 9, 1, 4, 7, 10, 2, 5, 8~
+
+***Yêu cầu:*** Hãy tính tổng của ~K~ số đầu tiên trong dãy số vừa tạo.
+
+## **Dữ liệu nhập vào từ bàn phím**
+* Gồm hai dòng:
+  * Dòng thứ nhất chứa số tự nhiên ~N~;
+  * Dòng thứ hai chứa số tự nhiên ~K~.
+* Các số thỏa mãn: ~1 \le K \le N \le 10^9~.
+
+## **Kết quả ghi ra màn hình**
+* Một số tự nhiên là tổng thu được.
+
+## Ví dụ
+
+**Input 1**
+
+    10
+    5
+
+**Output 1**
+
+    13
+
+**Giải thích 1:**
+Dãy số với ~N = 10~ là:
+
+~3, 6, 9, 1, 4, 7, 10, 2, 5, 8~
+
+Tổng của ~5~ số đầu tiên trong dãy là:
+
+~3 + 6 + 9 + 1 + 4 = 13~
+
+## **Ràng buộc:**
+* Có ~60\%~ số test ứng với ~60\%~ số điểm của bài thoả mãn: ~K \le 1000~;
+* ~40\%~ số test còn lại ứng với ~40\%~ số điểm của bài không có ràng buộc gì thêm.
+
+
+# Bài 5. Tích liên tiếp | tht26_tichlt
+
+Số tích liên tiếp là tích của hai số tự nhiên liên tiếp, có dạng: ~x \times (x + 1)~ với ~x \ge 1~
+
+Ví dụ: ~2 = 1 \times 2~, ~6 = 2 \times 3~, ~12 = 3 \times 4~, ~20 = 4 \times 5~, ...
+
+Cho hai số tự nhiên ~L~ và ~R~. Gọi ~S~ là tổng của các số tích liên tiếp lớn hơn ~L~ và nhỏ hơn ~R~.
+
+***Yêu cầu:*** Hãy tìm chữ số cuối cùng của tổng ~S~.
+
+## **Dữ liệu nhập vào từ bàn phím**
+* Gồm hai dòng:
+  * Dòng thứ nhất chứa số tự nhiên ~L~;
+  * Dòng thứ hai chứa số tự nhiên ~R~.
+* Các số thỏa mãn: ~0 \le L \le R \le 10^9~.
+
+## **Kết quả ghi ra màn hình**
+* Một chữ số là chữ số cuối cùng của tổng ~S~.
+
+## Ví dụ
+
+**Input 1**
+
+    2
+    35
+
+**Output 1**
+
+    8
+
+**Giải thích 1:**
+Các số tích liên tiếp lớn hơn ~2~ và nhỏ hơn ~35~ là:
+
+~6, 12, 20, 30~
+
+Tổng của chúng là:
+
+~S = 6 + 12 + 20 + 30 = 68~
+
+Chữ số cuối cùng của ~S~ là ~8~.
+
+## **Ràng buộc:**
+* Có ~60\%~ số test ứng với ~60\%~ số điểm của bài thoả mãn: ~R \le 1000~;
+* Có ~20\%~ số test khác ứng với ~20\%~ số điểm của bài thoả mãn: ~L = 0~;
+* ~20\%~ số test còn lại ứng với ~20\%~ số điểm của bài không có ràng buộc gì thêm.
