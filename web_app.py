@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import shutil
 import uuid
@@ -12,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urljoin
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, Response, jsonify, render_template_string, request
 
 from transfer_tinhoctre_to_hncode import (
     ProblemInfo,
@@ -145,6 +146,22 @@ prepared_transfers: dict[str, dict] = {}
 
 class ProblemAlreadyExists(RuntimeError):
     pass
+
+
+@app.before_request
+def require_basic_auth():
+    auth_user = os.getenv("TOOL_OJ_AUTH_USER")
+    auth_pass = os.getenv("TOOL_OJ_AUTH_PASS")
+    if not auth_user and not auth_pass:
+        return None
+    auth = request.authorization
+    if auth and auth.username == auth_user and auth.password == auth_pass:
+        return None
+    return Response(
+        "Authentication required",
+        401,
+        {"WWW-Authenticate": 'Basic realm="Tool HNCode"'},
+    )
 
 
 PAGE = r"""
@@ -1112,4 +1129,8 @@ def upload_transfer_to_tinhoctre(session, dest: str, dest_code: str, info: Probl
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5050, debug=False)
+    app.run(
+        host=os.getenv("TOOL_OJ_HOST", "127.0.0.1"),
+        port=int(os.getenv("TOOL_OJ_PORT", "5050")),
+        debug=False,
+    )
