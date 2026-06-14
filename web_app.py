@@ -30,6 +30,7 @@ from upload_tinhoctre_batch import (
     csrf_token,
     discover_bundles,
     extract_zip,
+    form_errors,
     generate_tests,
     problem_exists as tinhoctre_problem_exists,
     statement_body_text,
@@ -67,12 +68,12 @@ TARGETS = {
         "type_id": "1",
         "group_id": "1",
         "languages": {
-            "C++17": "",
-            "C++20": "",
-            "Pascal": "",
+            "C++17": "4",
+            "C++20": "14",
+            "Pascal": "7",
             "Python 3": "9",
             "PyPy 3": "17",
-            "Scratch": "",
+            "Scratch": "12",
         },
         "default_user": "admin",
         "test_backend": "vnoj",
@@ -818,6 +819,14 @@ def upload_one_problem(
             public=False,
             allow_all_languages=False,
             allowed_language_ids=language_ids,
+        ) if target != "tinhoctre" else create_tinhoctre_admin_problem(
+            session,
+            base_url,
+            info,
+            dest_code=bundle.code,
+            type_id=target_info["type_id"],
+            group_id=target_info["group_id"],
+            allowed_language_ids=language_ids,
         )
         log_lines.append(f"{bundle.code}: đã tạo đề qua admin form ({change_url}).")
     else:
@@ -847,6 +856,120 @@ def statement_for_target(target: str, statement: str, *, skip_title_line: bool =
 
 def problem_info_for_target(info: ProblemInfo, target: str) -> ProblemInfo:
     return replace(info, description=statement_for_target(target, info.description))
+
+
+def create_tinhoctre_admin_problem(
+    session,
+    base_url: str,
+    info: ProblemInfo,
+    *,
+    dest_code: str,
+    type_id: str,
+    group_id: str,
+    allowed_language_ids: list[str],
+) -> str:
+    add_url = urljoin(base_url, "/admin/judge/problem/add/")
+    page = session.get(add_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"TinHocTre add page failed: HTTP {page.status_code}")
+    token = csrf_token(page.text)
+    language_ids = [value for value in allowed_language_ids if value]
+    data: list[tuple[str, str]] = [
+        ("csrfmiddlewaretoken", token),
+        ("code", dest_code),
+        ("name", info.name),
+        ("submission_source_visibility_mode", selected_option_value(page.text, "submission_source_visibility_mode", "F")),
+        ("testcase_visibility_mode", selected_option_value(page.text, "testcase_visibility_mode", "O")),
+        ("testcase_result_visibility_mode", selected_option_value(page.text, "testcase_result_visibility_mode", "A")),
+        ("description", info.description),
+        ("pdf_url", ""),
+        ("source", ""),
+        ("license", selected_option_value(page.text, "license", "")),
+        ("og_image", ""),
+        ("summary", ""),
+        ("types", type_id),
+        ("group", group_id),
+        ("points", info.points),
+        ("time_limit", info.time_limit),
+        ("memory_limit", info.memory_limit),
+        ("change_message", ""),
+        ("language_limits-TOTAL_FORMS", input_value_from_page(page.text, "language_limits-TOTAL_FORMS", "3")),
+        ("language_limits-INITIAL_FORMS", input_value_from_page(page.text, "language_limits-INITIAL_FORMS", "0")),
+        ("language_limits-MIN_NUM_FORMS", input_value_from_page(page.text, "language_limits-MIN_NUM_FORMS", "0")),
+        ("language_limits-MAX_NUM_FORMS", input_value_from_page(page.text, "language_limits-MAX_NUM_FORMS", "1000")),
+        ("problemclarification_set-TOTAL_FORMS", input_value_from_page(page.text, "problemclarification_set-TOTAL_FORMS", "0")),
+        ("problemclarification_set-INITIAL_FORMS", input_value_from_page(page.text, "problemclarification_set-INITIAL_FORMS", "0")),
+        ("problemclarification_set-MIN_NUM_FORMS", input_value_from_page(page.text, "problemclarification_set-MIN_NUM_FORMS", "0")),
+        ("problemclarification_set-MAX_NUM_FORMS", input_value_from_page(page.text, "problemclarification_set-MAX_NUM_FORMS", "1000")),
+        ("solution-TOTAL_FORMS", input_value_from_page(page.text, "solution-TOTAL_FORMS", "0")),
+        ("solution-INITIAL_FORMS", input_value_from_page(page.text, "solution-INITIAL_FORMS", "0")),
+        ("solution-MIN_NUM_FORMS", input_value_from_page(page.text, "solution-MIN_NUM_FORMS", "0")),
+        ("solution-MAX_NUM_FORMS", input_value_from_page(page.text, "solution-MAX_NUM_FORMS", "1")),
+        ("translations-TOTAL_FORMS", input_value_from_page(page.text, "translations-TOTAL_FORMS", "0")),
+        ("translations-INITIAL_FORMS", input_value_from_page(page.text, "translations-INITIAL_FORMS", "0")),
+        ("translations-MIN_NUM_FORMS", input_value_from_page(page.text, "translations-MIN_NUM_FORMS", "0")),
+        ("translations-MAX_NUM_FORMS", input_value_from_page(page.text, "translations-MAX_NUM_FORMS", "1000")),
+        ("_continue", "Save and continue editing"),
+    ]
+    if input_checked(page.text, "allow_judging"):
+        data.append(("allow_judging", "on"))
+    if info.partial:
+        data.append(("partial", "on"))
+    for value in language_ids:
+        data.append(("allowed_languages", value))
+
+    total_language_limits = int(input_value_from_page(page.text, "language_limits-TOTAL_FORMS", "3") or "0")
+    for index in range(total_language_limits):
+        data.extend(
+            [
+                (f"language_limits-{index}-id", input_value_from_page(page.text, f"language_limits-{index}-id", "")),
+                (f"language_limits-{index}-problem", input_value_from_page(page.text, f"language_limits-{index}-problem", "")),
+                (f"language_limits-{index}-language", selected_option_value(page.text, f"language_limits-{index}-language", "")),
+                (f"language_limits-{index}-time_limit", input_value_from_page(page.text, f"language_limits-{index}-time_limit", "")),
+                (f"language_limits-{index}-memory_limit", input_value_from_page(page.text, f"language_limits-{index}-memory_limit", "")),
+            ]
+        )
+
+    result = session.post(add_url, data=data, headers={"Referer": add_url}, allow_redirects=True, timeout=30)
+    if not result.ok:
+        errors = form_errors(result.text)
+        detail = ("\n" + "\n".join(errors)) if errors else ""
+        raise RuntimeError(f"TinHocTre create problem failed: HTTP {result.status_code}{detail}")
+    errors = form_errors(result.text)
+    if errors:
+        raise RuntimeError("TinHocTre create problem form errors:\n" + "\n".join(errors))
+    if "/change/" not in result.url and dest_code not in result.text:
+        raise RuntimeError(f"TinHocTre did not appear to save {dest_code}; final URL: {result.url}")
+    return result.url
+
+
+def input_value_from_page(page: str, name: str, default: str = "") -> str:
+    match = re.search(r"<input\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>", page, re.S)
+    if not match:
+        return default
+    value = re.search(r"value=[\"']([^\"']*)", match.group(0))
+    return html.unescape(value.group(1)) if value else default
+
+
+def input_checked(page: str, name: str) -> bool:
+    match = re.search(r"<input\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>", page, re.S)
+    return bool(match and re.search(r"\bchecked\b", match.group(0)))
+
+
+def selected_option_value(page: str, name: str, default: str = "") -> str:
+    match = re.search(r"<select\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>(.*?)</select>", page, re.S)
+    if not match:
+        return default
+    options = list(re.finditer(r"<option\b([^>]*)>(.*?)</option>", match.group(1), re.S))
+    for option in options:
+        attrs = option.group(1)
+        if "selected" in attrs:
+            value = re.search(r"value=[\"']([^\"']*)", attrs)
+            return html.unescape(value.group(1)) if value else default
+    if options:
+        value = re.search(r"value=[\"']([^\"']*)", options[0].group(1))
+        return html.unescape(value.group(1)) if value else default
+    return default
 
 
 def upload_tests_for_target(session, target: str, base_url: str, code: str, tests: GeneratedTests) -> None:
@@ -1123,15 +1246,13 @@ def upload_transfer_to_tinhoctre(session, dest: str, dest_code: str, info: Probl
     if exists:
         raise ProblemAlreadyExists(f"Mã bài {dest_code} đã tồn tại tại {problem_url(base_url, dest_code)}")
     if row.get("upload_statement") and not exists:
-        create_hncode_problem(
+        create_tinhoctre_admin_problem(
             session,
             base_url,
             dest_info,
             dest_code=dest_code,
             type_id=TARGETS[dest]["type_id"],
             group_id=TARGETS[dest]["group_id"],
-            public=False,
-            allow_all_languages=False,
             allowed_language_ids=language_ids,
         )
         log_lines.append(f"{dest_code}: đã tạo đề.")
