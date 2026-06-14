@@ -27,6 +27,12 @@ pip install -r requirements.txt
 python web_app.py
 ```
 
+Khi chạy production bằng Gunicorn/nginx, nên đặt timeout đủ dài vì bước `Chuẩn bị dữ liệu` có thể chạy nhiều file `gentest`:
+
+```text
+gunicorn --timeout 300 -w 2 -b 127.0.0.1:5051 web_app:app
+```
+
 Mở:
 
 ```text

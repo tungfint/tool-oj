@@ -489,9 +489,18 @@ function transferSettings() {
 }
 async function postJson(url, payload) {
   const res = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
-  const data = await res.json();
+  const data = await parseJsonResponse(res);
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
+}
+async function parseJsonResponse(res) {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch (err) {
+    const preview = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+    throw new Error(`Server trả về HTML/text thay vì JSON (HTTP ${res.status}). ${preview || "Không có nội dung lỗi."}`);
+  }
 }
 async function prepareUploadRequest(settings) {
   if (!selectedZipFile) return postJson("/api/prepare-upload", settings);
@@ -499,7 +508,7 @@ async function prepareUploadRequest(settings) {
   form.append("zip_file", selectedZipFile);
   form.append("payload", JSON.stringify(settings));
   const res = await fetch("/api/prepare-upload", {method:"POST", body:form});
-  const data = await res.json();
+  const data = await parseJsonResponse(res);
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
 }
