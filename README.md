@@ -77,9 +77,10 @@ Luồng sử dụng:
    - `Nộp bài chấm thử C++`: dùng `sol_<ma_bai>.cpp`.
    - `Nộp bài chấm thử Python`: dùng `sol_<ma_bai>.py`.
    - `Không nộp bài chấm thử`: bỏ qua toàn bộ bước nộp thử.
-6. Bấm `Chuẩn bị dữ liệu`.
-7. Kiểm tra bảng bài, sửa mã/tên nếu cần. Có nút `Chọn tất cả` và `Bỏ chọn tất cả` cho bảng.
-8. Bấm `Xác nhận Up bài`.
+6. Tích `Bỏ dòng đầu tiên trong file đề bài` nếu file Markdown có dòng đầu dạng `Tên bài | Mã bài` và không muốn đưa dòng này vào đề bài.
+7. Bấm `Chuẩn bị dữ liệu`.
+8. Kiểm tra bảng bài, sửa mã/tên nếu cần. Có nút `Chọn tất cả` và `Bỏ chọn tất cả` cho bảng.
+9. Bấm `Xác nhận Up bài`.
 
 Khi upload thành công, cột trạng thái có chữ `Link`. Bấm vào chữ này để mở trang bài vừa tạo.
 Nếu mã bài đã tồn tại trên web đích, dòng đó sẽ báo `Bài đã tồn tại`, bị bỏ qua hoàn toàn và các bài khác vẫn tiếp tục được xử lý.

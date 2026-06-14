@@ -259,6 +259,17 @@ def clean_statement(markdown: str) -> str:
     return markdown.replace("\times", r"\times").strip()
 
 
+def statement_body_text(markdown: str, *, skip_title_line: bool = True) -> str:
+    text = markdown.replace("\times", r"\times")
+    if skip_title_line:
+        lines = text.splitlines()
+        first_index = next((index for index, line in enumerate(lines) if line.strip()), None)
+        if first_index is not None and "|" in lines[first_index]:
+            del lines[first_index]
+            text = "\n".join(lines)
+    return text.strip()
+
+
 def generate_tests(bundle: ProblemBundle, build_root: Path) -> GeneratedTests:
     build_dir = build_root / bundle.code
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -334,7 +345,7 @@ def create_problem(
     create_url = urljoin(base_url, "/problems/create")
     page = s.get(create_url, timeout=30)
     require(page.ok, f"Create page failed: HTTP {page.status_code}")
-    statement = clean_statement(bundle.statement.read_text(encoding="utf-8")).replace("$", "~")
+    statement = statement_body_text(bundle.statement.read_text(encoding="utf-8"), skip_title_line=True).replace("$", "~")
     data: list[tuple[str, str]] = [
         ("csrfmiddlewaretoken", csrf_token(page.text)),
         ("code", bundle.code),

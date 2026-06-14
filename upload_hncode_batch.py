@@ -19,7 +19,7 @@ from transfer_tinhoctre_to_hncode import (
     login_hncode,
     upload_hncode_tests,
 )
-from upload_tinhoctre_batch import clean_statement, discover_bundles, generate_tests
+from upload_tinhoctre_batch import discover_bundles, generate_tests, statement_body_text
 
 
 DEFAULT_BASE_URL = "https://oj.hncode.edu.vn"
@@ -118,7 +118,7 @@ def main(argv: list[str]) -> int:
         info = ProblemInfo(
             code=bundle.code,
             name=bundle.name,
-            description=clean_statement(bundle.statement.read_text(encoding="utf-8")).replace("~", "$"),
+            description=statement_body_text(bundle.statement.read_text(encoding="utf-8"), skip_title_line=True).replace("~", "$"),
             points=args.points,
             partial=True,
             time_limit=args.time_limit,

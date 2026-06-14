@@ -32,6 +32,7 @@ from upload_tinhoctre_batch import (
     extract_zip,
     generate_tests,
     problem_exists as tinhoctre_problem_exists,
+    statement_body_text,
     submit_solution,
     upload_tests as upload_tinhoctre_tests,
 )
@@ -299,6 +300,7 @@ PAGE = r"""
           <label class="check"><input type="checkbox" id="submitPython" checked> Nộp bài chấm thử Python</label>
           <label class="check"><input type="checkbox" id="noSubmit"> Không nộp bài chấm thử</label>
         </div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="skipStatementTitle" checked> Bỏ dòng đầu tiên trong file đề bài</label>
         <div class="actions">
           <button class="action primary" type="button" id="prepareUpload">Chuẩn bị dữ liệu</button>
           <button class="action primary" type="button" id="confirmUpload" disabled>Xác nhận Up bài</button>
@@ -474,6 +476,7 @@ function uploadSettings() {
     no_submit: document.getElementById("noSubmit").checked,
     submit_cpp: document.getElementById("submitCpp").checked,
     submit_python: document.getElementById("submitPython").checked,
+    skip_statement_title: document.getElementById("skipStatementTitle").checked,
     ...accountPayload(target),
   };
 }
@@ -794,7 +797,11 @@ def upload_one_problem(
         info = ProblemInfo(
             code=bundle.code,
             name=bundle.name,
-            description=statement_for_target(target, bundle.statement.read_text(encoding="utf-8", errors="replace")),
+            description=statement_for_target(
+                target,
+                bundle.statement.read_text(encoding="utf-8", errors="replace"),
+                skip_title_line=bool(settings.get("skip_statement_title", True)),
+            ),
             points="100",
             partial=True,
             time_limit=settings.get("time_limit") or "1.0",
@@ -831,8 +838,8 @@ def problem_exists_for_target(session, target: str, base_url: str, code: str) ->
     return destination_problem_exists(session, base_url, code)
 
 
-def statement_for_target(target: str, statement: str) -> str:
-    text = clean_statement(statement)
+def statement_for_target(target: str, statement: str, *, skip_title_line: bool = False) -> str:
+    text = statement_body_text(statement, skip_title_line=skip_title_line) if skip_title_line else clean_statement(statement)
     if target == "hncode":
         return text.replace("~", "$")
     return text.replace("$", "~")

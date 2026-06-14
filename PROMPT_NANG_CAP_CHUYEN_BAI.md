@@ -231,6 +231,20 @@ Yêu cầu:
 Cho phép nhận điểm với từng test đúng: bật
 ```
 
+### 8. Bỏ dòng đầu tiên trong file đề bài
+
+Có thêm ô tích:
+
+```text
+Bỏ dòng đầu tiên trong file đề bài
+```
+
+Yêu cầu:
+
+- Mặc định tích.
+- Khi tích, nếu dòng đầu tiên có dạng `Tên bài | Mã bài` thì không đưa dòng này vào nội dung đề bài khi upload.
+- Vẫn dùng dòng đầu tiên để nhận diện tên bài và mã bài trong bước chuẩn bị dữ liệu.
+
 ### Chuẩn bị dữ liệu
 
 Có nút:
