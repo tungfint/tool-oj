@@ -737,7 +737,15 @@ def receive_zip_file(root: Path, payload: dict) -> Path:
 def api_confirm_upload():
     payload = request.get_json(force=True)
     try:
-        state = prepared_uploads[payload["prepare_id"]]
+        prepare_id = payload.get("prepare_id")
+        if not prepare_id or prepare_id not in prepared_uploads:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "Dữ liệu chuẩn bị đã hết hạn hoặc server vừa khởi động lại. Hãy bấm Chuẩn bị dữ liệu lại rồi mới Xác nhận Up bài.",
+                }
+            ), 400
+        state = prepared_uploads[prepare_id]
         target = payload["settings"]["target"]
         result_rows, log_lines = upload_rows(target, payload["settings"], payload["rows"], state)
         ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
@@ -1165,7 +1173,15 @@ def api_confirm_transfer():
 
     try:
         dest_account = payload["dest_account"]
-        state = prepared_transfers[payload["prepare_id"]]
+        prepare_id = payload.get("prepare_id")
+        if not prepare_id or prepare_id not in prepared_transfers:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "Dữ liệu chuẩn bị chuyển bài đã hết hạn hoặc server vừa khởi động lại. Hãy bấm Chuẩn bị dữ liệu lại rồi mới Xác nhận chuyển bài.",
+                }
+            ), 400
+        state = prepared_transfers[prepare_id]
         dst = login_hncode(TARGETS[dest]["base_url"], dest_account["username"], dest_account["password"])
         out_dir = state["root"]
         language_ids = language_ids_for_target(dest, settings.get("languages", []))
