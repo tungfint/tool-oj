@@ -158,6 +158,37 @@ Luồng sử dụng:
 Khi chuyển thành công, cột trạng thái có chữ `Link` để mở trang bài ở hệ thống đích.
 Nếu mã bài đích đã tồn tại, dòng đó sẽ báo `Bài đã tồn tại`, bị bỏ qua và các dòng khác vẫn tiếp tục chuyển.
 
+## Tab Chuyển contest
+
+Tab này dùng cho các contest kiểu DMOJ/VNOJ trên `HNOJ`, `HNCode`, `TinHocTre`, và nguồn phụ `HNOJ Contest` (`https://contest.hnoj.edu.vn`).
+
+Luồng sử dụng:
+
+1. Chọn `Nguồn` và `Đích`.
+2. Nhập danh sách mã contest, mỗi mã một dòng hoặc cách nhau bằng dấu cách.
+3. Giữ `Nếu bài đã có ở đích thì dùng lại bài đó` để tránh tạo trùng problem.
+4. Giữ `Tự chuyển bài/test còn thiếu trước khi tạo contest` nếu muốn tool tự kéo đề và test cho các bài chưa có ở đích.
+5. Bấm `Chuẩn bị dữ liệu` để xem tên contest, thời gian và danh sách bài.
+6. Bấm `Xác nhận chuyển contest`.
+
+Tool chỉ chuyển contest, problem và test. Tool không chuyển bài nộp của học sinh.
+
+Nếu contest đã tồn tại ở đích, tool báo rõ `Contest đã tồn tại` và hiển thị `Link`, không tự ghi đè setup cũ.
+
+## Tab Tạo contest
+
+Tab này tạo contest cơ bản từ các mã bài đã có sẵn trên web đích.
+
+Nhập:
+
+- Web đích.
+- Mã contest.
+- Tên contest.
+- Thời gian bắt đầu/kết thúc, định dạng ví dụ `2026-05-17 10:00:00`.
+- Danh sách mã bài.
+
+Sau khi tạo xong, người dùng có thể vào admin của web đích để chỉnh setup chi tiết hơn.
+
 ## Script dòng lệnh
 
 Các script dòng lệnh vẫn dùng được để dry-run hoặc xử lý riêng từng site.

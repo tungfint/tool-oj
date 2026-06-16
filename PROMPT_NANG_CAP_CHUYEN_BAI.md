@@ -448,7 +448,72 @@ Khi chuyển bài:
 - Nếu thành công, hiển thị chữ `Link` để mở trang bài ở đích.
 - Nếu mã bài đích đã tồn tại thì thông báo rõ `Bài đã tồn tại`, bỏ qua bài đó hoàn toàn và tiếp tục chuyển các bài khác.
 
-## IV. Yêu cầu chung
+## IV. Tab Chuyển contest
+
+Tạo tab `Chuyển contest`.
+
+Mục tiêu:
+
+- Chuyển contest giữa các hệ thống `HNOJ`, `HNCode`, `TinHocTre`.
+- Có thêm nguồn phụ `HNOJ Contest` cho subdomain `https://contest.hnoj.edu.vn`, dùng để chuyển contest từ subdomain này sang `https://hnoj.edu.vn`.
+- Contest gồm thông tin cơ bản, danh sách bài, điểm từng bài và bộ test của từng bài.
+- Không chuyển bài nộp của học sinh.
+
+Giao diện gồm:
+
+- Chọn nguồn.
+- Chọn đích.
+- Nhập danh sách mã contest cần chuyển.
+- Time/memory mặc định cho các problem thiếu thông tin.
+- Ô tích `Nếu bài đã có ở đích thì dùng lại bài đó`.
+- Ô tích `Tự chuyển bài/test còn thiếu trước khi tạo contest`.
+- Nút `Chuẩn bị dữ liệu`.
+- Nút `Xác nhận chuyển contest`.
+
+Khi bấm `Chuẩn bị dữ liệu`, hiển thị bảng:
+
+- Chọn contest cần chuyển.
+- Mã contest.
+- Tên contest.
+- Thời gian bắt đầu/kết thúc.
+- Danh sách bài trong contest, kèm điểm.
+- Trạng thái.
+
+Khi bấm `Xác nhận chuyển contest`:
+
+- Nếu contest đã tồn tại ở đích, báo rõ `Contest đã tồn tại`, hiển thị `Link`, bỏ qua contest đó và tiếp tục contest khác.
+- Nếu problem đã tồn tại ở đích và ô dùng lại đang bật, dùng lại problem đó.
+- Nếu problem chưa có ở đích và ô tự chuyển đang bật, tự chuyển đề bài/test trước rồi mới tạo contest.
+- Nếu tạo thành công, trạng thái có chữ `Link` để mở contest ở web đích.
+
+## V. Tab Tạo contest từ mã bài
+
+Tạo tab `Tạo contest`.
+
+Mục tiêu:
+
+- Tạo contest cơ bản từ các mã bài đã có sẵn trên web đích.
+- Chỉ cần gắn bài vào contest và tạo setup cơ bản để contest mở được.
+- Người dùng sẽ vào admin chỉnh lại setup chi tiết nếu cần.
+
+Giao diện gồm:
+
+- Web đích.
+- Mã contest.
+- Tên contest.
+- Thời gian bắt đầu.
+- Thời gian kết thúc.
+- Danh sách mã bài.
+- Nút `Tạo contest`.
+
+Yêu cầu xử lý:
+
+- Kiểm tra từng mã bài có tồn tại ở web đích.
+- Nếu thiếu bài, báo rõ bài nào thiếu.
+- Nếu contest đã tồn tại, báo rõ và không tạo trùng.
+- Sau khi tạo thành công, trả về link contest.
+
+## VI. Yêu cầu chung
 
 - Giao diện viết bằng tiếng Việt có dấu.
 - Các mục upload bài cần đồng bộ giao diện tối đa.

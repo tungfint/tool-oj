@@ -17,10 +17,14 @@ from flask import Flask, Response, jsonify, render_template_string, request
 
 from transfer_tinhoctre_to_hncode import (
     ProblemInfo,
+    checkbox_checked,
     create_hncode_problem,
     destination_problem_exists,
     fetch_source_problem,
+    input_value,
     login_hncode,
+    selected_option,
+    textarea_value,
     upload_hncode_tests,
 )
 from upload_tinhoctre_batch import (
@@ -78,6 +82,16 @@ TARGETS = {
         "default_user": "admin",
         "test_backend": "vnoj",
     },
+}
+
+CONTEST_TARGETS = {
+    "contest_hnoj": {
+        "label": "HNOJ Contest",
+        "base_url": "https://contest.hnoj.edu.vn",
+        "default_user": "admin",
+        "problem_target": "hnoj",
+    },
+    **TARGETS,
 }
 
 PROMPT_GUIDE = """Với mỗi bài trong danh sách dưới đây, hãy tạo đủ 4 file:
@@ -144,9 +158,14 @@ Hãy thực hiện cho toàn bộ các bài được cung cấp bên dưới."""
 app = Flask(__name__)
 prepared_uploads: dict[str, dict] = {}
 prepared_transfers: dict[str, dict] = {}
+prepared_contest_transfers: dict[str, dict] = {}
 
 
 class ProblemAlreadyExists(RuntimeError):
+    pass
+
+
+class ContestAlreadyExists(RuntimeError):
     pass
 
 
@@ -231,6 +250,8 @@ PAGE = r"""
       <button type="button" class="active" data-panel="accounts">Tài khoản & Hướng dẫn</button>
       <button type="button" data-panel="upload">Up bài</button>
       <button type="button" data-panel="transfer">Chuyển bài</button>
+      <button type="button" data-panel="contest-transfer">Chuyển contest</button>
+      <button type="button" data-panel="contest-create">Tạo contest</button>
     </div>
   </header>
 
@@ -248,6 +269,10 @@ PAGE = r"""
           <div><label>HNOJ password</label><input id="acct_hnoj_pass" type="password"></div>
           <div><label>HNCode password</label><input id="acct_hncode_pass" type="password"></div>
           <div><label>TinHocTre password</label><input id="acct_tinhoctre_pass" type="password"></div>
+        </div>
+        <div class="grid-2">
+          <div><label>HNOJ Contest user</label><input id="acct_contest_hnoj_user" type="text" value="admin"></div>
+          <div><label>HNOJ Contest password</label><input id="acct_contest_hnoj_pass" type="password"></div>
         </div>
         <div class="actions">
           <button class="action primary" type="button" id="saveAccounts">Lưu tạm</button>
@@ -344,6 +369,62 @@ PAGE = r"""
         </div>
         <div id="transferTable"></div>
       </div>
+
+      <div class="panel" id="panel-contest-transfer">
+        <h2>Chuyển contest</h2>
+        <p>Chuyển contest gồm thông tin cơ bản, danh sách bài, điểm và bộ test của từng bài. Không chuyển bài nộp của học sinh.</p>
+        <div class="grid-2">
+          <div>
+            <label>Nguồn</label>
+            <select id="contestSource">
+              <option value="contest_hnoj">HNOJ Contest</option>
+              <option value="hnoj">HNOJ</option>
+              <option value="hncode">HNCode</option>
+              <option value="tinhoctre">TinHocTre</option>
+            </select>
+          </div>
+          <div>
+            <label>Đích</label>
+            <select id="contestDest">
+              <option value="hnoj">HNOJ</option>
+              <option value="hncode">HNCode</option>
+              <option value="tinhoctre">TinHocTre</option>
+            </select>
+          </div>
+        </div>
+        <label>Danh sách mã contest cần chuyển</label>
+        <textarea id="contestCodes" placeholder="tht2026_hn_ck_a&#10;tht2026_hn_ck_b&#10;tht2026_hn_ck_c"></textarea>
+        <div class="grid-2">
+          <div><label>Time mặc định cho bài thiếu thông tin</label><input id="contestProblemTime" type="text" value="1.0"></div>
+          <div><label>Memory mặc định cho bài thiếu thông tin</label><input id="contestProblemMemory" type="text" value="1048576"></div>
+        </div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="contestReuseExistingProblems" checked> Nếu bài đã có ở đích thì dùng lại bài đó</label>
+        <label class="check" style="margin-top:8px"><input type="checkbox" id="contestCreateMissingProblems" checked> Tự chuyển bài/test còn thiếu trước khi tạo contest</label>
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareContestTransfer">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmContestTransfer" disabled>Xác nhận chuyển contest</button>
+        </div>
+        <div id="contestTransferTable"></div>
+      </div>
+
+      <div class="panel" id="panel-contest-create">
+        <h2>Tạo contest từ mã bài</h2>
+        <p>Tạo contest cơ bản và gắn các mã bài đã có trên web đích. Các thiết lập chi tiết có thể chỉnh lại trong admin sau.</p>
+        <div class="grid-2">
+          <div><label>Web đích</label><select id="createContestTarget"><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option><option value="tinhoctre">TinHocTre</option></select></div>
+          <div><label>Mã contest</label><input id="createContestKey" type="text" placeholder="tht2026_hn_ck_a"></div>
+        </div>
+        <label>Tên contest</label><input id="createContestName" type="text" placeholder="TIN HỌC TRẺ 2026 - HÀ NỘI - CHUNG KẾT - BẢNG A">
+        <div class="grid-2">
+          <div><label>Bắt đầu</label><input id="createContestStart" type="text" placeholder="2026-05-17 10:00:00"></div>
+          <div><label>Kết thúc</label><input id="createContestEnd" type="text" placeholder="2026-05-17 11:30:00"></div>
+        </div>
+        <label>Danh sách mã bài</label>
+        <textarea id="createContestProblems" placeholder="tht26hn_cka_thieunhi&#10;tht26hn_cka_tongdayso"></textarea>
+        <div class="actions">
+          <button class="action primary" type="button" id="createContestButton">Tạo contest</button>
+        </div>
+      </div>
     </section>
 
     <section class="log-panel">
@@ -356,6 +437,7 @@ PAGE = r"""
 const TARGETS = {{ targets_json | safe }};
 let preparedUpload = null;
 let preparedTransfer = null;
+let preparedContestTransfer = null;
 let selectedZipFile = null;
 
 const logEl = document.getElementById("log");
@@ -380,6 +462,8 @@ const accountFields = {
   hncode_pass: document.getElementById("acct_hncode_pass"),
   tinhoctre_user: document.getElementById("acct_tinhoctre_user"),
   tinhoctre_pass: document.getElementById("acct_tinhoctre_pass"),
+  contest_hnoj_user: document.getElementById("acct_contest_hnoj_user"),
+  contest_hnoj_pass: document.getElementById("acct_contest_hnoj_pass"),
 };
 function loadAccounts() {
   for (const [key, input] of Object.entries(accountFields)) {
@@ -634,6 +718,119 @@ document.getElementById("confirmTransfer").onclick = async () => {
     status("failed", "err");
   }
 };
+
+document.getElementById("prepareContestTransfer").onclick = async () => {
+  try {
+    status("running");
+    log("Đang đọc dữ liệu contest nguồn...");
+    const source = document.getElementById("contestSource").value;
+    const dest = document.getElementById("contestDest").value;
+    const codes = document.getElementById("contestCodes").value.split(/[\s,]+/).filter(Boolean);
+    const data = await postJson("/api/prepare-contest-transfer", {
+      source, dest, codes,
+      source_account: accountPayload(source),
+      dest_account: accountPayload(dest),
+      settings: contestTransferSettings(),
+    });
+    preparedContestTransfer = data.prepare_id;
+    renderContestTransferTable(data.rows);
+    document.getElementById("confirmContestTransfer").disabled = false;
+    log(data.log);
+    status("ready", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+document.getElementById("confirmContestTransfer").onclick = async () => {
+  try {
+    status("running");
+    log("Đang chuyển contest...");
+    const source = document.getElementById("contestSource").value;
+    const dest = document.getElementById("contestDest").value;
+    const data = await postJson("/api/confirm-contest-transfer", {
+      prepare_id: preparedContestTransfer,
+      source, dest, rows: collectContestRows(),
+      source_account: accountPayload(source),
+      dest_account: accountPayload(dest),
+      settings: contestTransferSettings(),
+    });
+    applyContestStatuses(data.rows);
+    log(data.log);
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+document.getElementById("createContestButton").onclick = async () => {
+  try {
+    status("running");
+    log("Đang tạo contest...");
+    const target = document.getElementById("createContestTarget").value;
+    const data = await postJson("/api/create-contest", {
+      target,
+      account: accountPayload(target),
+      key: document.getElementById("createContestKey").value.trim(),
+      name: document.getElementById("createContestName").value.trim(),
+      start_time: document.getElementById("createContestStart").value.trim(),
+      end_time: document.getElementById("createContestEnd").value.trim(),
+      problems: document.getElementById("createContestProblems").value.split(/[\s,]+/).filter(Boolean),
+    });
+    log(data.log);
+    status("done", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+function contestTransferSettings() {
+  return {
+    reuse_existing_problems: document.getElementById("contestReuseExistingProblems").checked,
+    create_missing_problems: document.getElementById("contestCreateMissingProblems").checked,
+    time_limit: document.getElementById("contestProblemTime").value,
+    memory_limit: document.getElementById("contestProblemMemory").value,
+  };
+}
+
+function renderContestTransferTable(rows) {
+  document.getElementById("contestTransferTable").innerHTML = `<div class="table-tools">
+    <button class="action" type="button" onclick="setRowSelection('#contestTransferTable', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#contestTransferTable', false)">Bỏ chọn tất cả</button>
+  </div><table>
+    <thead><tr><th>Chọn</th><th>Mã contest</th><th>Tên contest</th><th>Thời gian</th><th>Bài trong contest</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_key)}">
+      <td><input type="checkbox" class="row-selected" ${row.can_transfer ? "checked" : ""}></td>
+      <td><input type="text" class="row-key" value="${escapeHtml(row.key)}"></td>
+      <td><input type="text" class="row-name" value="${escapeHtml(row.name || "")}"></td>
+      <td><div class="test-meta">${escapeHtml(row.start_time || "")}<br>${escapeHtml(row.end_time || "")}</div></td>
+      <td><div class="test-meta">${row.problems.map(p => `${escapeHtml(p.code)} (${escapeHtml(p.points || "100")})`).join("<br>")}</div></td>
+      <td class="row-status">${escapeHtml(row.status)}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function collectContestRows() {
+  return [...document.querySelectorAll("#contestTransferTable tbody tr")].map(tr => ({
+    original_key: tr.dataset.original,
+    selected: tr.querySelector(".row-selected").checked,
+    key: tr.querySelector(".row-key").value.trim(),
+    name: tr.querySelector(".row-name").value.trim(),
+  }));
+}
+
+function applyContestStatuses(rows) {
+  const byOriginal = new Map(rows.map(row => [row.original_key, row]));
+  for (const tr of document.querySelectorAll("#contestTransferTable tbody tr")) {
+    const row = byOriginal.get(tr.dataset.original);
+    if (!row) continue;
+    const link = row.link ? ` <a class="problem-link" href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : "";
+    tr.querySelector(".row-status").innerHTML = `${escapeHtml(row.status)}${link}`;
+  }
+}
+
 function collectRows(selector) {
   return [...document.querySelectorAll(selector + " tbody tr")].map(tr => ({
     original_code: tr.dataset.original,
@@ -984,6 +1181,9 @@ def upload_tests_for_target(session, target: str, base_url: str, code: str, test
     if TARGETS[target]["test_backend"] == "vnoj":
         upload_tinhoctre_tests(session, base_url, code, tests)
         return
+    if target == "hnoj":
+        upload_tinhoctre_tests(session, base_url, code, tests)
+        return
     from upload_hncode_batch import test_cases_from_files
 
     upload_hncode_tests(session, base_url, code, tests.zip_path, test_cases_from_files(tests.input_files, tests.output_files))
@@ -1088,6 +1288,403 @@ def problem_url(base_url: str, code: str) -> str:
 
 def test_data_url(base_url: str, code: str) -> str:
     return urljoin(base_url, f"/problem/{code}/test_data")
+
+
+def contest_url(base_url: str, key: str) -> str:
+    return urljoin(base_url, f"/contest/{key}")
+
+
+def admin_contest_change_url(session, base_url: str, key: str) -> str | None:
+    page = session.get(urljoin(base_url, "/admin/judge/contest/"), params={"q": key})
+    if not page.ok:
+        return None
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", page.text, re.S):
+        plain = html.unescape(re.sub(r"<.*?>", " ", row))
+        if re.search(rf"\b{re.escape(key)}\b", plain):
+            link = re.search(r'href="(/admin/judge/contest/\d+/change/[^"]*)"', row)
+            if link:
+                return urljoin(base_url, html.unescape(link.group(1)))
+    return None
+
+
+def admin_problem_id(session, base_url: str, code: str) -> str | None:
+    page = session.get(urljoin(base_url, "/admin/judge/problem/"), params={"q": code})
+    if not page.ok:
+        return None
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", page.text, re.S):
+        code_match = re.search(r'<th class="field-code">\s*<a href="/admin/judge/problem/(\d+)/change/[^"]*">\s*([^<]+)\s*</a>', row)
+        if code_match and html.unescape(code_match.group(2)).strip() == code:
+            return code_match.group(1)
+    return None
+
+
+def public_contest_problem_codes(session, base_url: str, key: str) -> list[str]:
+    page = session.get(contest_url(base_url, key))
+    if not page.ok:
+        return []
+    codes: list[str] = []
+    for code in re.findall(r"/problem/([A-Za-z0-9_-]+)", page.text):
+        if code not in codes:
+            codes.append(code)
+    return codes
+
+
+def problem_has_test_zip(session, base_url: str, code: str) -> bool:
+    page = session.get(test_data_url(base_url, code))
+    return page.ok and bool(re.search(r'href=[\"\'][^\"\']+\.zip[\"\']', page.text))
+
+
+def upload_existing_problem_tests(session, dest: str, code: str, zip_path: Path, cases) -> None:
+    base_url = TARGETS[dest]["base_url"]
+    if dest == "hnoj":
+        tests = GeneratedTests(zip_path, [case.input_file for case in cases], [case.output_file for case in cases])
+        upload_tinhoctre_tests(session, base_url, code, tests)
+    elif dest == "tinhoctre":
+        tests = GeneratedTests(zip_path, [case.input_file for case in cases], [case.output_file for case in cases])
+        upload_tinhoctre_tests(session, base_url, code, tests)
+    else:
+        upload_hncode_tests(session, base_url, code, zip_path, cases)
+
+
+def selected_values(page: str, name: str) -> list[str]:
+    match = re.search(r"<select\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>(.*?)</select>", page, re.S)
+    if not match:
+        return []
+    values = []
+    for option in re.finditer(r"<option\b([^>]*)>", match.group(1), re.S):
+        attrs = option.group(1)
+        if "selected" not in attrs:
+            continue
+        value = re.search(r"value=[\"']([^\"']*)", attrs)
+        if value:
+            values.append(html.unescape(value.group(1)))
+    return values
+
+
+def split_datetime(value: str) -> tuple[str, str]:
+    value = (value or "").strip()
+    if " " in value:
+        date, time = value.split(" ", 1)
+        return date.strip(), time.strip()
+    return value, ""
+
+
+def fetch_contest_info(session, base_url: str, key: str) -> dict:
+    change_url = admin_contest_change_url(session, base_url, key)
+    if not change_url:
+        raise RuntimeError(f"Không tìm thấy contest {key} trong admin.")
+    page = session.get(change_url)
+    if not page.ok:
+        raise RuntimeError(f"Không đọc được trang sửa contest {key}: HTTP {page.status_code}")
+    problem_codes = public_contest_problem_codes(session, base_url, key)
+    total = int(input_value(page.text, "contest_problems-TOTAL_FORMS", "0") or "0")
+    entries = []
+    order_rows = []
+    for idx in range(total):
+        problem_id = input_value(page.text, f"contest_problems-{idx}-problem")
+        if not problem_id:
+            continue
+        order_rows.append(
+            {
+                "idx": idx,
+                "problem_id": problem_id,
+                "points": input_value(page.text, f"contest_problems-{idx}-points", "100") or "100",
+                "partial": checkbox_checked(page.text, f"contest_problems-{idx}-partial"),
+                "is_pretested": checkbox_checked(page.text, f"contest_problems-{idx}-is_pretested"),
+                "max_submissions": input_value(page.text, f"contest_problems-{idx}-max_submissions", ""),
+                "order": input_value(page.text, f"contest_problems-{idx}-order", str(idx)) or str(idx),
+            }
+        )
+    for row, code in zip(order_rows, problem_codes):
+        row["code"] = code
+        entries.append(row)
+    if not entries and problem_codes:
+        entries = [{"code": code, "points": "100", "partial": True, "is_pretested": False, "max_submissions": "", "order": str(i)} for i, code in enumerate(problem_codes)]
+    start_time = f"{input_value(page.text, 'start_time_0', '')} {input_value(page.text, 'start_time_1', '')}".strip()
+    end_time = f"{input_value(page.text, 'end_time_0', '')} {input_value(page.text, 'end_time_1', '')}".strip()
+    return {
+        "key": input_value(page.text, "key", key) or key,
+        "name": input_value(page.text, "name", key) or key,
+        "description": textarea_value(page.text, "description"),
+        "start_time": start_time,
+        "end_time": end_time,
+        "format_name": selected_option(page.text, "format_name", "vnoj") or "vnoj",
+        "scoreboard_visibility": selected_option(page.text, "scoreboard_visibility", "H") or "H",
+        "points_precision": input_value(page.text, "points_precision", "3") or "3",
+        "is_visible": checkbox_checked(page.text, "is_visible"),
+        "is_rated": checkbox_checked(page.text, "is_rated"),
+        "is_private": checkbox_checked(page.text, "is_private"),
+        "problems": entries,
+        "change_url": change_url,
+    }
+
+
+def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest: str) -> list[tuple[str, str]]:
+    start_date, start_clock = split_datetime(info.get("start_time", ""))
+    end_date, end_clock = split_datetime(info.get("end_time", ""))
+    data: list[tuple[str, str]] = [
+        ("csrfmiddlewaretoken", csrf_token(page)),
+        ("key", info["key"]),
+        ("name", info["name"]),
+        ("description", statement_for_target(dest, info.get("description", ""))),
+        ("scoreboard_visibility", info.get("scoreboard_visibility") or "H"),
+        ("points_precision", info.get("points_precision") or "3"),
+        ("start_time_0", start_date),
+        ("start_time_1", start_clock),
+        ("end_time_0", end_date),
+        ("end_time_1", end_clock),
+        ("time_limit", info.get("time_limit", "")),
+        ("format_name", info.get("format_name") or "vnoj"),
+        ("format_config", info.get("format_config", "")),
+        ("frozen_last_minutes", info.get("frozen_last_minutes", "0") or "0"),
+        ("problem_label_script", info.get("problem_label_script", "")),
+        ("rating_floor", info.get("rating_floor", "")),
+        ("rating_ceiling", info.get("rating_ceiling", "")),
+        ("access_code", info.get("access_code", "")),
+        ("ranking_access_code", info.get("ranking_access_code", "")),
+        ("scoreboard_cache_timeout", info.get("scoreboard_cache_timeout", "0") or "0"),
+        ("summary", info.get("summary", "")),
+        ("og_image", ""),
+        ("logo_override_image", ""),
+        ("contest_problems-TOTAL_FORMS", str(len(problem_ids))),
+        ("contest_problems-INITIAL_FORMS", "0"),
+        ("contest_problems-MIN_NUM_FORMS", "0"),
+        ("contest_problems-MAX_NUM_FORMS", "1000"),
+        ("contestannouncement_set-TOTAL_FORMS", "0"),
+        ("contestannouncement_set-INITIAL_FORMS", "0"),
+        ("contestannouncement_set-MIN_NUM_FORMS", "0"),
+        ("contestannouncement_set-MAX_NUM_FORMS", "1000"),
+        ("_continue", "Save and continue editing"),
+    ]
+    data.extend(("authors", value) for value in selected_values(page, "authors"))
+    if info.get("is_visible", True):
+        data.append(("is_visible", "on"))
+    for flag in [
+        "use_clarifications",
+        "push_announcements",
+        "hide_problem_tags",
+        "hide_problem_authors",
+        "show_short_display",
+        "show_submission_list",
+    ]:
+        if info.get(flag):
+            data.append((flag, "on"))
+    if info.get("is_rated"):
+        data.append(("is_rated", "on"))
+    if info.get("is_private"):
+        data.append(("is_private", "on"))
+    for idx, problem in enumerate(problem_ids):
+        data.extend(
+            [
+                (f"contest_problems-{idx}-id", ""),
+                (f"contest_problems-{idx}-contest", ""),
+                (f"contest_problems-{idx}-problem", str(problem["id"])),
+                (f"contest_problems-{idx}-points", str(problem.get("points") or "100")),
+                (f"contest_problems-{idx}-max_submissions", str(problem.get("max_submissions") or "")),
+                (f"contest_problems-{idx}-output_prefix_override", ""),
+                (f"contest_problems-{idx}-order", str(problem.get("order", idx))),
+            ]
+        )
+        if problem.get("partial", True):
+            data.append((f"contest_problems-{idx}-partial", "on"))
+        if problem.get("is_pretested"):
+            data.append((f"contest_problems-{idx}-is_pretested", "on"))
+    return data
+
+
+def create_contest(session, base_url: str, dest: str, info: dict, problem_ids: list[dict]) -> str:
+    if admin_contest_change_url(session, base_url, info["key"]):
+        raise ContestAlreadyExists(f"Contest {info['key']} đã tồn tại tại {contest_url(base_url, info['key'])}")
+    add_url = urljoin(base_url, "/admin/judge/contest/add/")
+    page = session.get(add_url)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được form tạo contest: HTTP {page.status_code}")
+    result = session.post(add_url, data=build_contest_post_data(page.text, info, problem_ids, dest), headers={"Referer": add_url}, allow_redirects=True)
+    if not result.ok:
+        raise RuntimeError(f"Tạo contest lỗi HTTP {result.status_code}")
+    errors = form_errors(result.text)
+    if errors:
+        raise RuntimeError("Form tạo contest báo lỗi:\n" + "\n".join(errors))
+    if "/change/" not in result.url:
+        raise RuntimeError(f"Tạo contest chưa redirect vào trang sửa: {result.url}")
+    return result.url
+
+
+@app.post("/api/prepare-contest-transfer")
+def api_prepare_contest_transfer():
+    payload = request.get_json(force=True)
+    source = payload["source"]
+    dest = payload["dest"]
+    codes = [code.strip() for code in payload.get("codes", []) if code.strip()]
+    if not codes:
+        return jsonify({"error": "Chưa nhập mã contest cần chuyển."}), 400
+    if source == dest:
+        return jsonify({"error": "Nguồn và đích đang trùng nhau."}), 400
+    try:
+        prepare_id = uuid.uuid4().hex
+        root = RUNTIME / ("contest_transfer_" + prepare_id)
+        root.mkdir(parents=True, exist_ok=True)
+        source_account = payload["source_account"]
+        source_info = CONTEST_TARGETS[source]
+        src = login_hncode(source_info["base_url"], source_account["username"], source_account["password"])
+        rows = []
+        items = {}
+        log_lines = [f"Đọc contest nguồn: {source_info['label']} → {TARGETS[dest]['label']}"]
+        for key in codes:
+            try:
+                info = fetch_contest_info(src, source_info["base_url"], key)
+                dest_exists = False
+                try:
+                    dest_account = payload.get("dest_account", {})
+                    dst_probe = login_hncode(TARGETS[dest]["base_url"], dest_account.get("username", ""), dest_account.get("password", ""))
+                    dest_exists = bool(admin_contest_change_url(dst_probe, TARGETS[dest]["base_url"], info["key"]))
+                except Exception:
+                    dest_exists = False
+                items[key] = info
+                rows.append(
+                    {
+                        "original_key": key,
+                        "key": info["key"],
+                        "name": info["name"],
+                        "start_time": info["start_time"],
+                        "end_time": info["end_time"],
+                        "problems": info["problems"],
+                        "can_transfer": not dest_exists,
+                        "status": "Đã tồn tại ở đích" if dest_exists else "Đã đọc",
+                    }
+                )
+                log_lines.append(f"- {key}: {info['name']}, {len(info['problems'])} bài")
+                if dest_exists:
+                    log_lines.append(f"  Contest {info['key']} đã tồn tại ở đích, mặc định bỏ chọn để tránh tạo trùng.")
+            except Exception as exc:
+                rows.append({"original_key": key, "key": key, "name": "", "start_time": "", "end_time": "", "problems": [], "can_transfer": False, "status": "✗ Lỗi đọc nguồn"})
+                log_lines.append(f"✗ {key}: {exc}")
+        prepared_contest_transfers[prepare_id] = {"root": root, "source": source, "dest": dest, "items": items}
+        return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/api/confirm-contest-transfer")
+def api_confirm_contest_transfer():
+    payload = request.get_json(force=True)
+    prepare_id = payload.get("prepare_id")
+    if not prepare_id or prepare_id not in prepared_contest_transfers:
+        return jsonify({"error": "Dữ liệu chuẩn bị chuyển contest đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+    source = payload["source"]
+    dest = payload["dest"]
+    settings = payload.get("settings", {})
+    rows = payload.get("rows", [])
+    result_rows = []
+    log_lines = [f"Chuyển contest: {CONTEST_TARGETS[source]['label']} → {TARGETS[dest]['label']}"]
+    try:
+        state = prepared_contest_transfers[prepare_id]
+        source_account = payload["source_account"]
+        dest_account = payload["dest_account"]
+        src = login_hncode(CONTEST_TARGETS[source]["base_url"], source_account["username"], source_account["password"])
+        dst = login_hncode(TARGETS[dest]["base_url"], dest_account["username"], dest_account["password"])
+        root = state["root"]
+        language_ids = list(TARGETS[dest]["languages"].values())
+        for row in rows:
+            row = dict(row)
+            if not row.get("selected"):
+                row["status"] = "Bỏ qua"
+                result_rows.append(row)
+                continue
+            try:
+                info = dict(state["items"].get(row["original_key"]) or {})
+                if not info:
+                    raise RuntimeError("Chưa đọc được dữ liệu contest nguồn")
+                info["key"] = row.get("key") or info["key"]
+                info["name"] = row.get("name") or info["name"]
+                if admin_contest_change_url(dst, TARGETS[dest]["base_url"], info["key"]):
+                    raise ContestAlreadyExists(f"Contest {info['key']} đã tồn tại tại {contest_url(TARGETS[dest]['base_url'], info['key'])}")
+                problem_refs = []
+                for problem in info["problems"]:
+                    code = problem["code"]
+                    pid = admin_problem_id(dst, TARGETS[dest]["base_url"], code)
+                    if pid and not settings.get("reuse_existing_problems", True):
+                        raise RuntimeError(f"Bài {code} đã có ở đích và tùy chọn dùng lại bài đã có đang tắt")
+                    if not pid and not settings.get("create_missing_problems", True):
+                        raise RuntimeError(f"Bài {code} chưa có ở đích")
+                    if not pid:
+                        pinfo, zip_path, cases, _zip_url = fetch_source_problem(src, CONTEST_TARGETS[source]["base_url"], code, root)
+                        pinfo.time_limit = pinfo.time_limit or settings.get("time_limit") or "1.0"
+                        pinfo.memory_limit = pinfo.memory_limit or settings.get("memory_limit") or "1048576"
+                        transfer_row = {"upload_statement": True, "upload_tests": True}
+                        if dest == "tinhoctre":
+                            upload_transfer_to_tinhoctre(dst, dest, code, pinfo, zip_path, cases, transfer_row, root, language_ids, log_lines)
+                        else:
+                            upload_transfer_to_dmoj(dst, dest, code, pinfo, zip_path, cases, transfer_row, language_ids, log_lines)
+                        pid = admin_problem_id(dst, TARGETS[dest]["base_url"], code)
+                    elif settings.get("create_missing_problems", True) and not problem_has_test_zip(dst, TARGETS[dest]["base_url"], code):
+                        _pinfo, zip_path, cases, _zip_url = fetch_source_problem(src, CONTEST_TARGETS[source]["base_url"], code, root)
+                        upload_existing_problem_tests(dst, dest, code, zip_path, cases)
+                        log_lines.append(f"{code}: đã bổ sung test cho bài đã có.")
+                    if not pid:
+                        raise RuntimeError(f"Không tìm thấy ID admin của bài {code} sau khi chuyển")
+                    problem_ref = dict(problem)
+                    problem_ref["id"] = pid
+                    problem_refs.append(problem_ref)
+                create_contest(dst, TARGETS[dest]["base_url"], dest, info, problem_refs)
+                row["status"] = "✓ Thành công"
+                row["link"] = contest_url(TARGETS[dest]["base_url"], info["key"])
+                log_lines.append(f"✓ {info['key']}: đã tạo contest với {len(problem_refs)} bài.")
+            except ContestAlreadyExists as exc:
+                row["status"] = "✗ Contest đã tồn tại"
+                row["link"] = contest_url(TARGETS[dest]["base_url"], row.get("key") or row.get("original_key"))
+                log_lines.append(f"✗ {row.get('key')}: {exc}. Bỏ qua contest này.")
+            except ProblemAlreadyExists:
+                row["status"] = "✗ Bài đã tồn tại nhưng chưa dùng lại được"
+                log_lines.append(f"✗ {row.get('key')}: gặp bài đã tồn tại khi chuyển problem, hãy bật dùng lại bài đã có hoặc kiểm tra mã bài.")
+            except Exception as exc:
+                row["status"] = "✗ Lỗi"
+                log_lines.append(f"✗ {row.get('key')}: {exc}")
+            result_rows.append(row)
+        ok = all((not row.get("selected")) or row.get("status", "").startswith("✓") for row in result_rows)
+        return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/create-contest")
+def api_create_contest():
+    payload = request.get_json(force=True)
+    target = payload["target"]
+    key = payload.get("key", "").strip()
+    name = payload.get("name", "").strip()
+    problems = [code.strip() for code in payload.get("problems", []) if code.strip()]
+    if not key or not name or not problems:
+        return jsonify({"error": "Cần nhập mã contest, tên contest và danh sách mã bài."}), 400
+    try:
+        account = payload["account"]
+        dst = login_hncode(TARGETS[target]["base_url"], account["username"], account["password"])
+        refs = []
+        for idx, code in enumerate(problems):
+            pid = admin_problem_id(dst, TARGETS[target]["base_url"], code)
+            if not pid:
+                raise RuntimeError(f"Không tìm thấy bài {code} ở {TARGETS[target]['label']}")
+            refs.append({"code": code, "id": pid, "points": "100", "partial": True, "is_pretested": False, "max_submissions": "", "order": str(idx)})
+        info = {
+            "key": key,
+            "name": name,
+            "description": "",
+            "start_time": payload.get("start_time", ""),
+            "end_time": payload.get("end_time", ""),
+            "format_name": "vnoj",
+            "scoreboard_visibility": "H",
+            "points_precision": "3",
+            "is_visible": True,
+            "is_rated": False,
+            "is_private": False,
+        }
+        create_contest(dst, TARGETS[target]["base_url"], target, info, refs)
+        link = contest_url(TARGETS[target]["base_url"], key)
+        return jsonify({"ok": True, "log": f"✓ Đã tạo contest {key}\nLink: {link}", "link": link})
+    except ContestAlreadyExists as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 @app.post("/api/prepare-transfer")
@@ -1245,7 +1842,11 @@ def upload_transfer_to_dmoj(session, dest: str, dest_code: str, info: ProblemInf
     else:
         log_lines.append(f"{dest_code}: bỏ qua tạo đề.")
     if row.get("upload_tests"):
-        upload_hncode_tests(session, base_url, dest_code, zip_path, cases)
+        if dest == "hnoj":
+            tests = GeneratedTests(zip_path, [case.input_file for case in cases], [case.output_file for case in cases])
+            upload_tinhoctre_tests(session, base_url, dest_code, tests)
+        else:
+            upload_hncode_tests(session, base_url, dest_code, zip_path, cases)
         log_lines.append(f"{dest_code}: đã upload test.")
     else:
         log_lines.append(f"{dest_code}: không upload test.")
