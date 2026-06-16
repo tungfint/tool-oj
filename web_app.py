@@ -234,6 +234,8 @@ PAGE = r"""
     table { width:100%; border-collapse:collapse; margin-top:14px; font-size:13px; }
     th, td { border-bottom:1px solid var(--line); padding:8px; vertical-align:top; text-align:left; }
     th { background:#f8fafc; font-weight:700; }
+    .inner-table { margin-top:0; font-size:12px; }
+    .inner-table th, .inner-table td { padding:5px 6px; }
     td input[type=text] { padding:6px 7px; }
     a.problem-link { color:var(--accent); font-weight:700; text-decoration:none; }
     .test-meta { color:var(--muted); font-size:12px; line-height:1.4; }
@@ -807,23 +809,40 @@ function renderContestTransferTable(rows) {
       <td><input type="text" class="row-key" value="${escapeHtml(row.key)}"></td>
       <td><input type="text" class="row-name" value="${escapeHtml(row.name || "")}"></td>
       <td><div class="test-meta">${escapeHtml(row.start_time || "")}<br>${escapeHtml(row.end_time || "")}</div></td>
-      <td><div class="test-meta">${row.problems.map(p => `${escapeHtml(p.code)} (${escapeHtml(p.points || "100")})`).join("<br>")}</div></td>
+      <td>${renderContestProblemList(row.problems || [])}</td>
       <td class="row-status">${escapeHtml(row.status)}</td>
     </tr>`).join("")}</tbody></table>`;
 }
 
+function renderContestProblemList(problems) {
+  if (!problems.length) return `<div class="test-meta">Không có bài.</div>`;
+  return `<table class="inner-table"><thead><tr><th>Chọn</th><th>Mã bài</th><th>Điểm</th><th>Thứ tự</th><th>Trạng thái</th></tr></thead><tbody>
+    ${problems.map(p => `<tr data-problem-code="${escapeHtml(p.code)}">
+      <td><input type="checkbox" class="problem-selected" checked></td>
+      <td>${escapeHtml(p.code)}</td>
+      <td>${escapeHtml(p.points || "100")}</td>
+      <td>${escapeHtml(p.order || "")}</td>
+      <td>${escapeHtml(p.status || "")}</td>
+    </tr>`).join("")}
+  </tbody></table>`;
+}
+
 function collectContestRows() {
-  return [...document.querySelectorAll("#contestTransferTable tbody tr")].map(tr => ({
+  return [...document.querySelectorAll("#contestTransferTable > table > tbody > tr")].map(tr => ({
     original_key: tr.dataset.original,
     selected: tr.querySelector(".row-selected").checked,
     key: tr.querySelector(".row-key").value.trim(),
     name: tr.querySelector(".row-name").value.trim(),
+    problems: [...tr.querySelectorAll(".inner-table tbody tr")].map(pr => ({
+      code: pr.dataset.problemCode,
+      selected: pr.querySelector(".problem-selected").checked,
+    })),
   }));
 }
 
 function applyContestStatuses(rows) {
   const byOriginal = new Map(rows.map(row => [row.original_key, row]));
-  for (const tr of document.querySelectorAll("#contestTransferTable tbody tr")) {
+  for (const tr of document.querySelectorAll("#contestTransferTable > table > tbody > tr")) {
     const row = byOriginal.get(tr.dataset.original);
     if (!row) continue;
     const link = row.link ? ` <a class="problem-link" href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : "";
@@ -1361,6 +1380,37 @@ def selected_values(page: str, name: str) -> list[str]:
     return values
 
 
+def select2_field_id(page: str, name: str) -> str:
+    match = re.search(r'name="' + re.escape(name) + r'"[^>]*data-field_id="([^"]+)"', page)
+    return html.unescape(match.group(1)) if match else ""
+
+
+def profile_id_for_username(session, base_url: str, page: str, username: str) -> str:
+    field_id = select2_field_id(page, "authors")
+    if not field_id or not username:
+        return ""
+    result = session.get(
+        urljoin(base_url, "/judge-select2/profile/"),
+        params={"field_id": field_id, "term": username, "page": 1},
+        headers={"Referer": urljoin(base_url, "/admin/judge/contest/add/"), "X-Requested-With": "XMLHttpRequest"},
+    )
+    if not result.ok:
+        return ""
+    try:
+        data = result.json()
+    except json.JSONDecodeError:
+        return ""
+    fallback = ""
+    for item in data.get("results", []):
+        text = str(item.get("text", ""))
+        value = str(item.get("id", ""))
+        if text == username:
+            return value
+        if not fallback:
+            fallback = value
+    return fallback
+
+
 def split_datetime(value: str) -> tuple[str, str]:
     value = (value or "").strip()
     if " " in value:
@@ -1419,7 +1469,7 @@ def fetch_contest_info(session, base_url: str, key: str) -> dict:
     }
 
 
-def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest: str) -> list[tuple[str, str]]:
+def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest: str, author_ids: list[str] | None = None) -> list[tuple[str, str]]:
     start_date, start_clock = split_datetime(info.get("start_time", ""))
     end_date, end_clock = split_datetime(info.get("end_time", ""))
     data: list[tuple[str, str]] = [
@@ -1454,9 +1504,14 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
         ("contestannouncement_set-INITIAL_FORMS", "0"),
         ("contestannouncement_set-MIN_NUM_FORMS", "0"),
         ("contestannouncement_set-MAX_NUM_FORMS", "1000"),
+        ("official-TOTAL_FORMS", "0"),
+        ("official-INITIAL_FORMS", "0"),
+        ("official-MIN_NUM_FORMS", "0"),
+        ("official-MAX_NUM_FORMS", "1000"),
         ("_continue", "Save and continue editing"),
     ]
-    data.extend(("authors", value) for value in selected_values(page, "authors"))
+    authors = author_ids if author_ids is not None else selected_values(page, "authors")
+    data.extend(("authors", value) for value in authors if value)
     if info.get("is_visible", True):
         data.append(("is_visible", "on"))
     for flag in [
@@ -1480,7 +1535,8 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
                 (f"contest_problems-{idx}-contest", ""),
                 (f"contest_problems-{idx}-problem", str(problem["id"])),
                 (f"contest_problems-{idx}-points", str(problem.get("points") or "100")),
-                (f"contest_problems-{idx}-max_submissions", str(problem.get("max_submissions") or "")),
+                (f"contest_problems-{idx}-max_submissions", str(problem.get("max_submissions") or "0")),
+                (f"contest_problems-{idx}-hidden_subtasks", str(problem.get("hidden_subtasks") or "")),
                 (f"contest_problems-{idx}-output_prefix_override", ""),
                 (f"contest_problems-{idx}-order", str(problem.get("order", idx))),
             ]
@@ -1492,14 +1548,19 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
     return data
 
 
-def create_contest(session, base_url: str, dest: str, info: dict, problem_ids: list[dict]) -> str:
+def create_contest(session, base_url: str, dest: str, info: dict, problem_ids: list[dict], author_username: str = "") -> str:
     if admin_contest_change_url(session, base_url, info["key"]):
         raise ContestAlreadyExists(f"Contest {info['key']} đã tồn tại tại {contest_url(base_url, info['key'])}")
     add_url = urljoin(base_url, "/admin/judge/contest/add/")
     page = session.get(add_url)
     if not page.ok:
         raise RuntimeError(f"Không mở được form tạo contest: HTTP {page.status_code}")
-    result = session.post(add_url, data=build_contest_post_data(page.text, info, problem_ids, dest), headers={"Referer": add_url}, allow_redirects=True)
+    authors = selected_values(page.text, "authors")
+    if not authors:
+        author_id = profile_id_for_username(session, base_url, page.text, author_username)
+        if author_id:
+            authors = [author_id]
+    result = session.post(add_url, data=build_contest_post_data(page.text, info, problem_ids, dest, authors), headers={"Referer": add_url}, allow_redirects=True)
     if not result.ok:
         raise RuntimeError(f"Tạo contest lỗi HTTP {result.status_code}")
     errors = form_errors(result.text)
@@ -1538,6 +1599,12 @@ def api_prepare_contest_transfer():
                     dest_account = payload.get("dest_account", {})
                     dst_probe = login_hncode(TARGETS[dest]["base_url"], dest_account.get("username", ""), dest_account.get("password", ""))
                     dest_exists = bool(admin_contest_change_url(dst_probe, TARGETS[dest]["base_url"], info["key"]))
+                    for problem in info["problems"]:
+                        pid = admin_problem_id(dst_probe, TARGETS[dest]["base_url"], problem["code"])
+                        if pid:
+                            problem["status"] = "Đã có ở đích, có test" if problem_has_test_zip(dst_probe, TARGETS[dest]["base_url"], problem["code"]) else "Đã có ở đích, thiếu test"
+                        else:
+                            problem["status"] = "Thiếu ở đích"
                 except Exception:
                     dest_exists = False
                 items[key] = info
@@ -1597,6 +1664,11 @@ def api_confirm_contest_transfer():
                     raise RuntimeError("Chưa đọc được dữ liệu contest nguồn")
                 info["key"] = row.get("key") or info["key"]
                 info["name"] = row.get("name") or info["name"]
+                selected_codes = {problem.get("code") for problem in row.get("problems", []) if problem.get("selected")}
+                if row.get("problems"):
+                    info["problems"] = [problem for problem in info["problems"] if problem["code"] in selected_codes]
+                if not info["problems"]:
+                    raise RuntimeError("Chưa chọn bài nào trong contest")
                 if admin_contest_change_url(dst, TARGETS[dest]["base_url"], info["key"]):
                     raise ContestAlreadyExists(f"Contest {info['key']} đã tồn tại tại {contest_url(TARGETS[dest]['base_url'], info['key'])}")
                 problem_refs = []
@@ -1626,7 +1698,7 @@ def api_confirm_contest_transfer():
                     problem_ref = dict(problem)
                     problem_ref["id"] = pid
                     problem_refs.append(problem_ref)
-                create_contest(dst, TARGETS[dest]["base_url"], dest, info, problem_refs)
+                create_contest(dst, TARGETS[dest]["base_url"], dest, info, problem_refs, dest_account.get("username", ""))
                 row["status"] = "✓ Thành công"
                 row["link"] = contest_url(TARGETS[dest]["base_url"], info["key"])
                 log_lines.append(f"✓ {info['key']}: đã tạo contest với {len(problem_refs)} bài.")
@@ -1678,7 +1750,7 @@ def api_create_contest():
             "is_rated": False,
             "is_private": False,
         }
-        create_contest(dst, TARGETS[target]["base_url"], target, info, refs)
+        create_contest(dst, TARGETS[target]["base_url"], target, info, refs, account.get("username", ""))
         link = contest_url(TARGETS[target]["base_url"], key)
         return jsonify({"ok": True, "log": f"✓ Đã tạo contest {key}\nLink: {link}", "link": link})
     except ContestAlreadyExists as exc:

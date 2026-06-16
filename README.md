@@ -173,6 +173,8 @@ Luồng sử dụng:
 
 Tool chỉ chuyển contest, problem và test. Tool không chuyển bài nộp của học sinh.
 
+Trong bảng chuẩn bị dữ liệu, mỗi contest có bảng con liệt kê từng bài, gồm mã bài, điểm, thứ tự, trạng thái và ô chọn/bỏ chọn bài đó khi chuyển.
+
 Nếu contest đã tồn tại ở đích, tool báo rõ `Contest đã tồn tại` và hiển thị `Link`, không tự ghi đè setup cũ.
 
 ## Tab Tạo contest
