@@ -128,6 +128,33 @@ def selected_option(page: str, name: str, default: str = "") -> str:
     return default
 
 
+def absolute_markdown_asset_urls(text: str, base_url: str) -> str:
+    def repl(match: re.Match) -> str:
+        prefix, url, suffix = match.group(1), html.unescape(match.group(2)), match.group(3)
+        if re.match(r"^(?:https?:)?//|mailto:|data:", url):
+            return match.group(0)
+        if url.startswith("/"):
+            return f"{prefix}{urljoin(base_url, url)}{suffix}"
+        return match.group(0)
+
+    text = re.sub(r"(!?\[[^\]]*\]\()([^)\s]+)(\))", repl, text)
+    text = re.sub(r"(<(?:img|a)\b[^>]*(?:src|href)=[\"'])(/[^\"']+)([\"'])", repl, text, flags=re.I)
+    return text
+
+
+def source_pdf_statement(source: requests.Session, base_url: str, problem_code: str) -> str:
+    public = source.get(urljoin(base_url, f"/problem/{problem_code}"))
+    if not public.ok:
+        return ""
+    matches = re.findall(r'href=[\"\']([^\"\']+\.pdf(?:\?[^\"\']*)?)[\"\']', public.text, re.I)
+    if not matches:
+        matches = re.findall(r'https?://[^\"\'<>\s]+\.pdf(?:\?[^\"\'<>\s]+)?', public.text, re.I)
+    if not matches:
+        return ""
+    pdf_url = urljoin(base_url, html.unescape(matches[0]))
+    return f"Đề bài dạng PDF: [Tải file đề bài]({pdf_url})"
+
+
 def all_input_values(page: str, name: str) -> list[str]:
     pattern = r"<input\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>"
     values: list[str] = []
@@ -181,10 +208,15 @@ def fetch_source_problem(
     require(edit.ok, f"Source edit page failed: HTTP {edit.status_code}")
     require(f'name="code"' in edit.text or "name='code'" in edit.text, "Source edit page is not editable")
 
+    description = textarea_value(edit.text, "description").replace("~", "$")
+    if not description:
+        description = source_pdf_statement(source, base_url, problem_code)
+    description = absolute_markdown_asset_urls(description, base_url)
+
     info = ProblemInfo(
         code=input_value(edit.text, "code", problem_code),
         name=input_value(edit.text, "name"),
-        description=textarea_value(edit.text, "description").replace("~", "$"),
+        description=description,
         points=input_value(edit.text, "points", "100"),
         partial=checkbox_checked(edit.text, "partial"),
         time_limit=input_value(edit.text, "time_limit", "1"),

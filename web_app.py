@@ -1380,6 +1380,30 @@ def selected_values(page: str, name: str) -> list[str]:
     return values
 
 
+def select_option_values(page: str, name: str) -> list[str]:
+    match = re.search(r"<select\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>(.*?)</select>", page, re.S)
+    if not match:
+        return []
+    values = []
+    for option in re.finditer(r"<option\b([^>]*)>", match.group(1), re.S):
+        value = re.search(r"value=[\"']([^\"']*)", option.group(1))
+        if value:
+            values.append(html.unescape(value.group(1)))
+    return values
+
+
+def valid_select_value(page: str, name: str, wanted: str, default: str = "") -> str:
+    values = select_option_values(page, name)
+    if wanted and wanted in values:
+        return wanted
+    selected = selected_option(page, name, "")
+    if selected:
+        return selected
+    if default and default in values:
+        return default
+    return values[0] if values else wanted
+
+
 def select2_field_id(page: str, name: str) -> str:
     match = re.search(r'name="' + re.escape(name) + r'"[^>]*data-field_id="([^"]+)"', page)
     return html.unescape(match.group(1)) if match else ""
@@ -1472,19 +1496,21 @@ def fetch_contest_info(session, base_url: str, key: str) -> dict:
 def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest: str, author_ids: list[str] | None = None) -> list[tuple[str, str]]:
     start_date, start_clock = split_datetime(info.get("start_time", ""))
     end_date, end_clock = split_datetime(info.get("end_time", ""))
+    scoreboard_visibility = valid_select_value(page, "scoreboard_visibility", info.get("scoreboard_visibility") or "", "V")
+    format_name = valid_select_value(page, "format_name", info.get("format_name") or "", "vnoj")
     data: list[tuple[str, str]] = [
         ("csrfmiddlewaretoken", csrf_token(page)),
         ("key", info["key"]),
         ("name", info["name"]),
         ("description", statement_for_target(dest, info.get("description", ""))),
-        ("scoreboard_visibility", info.get("scoreboard_visibility") or "H"),
+        ("scoreboard_visibility", scoreboard_visibility),
         ("points_precision", info.get("points_precision") or "3"),
         ("start_time_0", start_date),
         ("start_time_1", start_clock),
         ("end_time_0", end_date),
         ("end_time_1", end_clock),
         ("time_limit", info.get("time_limit", "")),
-        ("format_name", info.get("format_name") or "vnoj"),
+        ("format_name", format_name),
         ("format_config", info.get("format_config", "")),
         ("frozen_last_minutes", info.get("frozen_last_minutes", "0") or "0"),
         ("problem_label_script", info.get("problem_label_script", "")),

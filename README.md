@@ -175,6 +175,8 @@ Tool chỉ chuyển contest, problem và test. Tool không chuyển bài nộp c
 
 Trong bảng chuẩn bị dữ liệu, mỗi contest có bảng con liệt kê từng bài, gồm mã bài, điểm, thứ tự, trạng thái và ô chọn/bỏ chọn bài đó khi chuyển.
 
+Khi chuyển bài/contest, nếu đề nguồn chỉ có file PDF mà không có nội dung Markdown, tool tự tạo mô tả dạng link `Tải file đề bài`. Nếu đề dùng ảnh hoặc link tương đối như `/martor/...`, `/pdf/...`, tool tự đổi sang URL tuyệt đối của web nguồn để khi sang web đích vẫn mở được.
+
 Sau khi bấm `Chuẩn bị dữ liệu`, trạng thái chuẩn bị của phần chuyển contest được lưu xuống `.runtime/contest_transfer_<prepare_id>/state.json`. Vì vậy nếu request xác nhận đi sang worker khác hoặc service vừa restart nhẹ, nút `Xác nhận chuyển contest` vẫn có thể tiếp tục dùng dữ liệu đã chuẩn bị.
 
 Nếu contest đã tồn tại ở đích, tool báo rõ `Contest đã tồn tại` và hiển thị `Link`, không tự ghi đè setup cũ.
