@@ -1571,6 +1571,37 @@ def create_contest(session, base_url: str, dest: str, info: dict, problem_ids: l
     return result.url
 
 
+def contest_transfer_root(prepare_id: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{32}", prepare_id or ""):
+        raise RuntimeError("Mã chuẩn bị contest không hợp lệ.")
+    return RUNTIME / ("contest_transfer_" + prepare_id)
+
+
+def save_prepared_contest_transfer(prepare_id: str, state: dict) -> None:
+    root = Path(state["root"])
+    root.mkdir(parents=True, exist_ok=True)
+    disk_state = {
+        "root": str(root),
+        "source": state["source"],
+        "dest": state["dest"],
+        "items": state["items"],
+    }
+    (root / "state.json").write_text(json.dumps(disk_state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_prepared_contest_transfer(prepare_id: str) -> dict | None:
+    if prepare_id in prepared_contest_transfers:
+        return prepared_contest_transfers[prepare_id]
+    root = contest_transfer_root(prepare_id)
+    state_file = root / "state.json"
+    if not state_file.exists():
+        return None
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    state["root"] = Path(state["root"])
+    prepared_contest_transfers[prepare_id] = state
+    return state
+
+
 @app.post("/api/prepare-contest-transfer")
 def api_prepare_contest_transfer():
     payload = request.get_json(force=True)
@@ -1626,7 +1657,9 @@ def api_prepare_contest_transfer():
             except Exception as exc:
                 rows.append({"original_key": key, "key": key, "name": "", "start_time": "", "end_time": "", "problems": [], "can_transfer": False, "status": "✗ Lỗi đọc nguồn"})
                 log_lines.append(f"✗ {key}: {exc}")
-        prepared_contest_transfers[prepare_id] = {"root": root, "source": source, "dest": dest, "items": items}
+        state = {"root": root, "source": source, "dest": dest, "items": items}
+        prepared_contest_transfers[prepare_id] = state
+        save_prepared_contest_transfer(prepare_id, state)
         return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
@@ -1636,7 +1669,8 @@ def api_prepare_contest_transfer():
 def api_confirm_contest_transfer():
     payload = request.get_json(force=True)
     prepare_id = payload.get("prepare_id")
-    if not prepare_id or prepare_id not in prepared_contest_transfers:
+    state = load_prepared_contest_transfer(prepare_id) if prepare_id else None
+    if not state:
         return jsonify({"error": "Dữ liệu chuẩn bị chuyển contest đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
     source = payload["source"]
     dest = payload["dest"]
@@ -1645,7 +1679,6 @@ def api_confirm_contest_transfer():
     result_rows = []
     log_lines = [f"Chuyển contest: {CONTEST_TARGETS[source]['label']} → {TARGETS[dest]['label']}"]
     try:
-        state = prepared_contest_transfers[prepare_id]
         source_account = payload["source_account"]
         dest_account = payload["dest_account"]
         src = login_hncode(CONTEST_TARGETS[source]["base_url"], source_account["username"], source_account["password"])
