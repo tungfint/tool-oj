@@ -159,6 +159,7 @@ Cần tạo 4 file:
 Hãy thực hiện cho toàn bộ các bài được cung cấp bên dưới."""
 
 app = Flask(__name__)
+PROGRESS_DIR = RUNTIME / "progress"
 prepared_uploads: dict[str, dict] = {}
 prepared_transfers: dict[str, dict] = {}
 prepared_contest_transfers: dict[str, dict] = {}
@@ -170,6 +171,38 @@ class ProblemAlreadyExists(RuntimeError):
 
 class ContestAlreadyExists(RuntimeError):
     pass
+
+
+def valid_progress_id(progress_id: str | None) -> str | None:
+    if progress_id and re.fullmatch(r"[0-9a-f]{32}", progress_id):
+        return progress_id
+    return None
+
+
+def progress_path(progress_id: str) -> Path:
+    return PROGRESS_DIR / f"{progress_id}.json"
+
+
+def progress_update(progress_id: str | None, **payload) -> None:
+    progress_id = valid_progress_id(progress_id)
+    if not progress_id:
+        return
+    PROGRESS_DIR.mkdir(parents=True, exist_ok=True)
+    path = progress_path(progress_id)
+    current = {}
+    if path.exists():
+        try:
+            current = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            current = {}
+    current.update(payload)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(current, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+
+
+def progress_finish(progress_id: str | None, ok: bool, message: str = "") -> None:
+    progress_update(progress_id, finished=True, ok=ok, message=message)
 
 
 @app.before_request
@@ -197,7 +230,7 @@ PAGE = r"""
   <title>Tool HNCode</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon-HNCode.svg">
   <style>
-    :root { --bg:#f5f7fb; --panel:#fff; --ink:#172033; --muted:#667085; --line:#d8dee9; --soft:#eef2f6; --accent:#0f766e; --ok:#087443; --bad:#b42318; --code:#101828; }
+    :root { --bg:#f5f7fb; --panel:#fff; --ink:#172033; --muted:#667085; --line:#d8dee9; --soft:#eef2f6; --accent:#0f766e; --ok:#087443; --bad:#b42318; --warn:#b54708; --code:#101828; }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--bg); color:var(--ink); font-family:"Segoe UI", Arial, sans-serif; font-size:14px; }
     header { background:var(--panel); border-bottom:1px solid var(--line); padding:16px 22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
@@ -234,6 +267,14 @@ PAGE = r"""
     .status { border-radius:999px; padding:4px 10px; background:var(--soft); color:var(--muted); font-weight:650; font-size:12px; }
     .status.ok { background:#dcfae6; color:var(--ok); }
     .status.err { background:#fee4e2; color:var(--bad); }
+    .status.warn { background:#fef0c7; color:var(--warn); }
+    .row-status.ok { color:var(--ok); font-weight:700; }
+    .row-status.err { color:var(--bad); font-weight:700; }
+    .row-status.warn { color:var(--warn); font-weight:700; }
+    .log-ok { color:#86efac; font-weight:700; }
+    .log-err { color:#fca5a5; font-weight:700; }
+    .log-warn { color:#fde68a; font-weight:700; }
+    .log-progress { color:#bfdbfe; font-weight:700; }
     .login-badge { display:inline-flex; align-items:center; min-height:24px; border-radius:999px; padding:3px 9px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:700; margin-top:6px; }
     .login-badge.ok { background:#dcfae6; color:var(--ok); }
     .login-badge.err { background:#fee4e2; color:var(--bad); }
@@ -454,8 +495,23 @@ let selectedZipFile = null;
 
 const logEl = document.getElementById("log");
 const statusEl = document.getElementById("jobStatus");
-function log(text) { logEl.textContent = text; logEl.scrollTop = logEl.scrollHeight; }
-function append(text) { logEl.textContent += "\n" + text; logEl.scrollTop = logEl.scrollHeight; }
+let logText = "Sẵn sàng.";
+const progressTimers = new Map();
+function colorizeLog(text) {
+  return String(text).split("\n").map(line => {
+    const trimmed = line.trim();
+    let cls = "";
+    if (trimmed.startsWith("✓") || trimmed.includes("Thành công") || trimmed.includes("Đã tạo") || trimmed.includes("Đã upload")) cls = "log-ok";
+    else if (trimmed.startsWith("✗") || trimmed.startsWith("Error:") || trimmed.includes("Lỗi")) cls = "log-err";
+    else if (trimmed.includes("đã tồn tại") || trimmed.includes("Đã tồn tại") || trimmed.includes("Bài đã tồn tại") || trimmed.includes("Contest đã tồn tại")) cls = "log-warn";
+    else if (trimmed.startsWith("Tiến độ:") || trimmed.startsWith("Đang ")) cls = "log-progress";
+    const safe = escapeHtml(line);
+    return cls ? `<span class="${cls}">${safe}</span>` : safe;
+  }).join("\n");
+}
+function renderLog() { logEl.innerHTML = colorizeLog(logText); logEl.scrollTop = logEl.scrollHeight; }
+function log(text) { logText = String(text); renderLog(); }
+function append(text) { logText += "\n" + String(text); renderLog(); }
 function status(text, cls="") { statusEl.textContent = text; statusEl.className = "status " + cls; }
 
 for (const button of document.querySelectorAll(".nav button")) {
@@ -665,18 +721,71 @@ async function prepareUploadRequest(settings) {
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
 }
+function newProgressId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replaceAll("-", "");
+  return Array.from({length: 32}, () => Math.floor(Math.random() * 16).toString(16)).join("");
+}
+function statusClass(text) {
+  const value = String(text || "");
+  if (value.startsWith("✓") || value.includes("Thành công") || value.includes("Đã đọc")) return "ok";
+  if (value.includes("đã tồn tại") || value.includes("Đã tồn tại") || value.includes("đã có") || value.includes("Đã có")) return "warn";
+  if (value.startsWith("✗") || value.includes("Lỗi")) return "err";
+  return "";
+}
+function setStatusCell(cell, text, link="") {
+  cell.className = "row-status " + statusClass(text);
+  const linkHtml = link ? ` <a class="problem-link" href="${escapeHtml(link)}" target="_blank" rel="noopener">Link</a>` : "";
+  cell.innerHTML = `${escapeHtml(text || "")}${linkHtml}`;
+}
+function progressMessage(data) {
+  const total = data.total || 0;
+  const done = data.done || 0;
+  const prefix = total ? `Tiến độ: ${done}/${total}` : "Tiến độ:";
+  return data.message ? `${prefix} - ${data.message}` : prefix;
+}
+function startProgressPolling(progressId, tableSelector, mode="problem") {
+  stopProgressPolling(progressId);
+  const timer = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/progress/${progressId}`, {cache: "no-store"});
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.rows) {
+        if (mode === "contest") applyContestStatuses(data.rows);
+        else if (tableSelector) applyStatuses(data.rows, tableSelector);
+      }
+      if (data.message || data.total) append(progressMessage(data));
+      if (data.finished) stopProgressPolling(progressId);
+    } catch (err) {
+      stopProgressPolling(progressId);
+    }
+  }, 1000);
+  progressTimers.set(progressId, timer);
+  return progressId;
+}
+function stopProgressPolling(progressId) {
+  const timer = progressTimers.get(progressId);
+  if (timer) clearInterval(timer);
+  progressTimers.delete(progressId);
+}
 
 document.getElementById("prepareUpload").onclick = async () => {
+  const progressId = newProgressId();
   try {
     status("running");
     log("Đang chuẩn bị dữ liệu...");
-    const data = await prepareUploadRequest(uploadSettings());
+    startProgressPolling(progressId, "#uploadTable");
+    const settings = uploadSettings();
+    settings.progress_id = progressId;
+    const data = await prepareUploadRequest(settings);
+    stopProgressPolling(progressId);
     preparedUpload = data.prepare_id;
     renderUploadTable(data.rows);
     document.getElementById("confirmUpload").disabled = false;
     log(data.log);
     status("ready", "ok");
   } catch (err) {
+    stopProgressPolling(progressId);
     log(String(err));
     status("failed", "err");
   }
@@ -710,38 +819,49 @@ function collectUploadRows() {
   }));
 }
 document.getElementById("confirmUpload").onclick = async () => {
+  const progressId = newProgressId();
   try {
     status("running");
     log("Đang up bài...");
     markRowsProcessing("#uploadTable", "Đang up...");
-    const data = await postJson("/api/confirm-upload", {prepare_id: preparedUpload, settings: uploadSettings(), rows: collectUploadRows()});
+    startProgressPolling(progressId, "#uploadTable");
+    const settings = uploadSettings();
+    settings.progress_id = progressId;
+    const data = await postJson("/api/confirm-upload", {prepare_id: preparedUpload, settings, rows: collectUploadRows(), progress_id: progressId});
+    stopProgressPolling(progressId);
     applyStatuses(data.rows, "#uploadTable");
     log(data.log);
     status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
   } catch (err) {
+    stopProgressPolling(progressId);
     log(String(err));
     status("failed", "err");
   }
 };
 
 document.getElementById("prepareTransfer").onclick = async () => {
+  const progressId = newProgressId();
   try {
     status("running");
     log("Đang đọc dữ liệu bài nguồn...");
     const source = document.getElementById("transferSource").value;
     const dest = document.getElementById("transferDest").value;
     const codes = document.getElementById("transferCodes").value.split(/[\s,]+/).filter(Boolean);
+    startProgressPolling(progressId, "#transferTable");
     const data = await postJson("/api/prepare-transfer", {
       source, dest, codes,
       source_account: accountPayload(source),
       settings: transferSettings(),
+      progress_id: progressId,
     });
+    stopProgressPolling(progressId);
     preparedTransfer = data.prepare_id;
     renderTransferTable(data.rows);
     document.getElementById("confirmTransfer").disabled = false;
     log(data.log);
     status("ready", "ok");
   } catch (err) {
+    stopProgressPolling(progressId);
     log(String(err));
     status("failed", "err");
   }
@@ -764,70 +884,85 @@ function renderTransferTable(rows) {
     </tr>`).join("")}</tbody></table>`;
 }
 document.getElementById("confirmTransfer").onclick = async () => {
+  const progressId = newProgressId();
   try {
     status("running");
     log("Đang chuyển bài...");
     const source = document.getElementById("transferSource").value;
     const dest = document.getElementById("transferDest").value;
     markRowsProcessing("#transferTable", "Đang chuyển...");
+    startProgressPolling(progressId, "#transferTable");
     const data = await postJson("/api/confirm-transfer", {
       prepare_id: preparedTransfer,
       source, dest, rows: collectRows("#transferTable"),
       settings: transferSettings(),
       source_account: accountPayload(source),
       dest_account: accountPayload(dest),
+      progress_id: progressId,
     });
+    stopProgressPolling(progressId);
     applyStatuses(data.rows, "#transferTable");
     log(data.log);
     status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
   } catch (err) {
+    stopProgressPolling(progressId);
     log(String(err));
     status("failed", "err");
   }
 };
 
 document.getElementById("prepareContestTransfer").onclick = async () => {
+  const progressId = newProgressId();
   try {
     status("running");
     log("Đang đọc dữ liệu contest nguồn...");
     const source = document.getElementById("contestSource").value;
     const dest = document.getElementById("contestDest").value;
     const codes = document.getElementById("contestCodes").value.split(/[\s,]+/).filter(Boolean);
+    startProgressPolling(progressId, "#contestTransferTable", "contest");
     const data = await postJson("/api/prepare-contest-transfer", {
       source, dest, codes,
       source_account: accountPayload(source),
       dest_account: accountPayload(dest),
       settings: contestTransferSettings(),
+      progress_id: progressId,
     });
+    stopProgressPolling(progressId);
     preparedContestTransfer = data.prepare_id;
     renderContestTransferTable(data.rows);
     document.getElementById("confirmContestTransfer").disabled = false;
     log(data.log);
     status("ready", "ok");
   } catch (err) {
+    stopProgressPolling(progressId);
     log(String(err));
     status("failed", "err");
   }
 };
 
 document.getElementById("confirmContestTransfer").onclick = async () => {
+  const progressId = newProgressId();
   try {
     status("running");
     log("Đang chuyển contest...");
     const source = document.getElementById("contestSource").value;
     const dest = document.getElementById("contestDest").value;
     markRowsProcessing("#contestTransferTable", "Đang chuyển...");
+    startProgressPolling(progressId, "#contestTransferTable", "contest");
     const data = await postJson("/api/confirm-contest-transfer", {
       prepare_id: preparedContestTransfer,
       source, dest, rows: collectContestRows(),
       source_account: accountPayload(source),
       dest_account: accountPayload(dest),
       settings: contestTransferSettings(),
+      progress_id: progressId,
     });
+    stopProgressPolling(progressId);
     applyContestStatuses(data.rows);
     log(data.log);
     status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
   } catch (err) {
+    stopProgressPolling(progressId);
     log(String(err));
     status("failed", "err");
   }
@@ -911,8 +1046,7 @@ function applyContestStatuses(rows) {
   for (const tr of document.querySelectorAll("#contestTransferTable > table > tbody > tr")) {
     const row = byOriginal.get(tr.dataset.original);
     if (!row) continue;
-    const link = row.link ? ` <a class="problem-link" href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : "";
-    tr.querySelector(".row-status").innerHTML = `${escapeHtml(row.status)}${link}`;
+    setStatusCell(tr.querySelector(".row-status"), row.status, row.link || "");
   }
 }
 
@@ -935,7 +1069,10 @@ function markRowsProcessing(selector, text="Đang xử lý...") {
   for (const tr of document.querySelectorAll(selector + " tbody tr")) {
     const selected = tr.querySelector(".row-selected");
     const statusCell = tr.querySelector(".row-status");
-    if (selected && selected.checked && statusCell) statusCell.textContent = text;
+    if (selected && selected.checked && statusCell) {
+      statusCell.className = "row-status";
+      statusCell.textContent = text;
+    }
   }
 }
 function applyStatuses(rows, selector) {
@@ -943,8 +1080,7 @@ function applyStatuses(rows, selector) {
   for (const tr of document.querySelectorAll(selector + " tbody tr")) {
     const row = byOriginal.get(tr.dataset.original);
     if (!row) continue;
-    const link = row.link ? ` <a class="problem-link" href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : "";
-    tr.querySelector(".row-status").innerHTML = `${escapeHtml(row.status)}${link}`;
+    setStatusCell(tr.querySelector(".row-status"), row.status, row.link || "");
   }
 }
 function escapeHtml(text) {
@@ -997,10 +1133,22 @@ def api_check_login():
         return jsonify({"ok": False, "message": str(exc)[:180]})
 
 
+@app.get("/api/progress/<progress_id>")
+def api_progress(progress_id: str):
+    if not valid_progress_id(progress_id):
+        return jsonify({"error": "progress_id không hợp lệ"}), 400
+    path = progress_path(progress_id)
+    if not path.exists():
+        return jsonify({"phase": "waiting", "done": 0, "total": 0, "message": ""})
+    return jsonify(json.loads(path.read_text(encoding="utf-8")))
+
+
 @app.post("/api/prepare-upload")
 def api_prepare_upload():
+    progress_id = None
     try:
         payload = upload_payload()
+        progress_id = payload.get("progress_id")
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / prepare_id
         source_dir = root / "source"
@@ -1014,7 +1162,8 @@ def api_prepare_upload():
         tests: dict[str, GeneratedTests] = {}
         rows = []
         log_lines = [f"Đã đọc {len(bundles)} bài từ {zip_path.name}."]
-        for bundle in bundles:
+        progress_update(progress_id, phase="prepare-upload", done=0, total=len(bundles), rows=rows, message="Bắt đầu chuẩn bị dữ liệu")
+        for index, bundle in enumerate(bundles, 1):
             generated = generate_tests(bundle, build_root)
             tests[bundle.code] = generated
             rows.append(
@@ -1028,9 +1177,12 @@ def api_prepare_upload():
             )
             source = "gentest" if bundle.generator else "zip có sẵn"
             log_lines.append(f"- {bundle.code}: {bundle.name}, {len(generated.input_files)} test, nguồn {source}.")
+            progress_update(progress_id, phase="prepare-upload", done=index, total=len(bundles), rows=rows, message=f"{bundle.code}: đã chuẩn bị {len(generated.input_files)} test")
         prepared_uploads[prepare_id] = {"root": root, "bundles": {b.code: b for b in bundles}, "tests": tests}
+        progress_finish(progress_id, True, f"Đã chuẩn bị {len(bundles)}/{len(bundles)} bài")
         return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
         return jsonify({"error": str(exc)}), 400
 
 
@@ -1056,6 +1208,7 @@ def receive_zip_file(root: Path, payload: dict) -> Path:
 @app.post("/api/confirm-upload")
 def api_confirm_upload():
     payload = request.get_json(force=True)
+    progress_id = payload.get("progress_id") or payload.get("settings", {}).get("progress_id")
     try:
         prepare_id = payload.get("prepare_id")
         if not prepare_id or prepare_id not in prepared_uploads:
@@ -1067,14 +1220,16 @@ def api_confirm_upload():
             ), 400
         state = prepared_uploads[prepare_id]
         target = payload["settings"]["target"]
-        result_rows, log_lines = upload_rows(target, payload["settings"], payload["rows"], state)
+        result_rows, log_lines = upload_rows(target, payload["settings"], payload["rows"], state, progress_id)
         ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
+        progress_finish(progress_id, ok, "Đã hoàn tất up bài")
         return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
     except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
-def upload_rows(target: str, settings: dict, rows: list[dict], state: dict) -> tuple[list[dict], list[str]]:
+def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, progress_id: str | None = None) -> tuple[list[dict], list[str]]:
     target_info = TARGETS[target]
     log_lines = [f"Đích: {target_info['label']}", "Tạo bài qua admin form: /admin/judge/problem/add/"]
     selected_language_ids = language_ids_for_target(target, settings.get("languages", []))
@@ -1085,6 +1240,9 @@ def upload_rows(target: str, settings: dict, rows: list[dict], state: dict) -> t
 
     session = login_hncode(target_info["base_url"], settings["username"], settings["password"])
     result_rows = []
+    total = len([row for row in rows if row.get("selected")])
+    done = 0
+    progress_update(progress_id, phase="confirm-upload", done=done, total=total, rows=result_rows, message="Bắt đầu up bài")
     for row in rows:
         row = dict(row)
         if not row.get("selected"):
@@ -1104,6 +1262,8 @@ def upload_rows(target: str, settings: dict, rows: list[dict], state: dict) -> t
             row["status"] = "✗ Lỗi"
             log_lines.append(f"✗ {row.get('code')}: {exc}")
         result_rows.append(row)
+        done += 1
+        progress_update(progress_id, phase="confirm-upload", done=done, total=total, rows=result_rows, message=f"{row.get('code')}: {row.get('status')}")
     return result_rows, log_lines
 
 
@@ -1790,6 +1950,7 @@ def load_prepared_contest_transfer(prepare_id: str) -> dict | None:
 @app.post("/api/prepare-contest-transfer")
 def api_prepare_contest_transfer():
     payload = request.get_json(force=True)
+    progress_id = payload.get("progress_id")
     source = payload["source"]
     dest = payload["dest"]
     codes = [code.strip() for code in payload.get("codes", []) if code.strip()]
@@ -1807,7 +1968,8 @@ def api_prepare_contest_transfer():
         rows = []
         items = {}
         log_lines = [f"Đọc contest nguồn: {source_info['label']} → {TARGETS[dest]['label']}"]
-        for key in codes:
+        progress_update(progress_id, phase="prepare-contest-transfer", done=0, total=len(codes), rows=rows, message="Bắt đầu đọc contest nguồn")
+        for index, key in enumerate(codes, 1):
             try:
                 info = fetch_contest_info(src, source_info["base_url"], key)
                 dest_exists = False
@@ -1842,20 +2004,25 @@ def api_prepare_contest_transfer():
             except Exception as exc:
                 rows.append({"original_key": key, "key": key, "name": "", "start_time": "", "end_time": "", "problems": [], "can_transfer": False, "status": "✗ Lỗi đọc nguồn"})
                 log_lines.append(f"✗ {key}: {exc}")
+            progress_update(progress_id, phase="prepare-contest-transfer", done=index, total=len(codes), rows=rows, message=f"{key}: {rows[-1]['status']}")
         state = {"root": root, "source": source, "dest": dest, "items": items}
         prepared_contest_transfers[prepare_id] = state
         save_prepared_contest_transfer(prepare_id, state)
+        progress_finish(progress_id, True, f"Đã đọc {len(rows)}/{len(codes)} contest")
         return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
         return jsonify({"error": str(exc)}), 400
 
 
 @app.post("/api/confirm-contest-transfer")
 def api_confirm_contest_transfer():
     payload = request.get_json(force=True)
+    progress_id = payload.get("progress_id")
     prepare_id = payload.get("prepare_id")
     state = load_prepared_contest_transfer(prepare_id) if prepare_id else None
     if not state:
+        progress_finish(progress_id, False, "Dữ liệu chuẩn bị chuyển contest đã hết hạn")
         return jsonify({"error": "Dữ liệu chuẩn bị chuyển contest đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
     source = payload["source"]
     dest = payload["dest"]
@@ -1870,6 +2037,9 @@ def api_confirm_contest_transfer():
         dst = login_hncode(TARGETS[dest]["base_url"], dest_account["username"], dest_account["password"])
         root = state["root"]
         language_ids = list(TARGETS[dest]["languages"].values())
+        total = len([row for row in rows if row.get("selected")])
+        done = 0
+        progress_update(progress_id, phase="confirm-contest-transfer", done=done, total=total, rows=result_rows, message="Bắt đầu chuyển contest")
         for row in rows:
             row = dict(row)
             if not row.get("selected"):
@@ -1931,9 +2101,13 @@ def api_confirm_contest_transfer():
                 row["status"] = "✗ Lỗi"
                 log_lines.append(f"✗ {row.get('key')}: {exc}")
             result_rows.append(row)
+            done += 1
+            progress_update(progress_id, phase="confirm-contest-transfer", done=done, total=total, rows=result_rows, message=f"{row.get('key')}: {row.get('status')}")
         ok = all((not row.get("selected")) or row.get("status", "").startswith("✓") for row in result_rows)
+        progress_finish(progress_id, ok, "Đã hoàn tất chuyển contest")
         return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
     except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
@@ -1980,6 +2154,7 @@ def api_create_contest():
 @app.post("/api/prepare-transfer")
 def api_prepare_transfer():
     payload = request.get_json(force=True)
+    progress_id = payload.get("progress_id")
     source = payload["source"]
     dest = payload["dest"]
     codes = [code.strip() for code in payload.get("codes", []) if code.strip()]
@@ -1996,7 +2171,8 @@ def api_prepare_transfer():
         rows = []
         state_items = {}
         log_lines = [f"Đọc dữ liệu nguồn: {TARGETS[source]['label']} → {TARGETS[dest]['label']}"]
-        for code in codes:
+        progress_update(progress_id, phase="prepare-transfer", done=0, total=len(codes), rows=rows, message="Bắt đầu đọc dữ liệu nguồn")
+        for index, code in enumerate(codes, 1):
             try:
                 info, zip_path, cases, zip_url = fetch_source_problem(src, TARGETS[source]["base_url"], code, root)
                 state_items[code] = {"info": info, "zip_path": zip_path, "cases": cases, "zip_url": zip_url}
@@ -2033,15 +2209,19 @@ def api_prepare_transfer():
                     }
                 )
                 log_lines.append(f"✗ {code}: {exc}")
+            progress_update(progress_id, phase="prepare-transfer", done=index, total=len(codes), rows=rows, message=f"{code}: {rows[-1]['status']}")
         prepared_transfers[prepare_id] = {"root": root, "source": source, "dest": dest, "items": state_items}
+        progress_finish(progress_id, True, f"Đã đọc {len(rows)}/{len(codes)} bài")
         return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
         return jsonify({"error": str(exc)}), 400
 
 
 @app.post("/api/confirm-transfer")
 def api_confirm_transfer():
     payload = request.get_json(force=True)
+    progress_id = payload.get("progress_id")
     rows = payload["rows"]
     source = payload["source"]
     dest = payload["dest"]
@@ -2056,6 +2236,7 @@ def api_confirm_transfer():
             row["status"] = "✗ Nguồn và đích trùng nhau"
             result_rows.append(row)
         log_lines.append("Nguồn và đích đang trùng nhau, không thực hiện chuyển.")
+        progress_finish(progress_id, False, "Nguồn và đích đang trùng nhau")
         return jsonify({"ok": False, "rows": result_rows, "log": "\n".join(log_lines)})
 
     try:
@@ -2073,6 +2254,9 @@ def api_confirm_transfer():
         out_dir = state["root"]
         language_ids = language_ids_for_target(dest, settings.get("languages", []))
 
+        total = len([row for row in rows if row.get("selected")])
+        done = 0
+        progress_update(progress_id, phase="confirm-transfer", done=done, total=total, rows=result_rows, message="Bắt đầu chuyển bài")
         for row in rows:
             row = dict(row)
             if not row.get("selected"):
@@ -2104,9 +2288,13 @@ def api_confirm_transfer():
                 row["status"] = "✗ Lỗi"
                 log_lines.append(f"✗ {row.get('code')}: {exc}")
             result_rows.append(row)
+            done += 1
+            progress_update(progress_id, phase="confirm-transfer", done=done, total=total, rows=result_rows, message=f"{row.get('code')}: {row.get('status')}")
         ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
+        progress_finish(progress_id, ok, "Đã hoàn tất chuyển bài")
         return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
     except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
