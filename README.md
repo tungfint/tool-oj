@@ -158,7 +158,13 @@ Luồng sử dụng:
 Khi chuyển thành công, cột trạng thái có chữ `Link` để mở trang bài ở hệ thống đích.
 Nếu mã bài đích đã tồn tại, dòng đó sẽ báo `Bài đã tồn tại`, bị bỏ qua và các dòng khác vẫn tiếp tục chuyển.
 
-Riêng nguồn `TinHocTre`, tool đăng nhập qua `/accounts/login/` thay vì admin form `/admin/judge/problem/add/`. Nếu TinHocTre bật WAF/challenge và không trả form đăng nhập, tool sẽ báo rõ để xử lý whitelist/tắt challenge cho đường đăng nhập.
+Riêng nguồn `TinHocTre`, tool đăng nhập qua `/accounts/login/` thay vì admin form `/admin/judge/problem/add/`. Nếu TinHocTre bật WAF/challenge và không trả form đăng nhập, hãy dùng ô `Cookie TinHocTre` trong tab `Tài khoản & Hướng dẫn`:
+
+1. Mở `https://tinhoctre.vn` trên trình duyệt và đăng nhập admin.
+2. Mở DevTools `F12` → tab `Network`.
+3. Bấm vào một request tới `tinhoctre.vn`, ví dụ `/problem/<ma_bai>/edit`.
+4. Trong `Request Headers`, copy nguyên dòng `Cookie`.
+5. Dán vào ô `Cookie TinHocTre`, bấm `Lưu tạm`, rồi chạy lại `Chuyển bài`.
 
 ## Tab Chuyển contest
 

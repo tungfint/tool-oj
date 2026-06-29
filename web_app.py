@@ -12,6 +12,7 @@ import uuid
 from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urljoin
+from http.cookies import SimpleCookie
 
 from flask import Flask, Response, jsonify, render_template_string, request
 
@@ -38,6 +39,7 @@ from upload_tinhoctre_batch import (
     generate_tests,
     login as login_tinhoctre_public,
     problem_exists as tinhoctre_problem_exists,
+    session as tinhoctre_session,
     statement_body_text,
     submit_solution,
     upload_tests as upload_tinhoctre_tests,
@@ -273,6 +275,9 @@ PAGE = r"""
           <div><label>HNCode password</label><input id="acct_hncode_pass" type="password"></div>
           <div><label>TinHocTre password</label><input id="acct_tinhoctre_pass" type="password"></div>
         </div>
+        <label>Cookie TinHocTre nếu bị WAF/challenge</label>
+        <textarea id="acct_tinhoctre_cookie" placeholder="Dán nguyên dòng Cookie của tinhoctre.vn sau khi đăng nhập, ví dụ: sessionid=...; csrftoken=...; ..."></textarea>
+        <p>Nếu TinHocTre chặn đăng nhập tự động, hãy đăng nhập TinHocTre trên trình duyệt, mở DevTools → Network, chọn một request tới tinhoctre.vn rồi copy Request Header `Cookie` dán vào ô này.</p>
         <div class="grid-2">
           <div><label>HNOJ Contest user</label><input id="acct_contest_hnoj_user" type="text" value="admin"></div>
           <div><label>HNOJ Contest password</label><input id="acct_contest_hnoj_pass" type="password"></div>
@@ -465,6 +470,7 @@ const accountFields = {
   hncode_pass: document.getElementById("acct_hncode_pass"),
   tinhoctre_user: document.getElementById("acct_tinhoctre_user"),
   tinhoctre_pass: document.getElementById("acct_tinhoctre_pass"),
+  tinhoctre_cookie: document.getElementById("acct_tinhoctre_cookie"),
   contest_hnoj_user: document.getElementById("acct_contest_hnoj_user"),
   contest_hnoj_pass: document.getElementById("acct_contest_hnoj_pass"),
 };
@@ -481,7 +487,7 @@ loadAccounts();
 document.getElementById("saveAccounts").onclick = () => { saveAccounts(); append("Đã lưu tạm tài khoản."); };
 document.getElementById("clearAccounts").onclick = () => {
   for (const key of Object.keys(accountFields)) localStorage.removeItem("chuyenbai." + key);
-  for (const [key, input] of Object.entries(accountFields)) if (key.endsWith("_pass")) input.value = "";
+  for (const [key, input] of Object.entries(accountFields)) if (key.endsWith("_pass") || key.endsWith("_cookie")) input.value = "";
   append("Đã xóa thông tin đã lưu.");
 };
 document.getElementById("toggleGuide").onclick = () => document.getElementById("promptGuide").classList.toggle("hidden");
@@ -547,10 +553,12 @@ function selectedTransferLanguages() {
   return [...document.querySelectorAll("#transferLanguages input:checked")].map(item => item.value);
 }
 function accountPayload(target) {
-  return {
+  const payload = {
     username: accountFields[target + "_user"].value,
     password: accountFields[target + "_pass"].value,
   };
+  if (target === "tinhoctre") payload.cookie = accountFields.tinhoctre_cookie.value;
+  return payload;
 }
 function uploadSettings() {
   const target = document.getElementById("uploadTarget").value;
@@ -1310,10 +1318,46 @@ def test_data_url(base_url: str, code: str) -> str:
     return urljoin(base_url, f"/problem/{code}/test_data")
 
 
+def session_from_cookie(cookie_header: str):
+    s = tinhoctre_session()
+    parsed = SimpleCookie()
+    parsed.load(cookie_header)
+    for key, morsel in parsed.items():
+        s.cookies.set(key, morsel.value, domain=".tinhoctre.vn")
+        s.cookies.set(key, morsel.value, domain="tinhoctre.vn")
+    return s
+
+
+def login_tinhoctre_source(account: dict, first_code: str):
+    base_url = TARGETS["tinhoctre"]["base_url"]
+    cookie_header = (account.get("cookie") or "").strip()
+    if cookie_header:
+        s = session_from_cookie(cookie_header)
+        check = s.get(urljoin(base_url, f"/problem/{first_code}/edit"), timeout=30)
+        if check.ok and (f'name="code"' in check.text or "name='code'" in check.text):
+            return s
+        raise RuntimeError(
+            "Cookie TinHocTre chưa dùng được để đọc trang sửa bài. "
+            "Hãy copy lại Cookie sau khi đã đăng nhập đúng tài khoản trên tinhoctre.vn."
+        )
+    try:
+        return login_tinhoctre_public(base_url, account.get("username", ""), account.get("password", ""), "/problems/create")
+    except Exception as exc:
+        message = str(exc)
+        if "csrf" in message.lower() or "login page failed" in message.lower():
+            raise RuntimeError(
+                "TinHocTre không trả form đăng nhập cho tool vì WAF/challenge nên không lấy được CSRF. "
+                "Cách xử lý nhanh: đăng nhập tinhoctre.vn trên trình duyệt, copy Request Header Cookie và dán vào ô Cookie TinHocTre trong tab Tài khoản."
+            ) from exc
+        raise
+
+
 def login_problem_source(target: str, account: dict, first_code: str):
     base_url = TARGETS[target]["base_url"]
     username = account.get("username", "")
     password = account.get("password", "")
+    if target == "tinhoctre":
+        return login_tinhoctre_source(account, first_code)
     if target == "tinhoctre":
         try:
             return login_tinhoctre_public(base_url, username, password, "/problems/create")
