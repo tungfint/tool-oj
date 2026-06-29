@@ -155,6 +155,19 @@ def source_pdf_statement(source: requests.Session, base_url: str, problem_code: 
     return f"Đề bài dạng PDF: [Tải file đề bài]({pdf_url})"
 
 
+def response_problem_hint(response: requests.Response, action: str) -> str:
+    waf = response.headers.get("x-amzn-waf-action") or response.headers.get("X-Amzn-Waf-Action")
+    if response.status_code == 202 or waf:
+        return (
+            f"{action} bị WAF/challenge chặn (HTTP {response.status_code}). "
+            "Cookie đang dùng có thể chỉ hợp lệ với trình duyệt/IP đã lấy cookie, không hợp lệ với VPS/tool. "
+            "Hãy chạy tool local trên đúng máy lấy cookie, hoặc whitelist IP VPS/tắt challenge cho TinHocTre."
+        )
+    if "login" in response.url or "/accounts/login" in response.text:
+        return f"{action} bị chuyển về trang đăng nhập. Cookie/session TinHocTre đã hết hạn hoặc chưa đăng nhập đúng tài khoản."
+    return ""
+
+
 def all_input_values(page: str, name: str) -> list[str]:
     pattern = r"<input\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>"
     values: list[str] = []
@@ -205,8 +218,17 @@ def fetch_source_problem(
 ) -> tuple[ProblemInfo, Path, list[TestCase], str]:
     edit_url = urljoin(base_url, f"/problem/{problem_code}/edit")
     edit = source.get(edit_url)
-    require(edit.ok, f"Source edit page failed: HTTP {edit.status_code}")
-    require(f'name="code"' in edit.text or "name='code'" in edit.text, "Source edit page is not editable")
+    require(edit.ok, response_problem_hint(edit, "Đọc trang sửa bài nguồn") or f"Source edit page failed: HTTP {edit.status_code}")
+    if not (f'name="code"' in edit.text or "name='code'" in edit.text):
+        hint = response_problem_hint(edit, "Đọc trang sửa bài nguồn")
+        require(
+            False,
+            hint
+            or (
+                "Không đọc được trang sửa bài nguồn. "
+                "Tài khoản/cookie có thể không có quyền sửa bài này, hoặc mã bài không tồn tại ở nguồn đã chọn."
+            ),
+        )
 
     description = textarea_value(edit.text, "description").replace("~", "$")
     if not description:
@@ -228,14 +250,17 @@ def fetch_source_problem(
 
     test_url = urljoin(base_url, f"/problem/{problem_code}/test_data")
     test_page = source.get(test_url)
-    require(test_page.ok, f"Source test_data page failed: HTTP {test_page.status_code}")
+    require(test_page.ok, response_problem_hint(test_page, "Đọc trang test nguồn") or f"Source test_data page failed: HTTP {test_page.status_code}")
 
     zip_match = re.search(r'href=[\"\']([^\"\']+\.zip)[\"\']', test_page.text)
     require(zip_match, "Could not find a source .zip test archive")
     zip_url = urljoin(base_url, html.unescape(zip_match.group(1)))
     zip_path = out_dir / f"{problem_code}_{Path(zip_url).name}"
     archive = source.get(zip_url)
-    require(archive.ok and archive.content, f"Source test archive download failed: HTTP {archive.status_code}")
+    require(
+        archive.ok and archive.content,
+        response_problem_hint(archive, "Tải file zip test nguồn") or f"Source test archive download failed: HTTP {archive.status_code}",
+    )
     zip_path.write_bytes(archive.content)
 
     cases = parse_source_cases(test_page.text)
