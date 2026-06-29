@@ -234,6 +234,9 @@ PAGE = r"""
     .status { border-radius:999px; padding:4px 10px; background:var(--soft); color:var(--muted); font-weight:650; font-size:12px; }
     .status.ok { background:#dcfae6; color:var(--ok); }
     .status.err { background:#fee4e2; color:var(--bad); }
+    .login-badge { display:inline-flex; align-items:center; min-height:24px; border-radius:999px; padding:3px 9px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:700; margin-top:6px; }
+    .login-badge.ok { background:#dcfae6; color:var(--ok); }
+    .login-badge.err { background:#fee4e2; color:var(--bad); }
     table { width:100%; border-collapse:collapse; margin-top:14px; font-size:13px; }
     th, td { border-bottom:1px solid var(--line); padding:8px; vertical-align:top; text-align:left; }
     th { background:#f8fafc; font-weight:700; }
@@ -266,9 +269,9 @@ PAGE = r"""
         <h2>Tài khoản & Hướng dẫn</h2>
         <p>Lưu tạm tài khoản trên trình duyệt máy này. Khi chạy tác vụ, form sẽ tự điền các thông tin đã lưu.</p>
         <div class="grid-3">
-          <div><label>HNOJ user</label><input id="acct_hnoj_user" type="text" value="hncode"></div>
-          <div><label>HNCode user</label><input id="acct_hncode_user" type="text" value="hncode"></div>
-          <div><label>TinHocTre user</label><input id="acct_tinhoctre_user" type="text" value="admin"></div>
+          <div><label>HNOJ user</label><input id="acct_hnoj_user" type="text" value="hncode"><span id="login_hnoj" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>HNCode user</label><input id="acct_hncode_user" type="text" value="hncode"><span id="login_hncode" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>TinHocTre user</label><input id="acct_tinhoctre_user" type="text" value="admin"><span id="login_tinhoctre" class="login-badge">Chưa kiểm tra</span></div>
         </div>
         <div class="grid-3">
           <div><label>HNOJ password</label><input id="acct_hnoj_pass" type="password"></div>
@@ -279,11 +282,12 @@ PAGE = r"""
         <textarea id="acct_tinhoctre_cookie" placeholder="Dán nguyên dòng Cookie của tinhoctre.vn sau khi đăng nhập, ví dụ: sessionid=...; csrftoken=...; ..."></textarea>
         <p>Nếu TinHocTre chặn đăng nhập tự động, hãy đăng nhập TinHocTre trên trình duyệt, mở DevTools → Network, chọn một request tới tinhoctre.vn rồi copy Request Header `Cookie` dán vào ô này.</p>
         <div class="grid-2">
-          <div><label>HNOJ Contest user</label><input id="acct_contest_hnoj_user" type="text" value="admin"></div>
+          <div><label>HNOJ Contest user</label><input id="acct_contest_hnoj_user" type="text" value="admin"><span id="login_contest_hnoj" class="login-badge">Chưa kiểm tra</span></div>
           <div><label>HNOJ Contest password</label><input id="acct_contest_hnoj_pass" type="password"></div>
         </div>
         <div class="actions">
           <button class="action primary" type="button" id="saveAccounts">Lưu tạm</button>
+          <button class="action" type="button" id="checkAccounts">Kiểm tra đăng nhập</button>
           <button class="action" type="button" id="clearAccounts">Xóa thông tin đã lưu</button>
         </div>
         <button class="action" type="button" id="toggleGuide">Ẩn / Hiện hướng dẫn prompt</button>
@@ -300,7 +304,7 @@ PAGE = r"""
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
-            </select>
+            </select><span id="uploadTargetLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
           <div>
             <label>File zip bộ bài</label>
@@ -346,8 +350,8 @@ PAGE = r"""
         <h2>Chuyển bài</h2>
         <p>Chọn nguồn, đích và danh sách mã bài. Tool sẽ lấy đề/test từ nguồn rồi tạo bài và upload test ở đích.</p>
         <div class="grid-2">
-          <div><label>Nguồn</label><select id="transferSource"><option value="tinhoctre">TinHocTre</option><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option></select></div>
-          <div><label>Đích</label><select id="transferDest"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option><option value="tinhoctre">TinHocTre</option></select></div>
+          <div><label>Nguồn</label><select id="transferSource"><option value="tinhoctre">TinHocTre</option><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option></select><span id="transferSourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Đích</label><select id="transferDest"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option><option value="tinhoctre">TinHocTre</option></select><span id="transferDestLogin" class="login-badge">Chưa kiểm tra</span></div>
         </div>
         <div class="grid-2">
           <div><label>Giới hạn thời gian mặc định</label><input id="transferTimeLimit" type="text" value="1.0"></div>
@@ -389,7 +393,7 @@ PAGE = r"""
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
-            </select>
+            </select><span id="contestSourceLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
           <div>
             <label>Đích</label>
@@ -397,7 +401,7 @@ PAGE = r"""
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
-            </select>
+            </select><span id="contestDestLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
         </div>
         <label>Danh sách mã contest cần chuyển</label>
@@ -485,6 +489,7 @@ function saveAccounts() {
 }
 loadAccounts();
 document.getElementById("saveAccounts").onclick = () => { saveAccounts(); append("Đã lưu tạm tài khoản."); };
+document.getElementById("checkAccounts").onclick = () => { log("Đang kiểm tra đăng nhập các trang..."); checkAllAccounts(); };
 document.getElementById("clearAccounts").onclick = () => {
   for (const key of Object.keys(accountFields)) localStorage.removeItem("chuyenbai." + key);
   for (const [key, input] of Object.entries(accountFields)) if (key.endsWith("_pass") || key.endsWith("_cookie")) input.value = "";
@@ -543,8 +548,16 @@ function renderTransferLanguages() {
 }
 document.getElementById("uploadTarget").addEventListener("change", renderLanguages);
 document.getElementById("transferDest").addEventListener("change", renderTransferLanguages);
+document.getElementById("uploadTarget").addEventListener("change", checkUploadLogin);
+document.getElementById("transferSource").addEventListener("change", checkTransferLogins);
+document.getElementById("transferDest").addEventListener("change", checkTransferLogins);
+document.getElementById("transferCodes").addEventListener("blur", checkTransferLogins);
+document.getElementById("contestSource").addEventListener("change", checkContestLogins);
+document.getElementById("contestDest").addEventListener("change", checkContestLogins);
+document.getElementById("contestCodes").addEventListener("blur", checkContestLogins);
 renderLanguages();
 renderTransferLanguages();
+setTimeout(() => { checkUploadLogin(); checkTransferLogins(); checkContestLogins(); }, 300);
 
 function selectedLanguages() {
   return [...document.querySelectorAll("#languages input:checked")].map(item => item.value);
@@ -559,6 +572,47 @@ function accountPayload(target) {
   };
   if (target === "tinhoctre") payload.cookie = accountFields.tinhoctre_cookie.value;
   return payload;
+}
+function firstToken(value) {
+  return (value || "").split(/[\s,]+/).filter(Boolean)[0] || "";
+}
+function setLoginBadge(id, state, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = "login-badge " + (state || "");
+}
+async function checkLogin(target, badgeId, probeCode="") {
+  setLoginBadge(badgeId, "", "Đang kiểm tra...");
+  try {
+    const data = await postJson("/api/check-login", {target, account: accountPayload(target), probe_code: probeCode});
+    setLoginBadge(badgeId, data.ok ? "ok" : "err", data.ok ? "✓ Đăng nhập OK" : "✗ " + (data.message || "Lỗi"));
+    return data.ok;
+  } catch (err) {
+    setLoginBadge(badgeId, "err", "✗ " + String(err).replace(/^Error:\s*/, ""));
+    return false;
+  }
+}
+async function checkAllAccounts() {
+  saveAccounts();
+  await Promise.all([
+    checkLogin("hnoj", "login_hnoj"),
+    checkLogin("hncode", "login_hncode"),
+    checkLogin("tinhoctre", "login_tinhoctre", firstToken(document.getElementById("transferCodes").value)),
+    checkLogin("contest_hnoj", "login_contest_hnoj"),
+  ]);
+}
+function checkUploadLogin() {
+  checkLogin(document.getElementById("uploadTarget").value, "uploadTargetLogin");
+}
+function checkTransferLogins() {
+  const probe = firstToken(document.getElementById("transferCodes").value);
+  checkLogin(document.getElementById("transferSource").value, "transferSourceLogin", probe);
+  checkLogin(document.getElementById("transferDest").value, "transferDestLogin");
+}
+function checkContestLogins() {
+  checkLogin(document.getElementById("contestSource").value, "contestSourceLogin");
+  checkLogin(document.getElementById("contestDest").value, "contestDestLogin");
 }
 function uploadSettings() {
   const target = document.getElementById("uploadTarget").value;
@@ -659,6 +713,7 @@ document.getElementById("confirmUpload").onclick = async () => {
   try {
     status("running");
     log("Đang up bài...");
+    markRowsProcessing("#uploadTable", "Đang up...");
     const data = await postJson("/api/confirm-upload", {prepare_id: preparedUpload, settings: uploadSettings(), rows: collectUploadRows()});
     applyStatuses(data.rows, "#uploadTable");
     log(data.log);
@@ -714,6 +769,7 @@ document.getElementById("confirmTransfer").onclick = async () => {
     log("Đang chuyển bài...");
     const source = document.getElementById("transferSource").value;
     const dest = document.getElementById("transferDest").value;
+    markRowsProcessing("#transferTable", "Đang chuyển...");
     const data = await postJson("/api/confirm-transfer", {
       prepare_id: preparedTransfer,
       source, dest, rows: collectRows("#transferTable"),
@@ -760,6 +816,7 @@ document.getElementById("confirmContestTransfer").onclick = async () => {
     log("Đang chuyển contest...");
     const source = document.getElementById("contestSource").value;
     const dest = document.getElementById("contestDest").value;
+    markRowsProcessing("#contestTransferTable", "Đang chuyển...");
     const data = await postJson("/api/confirm-contest-transfer", {
       prepare_id: preparedContestTransfer,
       source, dest, rows: collectContestRows(),
@@ -874,6 +931,13 @@ function collectRows(selector) {
 function setRowSelection(selector, checked) {
   document.querySelectorAll(selector + " .row-selected").forEach(item => { item.checked = checked; });
 }
+function markRowsProcessing(selector, text="Đang xử lý...") {
+  for (const tr of document.querySelectorAll(selector + " tbody tr")) {
+    const selected = tr.querySelector(".row-selected");
+    const statusCell = tr.querySelector(".row-status");
+    if (selected && selected.checked && statusCell) statusCell.textContent = text;
+  }
+}
 function applyStatuses(rows, selector) {
   const byOriginal = new Map(rows.map(row => [row.original_code, row]));
   for (const tr of document.querySelectorAll(selector + " tbody tr")) {
@@ -900,6 +964,37 @@ def index():
         prompt_guide=PROMPT_GUIDE,
         targets_json=json.dumps(TARGETS, ensure_ascii=False),
     )
+
+
+@app.post("/api/check-login")
+def api_check_login():
+    payload = request.get_json(force=True)
+    target = payload.get("target", "")
+    account = payload.get("account", {})
+    probe_code = (payload.get("probe_code") or "").strip()
+    try:
+        if target == "tinhoctre":
+            if account.get("cookie"):
+                session = session_from_cookie(account.get("cookie", ""))
+                probe_url = f"/problem/{probe_code}/edit" if probe_code else "/problems/create"
+                page = session.get(urljoin(TARGETS[target]["base_url"], probe_url), timeout=30)
+                if page.status_code == 202 or page.headers.get("x-amzn-waf-action"):
+                    return jsonify({"ok": False, "message": "WAF/challenge"})
+                if probe_code and not (f'name="code"' in page.text or "name='code'" in page.text):
+                    return jsonify({"ok": False, "message": "Cookie không mở được trang sửa bài"})
+                if "/accounts/login" in page.url or "/accounts/login" in page.text:
+                    return jsonify({"ok": False, "message": "Cookie hết hạn"})
+                return jsonify({"ok": True, "message": "Đăng nhập OK"})
+            login_tinhoctre_public(TARGETS[target]["base_url"], account.get("username", ""), account.get("password", ""), "/problems/create")
+            return jsonify({"ok": True, "message": "Đăng nhập OK"})
+        if target == "contest_hnoj":
+            info = CONTEST_TARGETS[target]
+        else:
+            info = TARGETS[target]
+        login_hncode(info["base_url"], account.get("username", ""), account.get("password", ""))
+        return jsonify({"ok": True, "message": "Đăng nhập OK"})
+    except Exception as exc:
+        return jsonify({"ok": False, "message": str(exc)[:180]})
 
 
 @app.post("/api/prepare-upload")
