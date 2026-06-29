@@ -36,6 +36,7 @@ from upload_tinhoctre_batch import (
     extract_zip,
     form_errors,
     generate_tests,
+    login as login_tinhoctre_public,
     problem_exists as tinhoctre_problem_exists,
     statement_body_text,
     submit_solution,
@@ -1309,6 +1310,25 @@ def test_data_url(base_url: str, code: str) -> str:
     return urljoin(base_url, f"/problem/{code}/test_data")
 
 
+def login_problem_source(target: str, account: dict, first_code: str):
+    base_url = TARGETS[target]["base_url"]
+    username = account.get("username", "")
+    password = account.get("password", "")
+    if target == "tinhoctre":
+        try:
+            return login_tinhoctre_public(base_url, username, password, "/problems/create")
+        except Exception as exc:
+            message = str(exc)
+            if "csrf" in message.lower() or "login page failed" in message.lower():
+                raise RuntimeError(
+                    "TinHocTre không trả form đăng nhập cho tool. "
+                    "Trang có thể đang bật WAF/challenge nên tool không lấy được CSRF. "
+                    "Hãy thử lại sau ít phút; nếu vẫn lỗi, cần whitelist IP VPS/tool hoặc tắt challenge cho /accounts/login/."
+                ) from exc
+            raise
+    return login_hncode(base_url, username, password)
+
+
 def contest_url(base_url: str, key: str) -> str:
     return urljoin(base_url, f"/contest/{key}")
 
@@ -1833,7 +1853,7 @@ def api_prepare_transfer():
         root = RUNTIME / ("transfer_" + prepare_id)
         root.mkdir(parents=True, exist_ok=True)
         source_account = payload["source_account"]
-        src = login_hncode(TARGETS[source]["base_url"], source_account["username"], source_account["password"])
+        src = login_problem_source(source, source_account, codes[0])
         rows = []
         state_items = {}
         log_lines = [f"Đọc dữ liệu nguồn: {TARGETS[source]['label']} → {TARGETS[dest]['label']}"]

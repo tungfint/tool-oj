@@ -158,6 +158,8 @@ Luồng sử dụng:
 Khi chuyển thành công, cột trạng thái có chữ `Link` để mở trang bài ở hệ thống đích.
 Nếu mã bài đích đã tồn tại, dòng đó sẽ báo `Bài đã tồn tại`, bị bỏ qua và các dòng khác vẫn tiếp tục chuyển.
 
+Riêng nguồn `TinHocTre`, tool đăng nhập qua `/accounts/login/` thay vì admin form `/admin/judge/problem/add/`. Nếu TinHocTre bật WAF/challenge và không trả form đăng nhập, tool sẽ báo rõ để xử lý whitelist/tắt challenge cho đường đăng nhập.
+
 ## Tab Chuyển contest
 
 Tab này dùng cho các contest kiểu DMOJ/VNOJ trên `HNOJ`, `HNCode`, `TinHocTre`, và nguồn phụ `HNOJ Contest` (`https://contest.hnoj.edu.vn`).
