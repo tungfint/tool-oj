@@ -67,7 +67,9 @@ Tên bài | Mã bài
 Luồng sử dụng:
 
 1. Chọn web đích: `HNOJ`, `HNCode` hoặc `TinHocTre`.
-2. Chọn file zip bộ bài bằng cách dán đường dẫn hoặc bấm `Chọn file`.
+2. Chọn file zip bộ bài hoặc file Markdown tổng hợp bằng cách dán đường dẫn hoặc bấm `Chọn file`.
+   - File zip dùng cấu trúc cũ: mỗi bài có file đề, test zip hoặc `gentest`.
+   - File Markdown tổng hợp dùng để up đề bài, mỗi bài bắt đầu bằng dòng `# Bài 1. Tên bài | ma_bai`.
 3. Kiểm tra `Giới hạn thời gian`, `Giới hạn bộ nhớ`, `Ngôn ngữ cho phép`.
 4. Bấm `Mở rộng thông tin khác` nếu cần xem/sửa nhóm thông tin phụ:
    - Người tạo (Creators): mặc định `mrtee`.
@@ -129,6 +131,22 @@ Ví dụ bài `Tổng bi`, mã `tongbi` hoặc `tht26_tongbi`, tool thử tìm:
 - `tongbi_tests.zip`
 
 Nếu không có file lời giải tương ứng, tool vẫn tạo bài và upload test; chỉ bỏ qua lượt nộp thử của ngôn ngữ đó.
+
+## File Markdown tổng hợp nhiều đề
+
+Tab `Up bài` cũng hỗ trợ file `.md` tổng hợp nhiều đề bài trong cùng một file. Cấu trúc mỗi bài:
+
+```markdown
+# Bài 1. Xếp mâm cơm | tht26kv_xepmamcom
+
+Nội dung đề bài...
+
+# Bài 2. Ghép khúc gỗ | tht26kv_ghepkhucgo
+
+Nội dung đề bài...
+```
+
+Khi bấm `Chuẩn bị dữ liệu`, tool tự tách từng heading `# Bài n. Tên bài | mã_bài` thành một bài riêng. Vì file này chỉ có đề, bảng chuẩn bị sẽ mặc định bỏ tích `Up test`; nếu cần upload test thì dùng file zip bộ bài hoặc thêm test/gentest theo luồng zip cũ.
 
 ## Tab Chuyển bài
 

@@ -348,11 +348,11 @@ PAGE = r"""
             </select><span id="uploadTargetLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
           <div>
-            <label>File zip bộ bài</label>
+            <label>File zip bộ bài hoặc file Markdown tổng hợp</label>
             <div class="row">
               <div class="grow"><input id="uploadZip" type="text" value="{{ default_zip }}"></div>
               <button class="action" type="button" id="chooseZip">Chọn file</button>
-              <input id="zipFileInput" class="hidden" type="file" accept=".zip,application/zip">
+              <input id="zipFileInput" class="hidden" type="file" accept=".zip,.md,application/zip,text/markdown,text/plain">
             </div>
           </div>
         </div>
@@ -802,7 +802,7 @@ function renderUploadTable(rows) {
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
       <td><input type="text" class="row-name" value="${escapeHtml(row.name)}"></td>
       <td><input type="checkbox" class="row-statement" checked></td>
-      <td><input type="checkbox" class="row-tests" checked></td>
+      <td><input type="checkbox" class="row-tests" ${row.upload_tests_default === false ? "" : "checked"}></td>
       <td><div class="test-meta">${escapeHtml(row.test_file)}</div></td>
       <td>${row.test_count}</td>
       <td class="row-status">Chưa up</td>
@@ -1154,30 +1154,42 @@ def api_prepare_upload():
         source_dir = root / "source"
         build_root = root / "generated"
         root.mkdir(parents=True, exist_ok=True)
-        zip_path = receive_zip_file(root, payload)
-        extract_zip(zip_path, source_dir)
         build_root.mkdir(parents=True, exist_ok=True)
-
-        bundles = discover_bundles(source_dir)
-        tests: dict[str, GeneratedTests] = {}
+        source_path = receive_upload_source_file(root, payload)
+        if source_path.suffix.lower() == ".md":
+            source_dir.mkdir(parents=True, exist_ok=True)
+            bundles = split_combined_markdown_bundles(source_path, source_dir)
+            tests: dict[str, GeneratedTests | None] = {bundle.code: None for bundle in bundles}
+            source_name = source_path.name
+            log_lines = [f"Đã đọc {len(bundles)} bài từ file Markdown {source_name}."]
+        else:
+            extract_zip(source_path, source_dir)
+            bundles = discover_bundles(source_dir)
+            tests = {}
+            source_name = source_path.name
+            log_lines = [f"Đã đọc {len(bundles)} bài từ {source_name}."]
         rows = []
-        log_lines = [f"Đã đọc {len(bundles)} bài từ {zip_path.name}."]
         progress_update(progress_id, phase="prepare-upload", done=0, total=len(bundles), rows=rows, message="Bắt đầu chuẩn bị dữ liệu")
         for index, bundle in enumerate(bundles, 1):
-            generated = generate_tests(bundle, build_root)
-            tests[bundle.code] = generated
+            generated = tests.get(bundle.code)
+            source = "Markdown tổng hợp"
+            if bundle.generator or bundle.test_zip:
+                generated = generate_tests(bundle, build_root)
+                tests[bundle.code] = generated
+                source = "gentest" if bundle.generator else "zip có sẵn"
             rows.append(
                 {
                     "original_code": bundle.code,
                     "code": bundle.code,
                     "name": bundle.name,
-                    "test_file": generated.zip_path.name,
-                    "test_count": len(generated.input_files),
+                    "test_file": generated.zip_path.name if generated else "Không có test",
+                    "test_count": len(generated.input_files) if generated else 0,
+                    "upload_tests_default": bool(generated),
                 }
             )
-            source = "gentest" if bundle.generator else "zip có sẵn"
-            log_lines.append(f"- {bundle.code}: {bundle.name}, {len(generated.input_files)} test, nguồn {source}.")
-            progress_update(progress_id, phase="prepare-upload", done=index, total=len(bundles), rows=rows, message=f"{bundle.code}: đã chuẩn bị {len(generated.input_files)} test")
+            test_text = f"{len(generated.input_files)} test" if generated else "không có test"
+            log_lines.append(f"- {bundle.code}: {bundle.name}, {test_text}, nguồn {source}.")
+            progress_update(progress_id, phase="prepare-upload", done=index, total=len(bundles), rows=rows, message=f"{bundle.code}: đã chuẩn bị {test_text}")
         prepared_uploads[prepare_id] = {"root": root, "bundles": {b.code: b for b in bundles}, "tests": tests}
         progress_finish(progress_id, True, f"Đã chuẩn bị {len(bundles)}/{len(bundles)} bài")
         return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
@@ -1193,16 +1205,43 @@ def upload_payload() -> dict:
     return request.get_json(force=True)
 
 
-def receive_zip_file(root: Path, payload: dict) -> Path:
+def receive_upload_source_file(root: Path, payload: dict) -> Path:
     uploaded = request.files.get("zip_file")
     if uploaded:
-        zip_path = root / "uploaded_package.zip"
-        uploaded.save(zip_path)
-        return zip_path
-    zip_path = Path(payload["zip_path"])
-    if not zip_path.exists():
-        raise FileNotFoundError(f"Không tìm thấy file zip: {zip_path}")
-    return zip_path
+        original = Path(uploaded.filename or "uploaded_package.zip")
+        suffix = original.suffix.lower() if original.suffix.lower() in {".zip", ".md"} else ".zip"
+        upload_path = root / f"uploaded_package{suffix}"
+        uploaded.save(upload_path)
+        return upload_path
+    source_path = Path(payload["zip_path"])
+    if not source_path.exists():
+        raise FileNotFoundError(f"Không tìm thấy file: {source_path}")
+    if source_path.suffix.lower() not in {".zip", ".md"}:
+        raise RuntimeError("Chỉ hỗ trợ file .zip hoặc file Markdown .md.")
+    return source_path
+
+
+def split_combined_markdown_bundles(markdown_path: Path, source_dir: Path) -> list[ProblemBundle]:
+    text = markdown_path.read_text(encoding="utf-8")
+    matches = list(re.finditer(r"(?m)^#\s*(?:Bài\s+(\d+)\.\s*)?(.+?)\s*\|\s*([A-Za-z0-9_-]+)\s*$", text))
+    if not matches:
+        raise RuntimeError("Không tìm thấy bài nào. Mỗi bài cần bắt đầu dạng: # Bài 1. Tên bài | ma_bai")
+    bundles: list[ProblemBundle] = []
+    seen: set[str] = set()
+    for idx, match in enumerate(matches):
+        number = int(match.group(1) or idx + 1)
+        name = match.group(2).strip()
+        code = match.group(3).strip()
+        if code in seen:
+            raise RuntimeError(f"Mã bài bị trùng trong file Markdown: {code}")
+        seen.add(code)
+        body_start = match.end()
+        body_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        body = text[body_start:body_end].strip()
+        statement_path = source_dir / f"{number}_{code}.md"
+        statement_path.write_text(f"{name} | {code}\n\n{body}\n", encoding="utf-8")
+        bundles.append(ProblemBundle(number, code, name, statement_path, None, None, None, None))
+    return bundles
 
 
 @app.post("/api/confirm-upload")
@@ -1251,7 +1290,7 @@ def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, prog
             continue
         try:
             bundle = replace(state["bundles"][row["original_code"]], code=row["code"], name=row["name"])
-            tests = state["tests"][row["original_code"]]
+            tests = state["tests"].get(row["original_code"])
             upload_one_problem(session, target, target_info, bundle, tests, row, settings, selected_language_ids, log_lines)
             row["status"] = "✓ Thành công"
             row["link"] = problem_url(target_info["base_url"], bundle.code)
@@ -1272,7 +1311,7 @@ def upload_one_problem(
     target: str,
     target_info: dict,
     bundle: ProblemBundle,
-    tests: GeneratedTests,
+    tests: GeneratedTests | None,
     row: dict,
     settings: dict,
     language_ids: list[str],
@@ -1321,6 +1360,8 @@ def upload_one_problem(
         log_lines.append(f"{bundle.code}: không upload đề.")
 
     if row.get("upload_tests"):
+        if tests is None:
+            raise RuntimeError("Bài này không có bộ test trong dữ liệu chuẩn bị. Hãy bỏ tích Up test hoặc dùng file zip/gentest.")
         upload_tests_for_target(session, target, base_url, bundle.code, tests)
         log_lines.append(f"{bundle.code}: đã upload {len(tests.input_files)} test.")
     else:
