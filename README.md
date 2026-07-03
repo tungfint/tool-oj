@@ -184,6 +184,13 @@ Riêng nguồn `TinHocTre`, tool đăng nhập qua `/accounts/login/` thay vì a
 4. Trong `Request Headers`, copy nguyên dòng `Cookie`.
 5. Dán vào ô `Cookie TinHocTre`, bấm `Lưu tạm`, rồi chạy lại `Chuyển bài`.
 
+Trên máy local có thể dùng cách tiện hơn:
+
+1. Bấm `Mở Chrome đăng nhập TinHocTre`.
+2. Đăng nhập trong cửa sổ Chrome riêng vừa mở và đảm bảo truy cập được `https://tinhoctre.vn/admin/judge/problem/add/`.
+3. Quay lại tool, bấm `Lấy cookie từ Chrome`.
+4. Tool tự điền Cookie TinHocTre, lưu tạm và kiểm tra cookie mở được form admin tạo bài.
+
 ## Tab Chuyển contest
 
 Tab này dùng cho các contest kiểu DMOJ/VNOJ trên `HNOJ`, `HNCode`, `TinHocTre`, và nguồn phụ `HNOJ Contest` (`https://contest.hnoj.edu.vn`).

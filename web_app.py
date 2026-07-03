@@ -8,10 +8,13 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import time
 import uuid
 from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urljoin
+from urllib.request import urlopen
 from http.cookies import SimpleCookie
 
 from flask import Flask, Response, jsonify, render_template_string, request
@@ -322,6 +325,10 @@ PAGE = r"""
         <label>Cookie TinHocTre nếu bị WAF/challenge</label>
         <textarea id="acct_tinhoctre_cookie" placeholder="Dán nguyên dòng Cookie của tinhoctre.vn sau khi đăng nhập, ví dụ: sessionid=...; csrftoken=...; ..."></textarea>
         <p>Nếu TinHocTre chặn đăng nhập tự động, hãy đăng nhập TinHocTre trên trình duyệt, mở DevTools → Network, chọn một request tới tinhoctre.vn rồi copy Request Header `Cookie` dán vào ô này.</p>
+        <div class="actions">
+          <button class="action" type="button" id="openTinHocTreBrowser">Mở Chrome đăng nhập TinHocTre</button>
+          <button class="action" type="button" id="pullTinHocTreCookie">Lấy cookie từ Chrome</button>
+        </div>
         <div class="grid-2">
           <div><label>HNOJ Contest user</label><input id="acct_contest_hnoj_user" type="text" value="admin"><span id="login_contest_hnoj" class="login-badge">Chưa kiểm tra</span></div>
           <div><label>HNOJ Contest password</label><input id="acct_contest_hnoj_pass" type="password"></div>
@@ -546,6 +553,31 @@ function saveAccounts() {
 loadAccounts();
 document.getElementById("saveAccounts").onclick = () => { saveAccounts(); append("Đã lưu tạm tài khoản."); };
 document.getElementById("checkAccounts").onclick = () => { log("Đang kiểm tra đăng nhập các trang..."); checkAllAccounts(); };
+document.getElementById("openTinHocTreBrowser").onclick = async () => {
+  try {
+    status("running");
+    const data = await postJson("/api/tinhoctre-browser/start", {});
+    append(data.message || "Đã mở Chrome đăng nhập TinHocTre.");
+    status("ready", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+document.getElementById("pullTinHocTreCookie").onclick = async () => {
+  try {
+    status("running");
+    const data = await postJson("/api/tinhoctre-browser/cookie", {});
+    accountFields.tinhoctre_cookie.value = data.cookie || "";
+    saveAccounts();
+    append(data.message || "Đã lấy và lưu Cookie TinHocTre.");
+    await checkLogin("tinhoctre", "login_tinhoctre", firstToken(document.getElementById("transferCodes").value));
+    status("ready", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
 document.getElementById("clearAccounts").onclick = () => {
   for (const key of Object.keys(accountFields)) localStorage.removeItem("chuyenbai." + key);
   for (const [key, input] of Object.entries(accountFields)) if (key.endsWith("_pass") || key.endsWith("_cookie")) input.value = "";
@@ -1143,6 +1175,49 @@ def api_progress(progress_id: str):
     return jsonify(json.loads(path.read_text(encoding="utf-8")))
 
 
+@app.post("/api/tinhoctre-browser/start")
+def api_tinhoctre_browser_start():
+    try:
+        chrome = find_chrome_executable()
+        port = int(os.getenv("TINHOCTRE_CHROME_DEBUG_PORT", "9223"))
+        profile = RUNTIME / "tinhoctre_chrome_profile"
+        profile.mkdir(parents=True, exist_ok=True)
+        url = "https://tinhoctre.vn/admin/judge/problem/add/"
+        subprocess.Popen(
+            [
+                str(chrome),
+                f"--remote-debugging-port={port}",
+                "--remote-debugging-address=127.0.0.1",
+                f"--user-data-dir={profile}",
+                "--new-window",
+                url,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "message": "Đã mở Chrome riêng cho TinHocTre. Hãy đăng nhập admin và đảm bảo thấy form tạo bài, rồi bấm Lấy cookie từ Chrome.",
+            }
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/api/tinhoctre-browser/cookie")
+def api_tinhoctre_browser_cookie():
+    try:
+        cookie = cookie_from_tinhoctre_debug_browser()
+        s = session_from_cookie(cookie)
+        check = s.get("https://tinhoctre.vn/admin/judge/problem/add/", timeout=30)
+        if not check.ok or not is_problem_add_form(check.text):
+            raise RuntimeError(tinhoctre_admin_cookie_error(check.url))
+        return jsonify({"ok": True, "cookie": cookie, "message": "Đã lấy Cookie TinHocTre từ Chrome và kiểm tra mở được form admin tạo bài."})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
 @app.post("/api/prepare-upload")
 def api_prepare_upload():
     progress_id = None
@@ -1666,6 +1741,91 @@ def session_from_cookie(cookie_header: str):
         s.cookies.set(key, morsel.value, domain=".tinhoctre.vn")
         s.cookies.set(key, morsel.value, domain="tinhoctre.vn")
     return s
+
+
+def find_chrome_executable() -> Path:
+    candidates = [
+        shutil.which("chrome"),
+        shutil.which("chrome.exe"),
+        shutil.which("msedge"),
+        shutil.which("msedge.exe"),
+        os.environ.get("CHROME_PATH"),
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return Path(candidate)
+    raise RuntimeError("Không tìm thấy Chrome/Edge trên máy local. Hãy cài Chrome hoặc đặt biến môi trường CHROME_PATH.")
+
+
+def cdp_json(path: str, port: int) -> dict:
+    with urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def cookie_from_tinhoctre_debug_browser() -> str:
+    try:
+        import websocket
+    except Exception as exc:
+        raise RuntimeError("Thiếu thư viện websocket-client để đọc cookie Chrome. Hãy cài: pip install websocket-client") from exc
+
+    port = int(os.getenv("TINHOCTRE_CHROME_DEBUG_PORT", "9223"))
+    deadline = time.time() + 20
+    last_error: Exception | None = None
+    version = None
+    while time.time() < deadline:
+        try:
+            version = cdp_json("/json/version", port)
+            break
+        except Exception as exc:
+            last_error = exc
+            time.sleep(0.5)
+    if not version:
+        raise RuntimeError(f"Không kết nối được Chrome đăng nhập TinHocTre ở cổng {port}. Hãy bấm Mở Chrome đăng nhập TinHocTre trước.") from last_error
+
+    ws_url = version.get("webSocketDebuggerUrl")
+    if not ws_url:
+        raise RuntimeError("Chrome DevTools không trả webSocketDebuggerUrl.")
+    ws = websocket.create_connection(ws_url, timeout=10)
+    counter = 0
+
+    def cdp(method: str, params: dict | None = None):
+        nonlocal counter
+        counter += 1
+        ws.send(json.dumps({"id": counter, "method": method, "params": params or {}}))
+        while True:
+            message = json.loads(ws.recv())
+            if message.get("id") == counter:
+                if "error" in message:
+                    raise RuntimeError(message["error"].get("message", str(message["error"])))
+                return message.get("result", {})
+
+    try:
+        try:
+            result = cdp("Network.getAllCookies")
+            cookies = result.get("cookies", [])
+        except Exception:
+            result = cdp("Storage.getCookies")
+            cookies = result.get("cookies", [])
+    finally:
+        ws.close()
+
+    useful = []
+    for cookie in cookies:
+        domain = cookie.get("domain", "")
+        name = cookie.get("name", "")
+        value = cookie.get("value", "")
+        if "tinhoctre.vn" in domain and name and value:
+            useful.append((name, value))
+    if not useful:
+        raise RuntimeError("Không thấy cookie tinhoctre.vn trong Chrome. Hãy đăng nhập TinHocTre admin trong cửa sổ Chrome vừa mở rồi thử lại.")
+
+    priority = {"cf_clearance": 0, "aws-waf-token": 1, "csrftoken": 2, "sessionid": 3}
+    useful.sort(key=lambda item: (priority.get(item[0], 50), item[0]))
+    return "; ".join(f"{name}={value}" for name, value in useful)
 
 
 def login_tinhoctre_source(account: dict, first_code: str):
