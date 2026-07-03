@@ -193,6 +193,8 @@ Trên máy local có thể dùng cách tiện hơn:
 
 Tool ưu tiên Edge profile mặc định để dùng lại mật khẩu đã lưu trong Edge. Nếu bấm `Lấy cookie từ Edge` không kết nối được, hãy đóng hết cửa sổ Edge đang mở rồi bấm `Mở Edge đăng nhập TinHocTre` lại.
 
+Nhanh nhất: bấm `Lấy cookie nhanh từ Edge`. Tool sẽ tự đóng Edge, mở lại Edge bằng profile mặc định, lấy Cookie TinHocTre và kiểm tra quyền admin. Edge thường khôi phục lại các tab cũ sau khi mở lại.
+
 ## Tab Chuyển contest
 
 Tab này dùng cho các contest kiểu DMOJ/VNOJ trên `HNOJ`, `HNCode`, `TinHocTre`, và nguồn phụ `HNOJ Contest` (`https://contest.hnoj.edu.vn`).

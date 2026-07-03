@@ -328,6 +328,7 @@ PAGE = r"""
         <div class="actions">
           <button class="action" type="button" id="openTinHocTreBrowser">Mở Edge đăng nhập TinHocTre</button>
           <button class="action" type="button" id="pullTinHocTreCookie">Lấy cookie từ Edge</button>
+          <button class="action primary" type="button" id="quickTinHocTreCookie">Lấy cookie nhanh từ Edge</button>
         </div>
         <div class="grid-2">
           <div><label>HNOJ Contest user</label><input id="acct_contest_hnoj_user" type="text" value="admin"><span id="login_contest_hnoj" class="login-badge">Chưa kiểm tra</span></div>
@@ -571,6 +572,21 @@ document.getElementById("pullTinHocTreCookie").onclick = async () => {
     accountFields.tinhoctre_cookie.value = data.cookie || "";
     saveAccounts();
     append(data.message || "Đã lấy và lưu Cookie TinHocTre.");
+    await checkLogin("tinhoctre", "login_tinhoctre", firstToken(document.getElementById("transferCodes").value));
+    status("ready", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+document.getElementById("quickTinHocTreCookie").onclick = async () => {
+  try {
+    status("running");
+    append("Đang đóng/mở lại Edge để lấy cookie TinHocTre...");
+    const data = await postJson("/api/tinhoctre-browser/quick-cookie", {});
+    accountFields.tinhoctre_cookie.value = data.cookie || "";
+    saveAccounts();
+    append(data.message || "Đã lấy và lưu Cookie TinHocTre từ Edge.");
     await checkLogin("tinhoctre", "login_tinhoctre", firstToken(document.getElementById("transferCodes").value));
     status("ready", "ok");
   } catch (err) {
@@ -1142,8 +1158,9 @@ def api_check_login():
     probe_code = (payload.get("probe_code") or "").strip()
     try:
         if target == "tinhoctre":
-            if account.get("cookie"):
-                session = session_from_cookie(account.get("cookie", ""))
+            cookie_header = (account.get("cookie") or "").strip() or load_tinhoctre_cookie()
+            if cookie_header:
+                session = session_from_cookie(cookie_header)
                 probe_url = f"/problem/{probe_code}/edit" if probe_code else "/problems/create"
                 page = session.get(urljoin(TARGETS[target]["base_url"], probe_url), timeout=30)
                 if page.status_code == 202 or page.headers.get("x-amzn-waf-action"):
@@ -1186,6 +1203,7 @@ def api_tinhoctre_browser_start():
                 str(browser),
                 f"--remote-debugging-port={port}",
                 "--remote-debugging-address=127.0.0.1",
+                "--remote-allow-origins=*",
                 "--profile-directory=Default",
                 "--new-window",
                 url,
@@ -1207,11 +1225,45 @@ def api_tinhoctre_browser_start():
 def api_tinhoctre_browser_cookie():
     try:
         cookie = cookie_from_tinhoctre_debug_browser()
+        save_tinhoctre_cookie(cookie)
         s = session_from_cookie(cookie)
         check = s.get("https://tinhoctre.vn/admin/judge/problem/add/", timeout=30)
         if not check.ok or not is_problem_add_form(check.text):
             raise RuntimeError(tinhoctre_admin_cookie_error(check.url))
         return jsonify({"ok": True, "cookie": cookie, "message": "Đã lấy Cookie TinHocTre từ Edge và kiểm tra mở được form admin tạo bài."})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/api/tinhoctre-browser/quick-cookie")
+def api_tinhoctre_browser_quick_cookie():
+    try:
+        stop_edge_processes()
+        time.sleep(1)
+        chrome = find_edge_executable()
+        port = int(os.getenv("TINHOCTRE_CHROME_DEBUG_PORT", "9223"))
+        url = "https://tinhoctre.vn/admin/judge/problem/add/"
+        subprocess.Popen(
+            [
+                str(chrome),
+                f"--remote-debugging-port={port}",
+                "--remote-debugging-address=127.0.0.1",
+                "--remote-allow-origins=*",
+                "--profile-directory=Default",
+                "--new-window",
+                url,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(4)
+        cookie = cookie_from_tinhoctre_debug_browser()
+        save_tinhoctre_cookie(cookie)
+        s = session_from_cookie(cookie)
+        check = s.get(url, timeout=30)
+        if not check.ok or not is_problem_add_form(check.text):
+            raise RuntimeError(tinhoctre_admin_cookie_error(check.url))
+        return jsonify({"ok": True, "cookie": cookie, "message": "Đã tự đóng/mở Edge, lấy Cookie TinHocTre và kiểm tra mở được form admin tạo bài."})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -1380,8 +1432,9 @@ def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, prog
 
 
 def login_upload_target(target: str, target_info: dict, settings: dict):
-    if target == "tinhoctre" and settings.get("cookie"):
-        s = session_from_cookie(settings.get("cookie", ""))
+    saved_cookie = (settings.get("cookie") or "").strip() or (load_tinhoctre_cookie() if target == "tinhoctre" else "")
+    if target == "tinhoctre" and saved_cookie:
+        s = session_from_cookie(saved_cookie)
         check = s.get(urljoin(target_info["base_url"], "/admin/judge/problem/add/"), timeout=30)
         if check.ok and is_problem_add_form(check.text):
             return s
@@ -1741,6 +1794,22 @@ def session_from_cookie(cookie_header: str):
     return s
 
 
+def tinhoctre_cookie_file() -> Path:
+    return RUNTIME / "tinhoctre_cookie.txt"
+
+
+def save_tinhoctre_cookie(cookie_header: str) -> None:
+    RUNTIME.mkdir(parents=True, exist_ok=True)
+    tinhoctre_cookie_file().write_text(cookie_header, encoding="utf-8")
+
+
+def load_tinhoctre_cookie() -> str:
+    path = tinhoctre_cookie_file()
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    return ""
+
+
 def find_edge_executable() -> Path:
     candidates = [
         shutil.which("msedge"),
@@ -1758,6 +1827,13 @@ def find_edge_executable() -> Path:
         if candidate and Path(candidate).exists():
             return Path(candidate)
     raise RuntimeError("Không tìm thấy Edge/Chrome trên máy local. Hãy cài Edge hoặc đặt biến môi trường EDGE_PATH.")
+
+
+def stop_edge_processes() -> None:
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/IM", "msedge.exe", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    subprocess.run(["pkill", "-f", "msedge"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def cdp_json(path: str, port: int) -> dict:
@@ -1829,7 +1905,7 @@ def cookie_from_tinhoctre_debug_browser() -> str:
 
 def login_tinhoctre_source(account: dict, first_code: str):
     base_url = TARGETS["tinhoctre"]["base_url"]
-    cookie_header = (account.get("cookie") or "").strip()
+    cookie_header = (account.get("cookie") or "").strip() or load_tinhoctre_cookie()
     if cookie_header:
         s = session_from_cookie(cookie_header)
         check = s.get(urljoin(base_url, f"/problem/{first_code}/edit"), timeout=30)
