@@ -1277,7 +1277,7 @@ def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, prog
     if settings.get("creator"):
         log_lines.append("Creators được hiển thị trên giao diện; backend chỉ set nếu form admin hỗ trợ trực tiếp.")
 
-    session = login_hncode(target_info["base_url"], settings["username"], settings["password"])
+    session = login_upload_target(target, target_info, settings)
     result_rows = []
     total = len([row for row in rows if row.get("selected")])
     done = 0
@@ -1304,6 +1304,33 @@ def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, prog
         done += 1
         progress_update(progress_id, phase="confirm-upload", done=done, total=total, rows=result_rows, message=f"{row.get('code')}: {row.get('status')}")
     return result_rows, log_lines
+
+
+def login_upload_target(target: str, target_info: dict, settings: dict):
+    if target == "tinhoctre" and settings.get("cookie"):
+        s = session_from_cookie(settings.get("cookie", ""))
+        check = s.get(urljoin(target_info["base_url"], "/admin/judge/problem/add/"), timeout=30)
+        if check.ok:
+            try:
+                csrf_token(check.text)
+                return s
+            except Exception:
+                pass
+        raise RuntimeError(
+            "Cookie TinHocTre chưa mở được form admin tạo bài. "
+            "Hãy copy lại Cookie sau khi đã đăng nhập admin trên tinhoctre.vn."
+        )
+    try:
+        return login_hncode(target_info["base_url"], settings.get("username", ""), settings.get("password", ""))
+    except Exception as exc:
+        label = target_info.get("label", target)
+        message = str(exc).replace("HNCode", label)
+        if target == "tinhoctre":
+            message += (
+                ". Nếu TinHocTre đang bật WAF/challenge, hãy dán Cookie TinHocTre ở tab Tài khoản "
+                "rồi bấm Lưu tạm trước khi Up bài."
+            )
+        raise RuntimeError(message)
 
 
 def upload_one_problem(
