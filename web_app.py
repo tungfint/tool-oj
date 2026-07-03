@@ -2233,7 +2233,7 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
                 (f"contest_problems-{idx}-contest", ""),
                 (f"contest_problems-{idx}-problem", str(problem["id"])),
                 (f"contest_problems-{idx}-points", str(problem.get("points") or "100")),
-                (f"contest_problems-{idx}-max_submissions", str(problem.get("max_submissions") or "0")),
+                (f"contest_problems-{idx}-max_submissions", str(problem.get("max_submissions") or "")),
                 (f"contest_problems-{idx}-hidden_subtasks", str(problem.get("hidden_subtasks") or "")),
                 (f"contest_problems-{idx}-output_prefix_override", ""),
                 (f"contest_problems-{idx}-order", str(problem.get("order", idx))),
