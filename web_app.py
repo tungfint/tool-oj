@@ -472,13 +472,18 @@ PAGE = r"""
         <h2>Tạo contest từ mã bài</h2>
         <p>Tạo contest cơ bản và gắn các mã bài đã có trên web đích. Các thiết lập chi tiết có thể chỉnh lại trong admin sau.</p>
         <div class="grid-2">
-          <div><label>Web đích</label><select id="createContestTarget"><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option><option value="tinhoctre">TinHocTre</option></select></div>
+          <div><label>Web đích</label><select id="createContestTarget"><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option><option value="tinhoctre">TinHocTre</option></select><span id="createContestLogin" class="login-badge">Chưa kiểm tra</span></div>
           <div><label>Mã contest</label><input id="createContestKey" type="text" placeholder="tht2026_hn_ck_a"></div>
         </div>
         <label>Tên contest</label><input id="createContestName" type="text" placeholder="TIN HỌC TRẺ 2026 - HÀ NỘI - CHUNG KẾT - BẢNG A">
         <div class="grid-2">
-          <div><label>Bắt đầu</label><input id="createContestStart" type="text" placeholder="2026-05-17 10:00:00"></div>
-          <div><label>Kết thúc</label><input id="createContestEnd" type="text" placeholder="2026-05-17 11:30:00"></div>
+          <div><label>Bắt đầu</label><input id="createContestStart" type="datetime-local"></div>
+          <div><label>Kết thúc</label><input id="createContestEnd" type="datetime-local"></div>
+        </div>
+        <div class="actions">
+          <button class="action" type="button" id="contestTimeToday">Hôm nay 8:00-11:00</button>
+          <button class="action" type="button" id="contestTimeTomorrow">Ngày mai 8:00-11:00</button>
+          <button class="action" type="button" id="contestTime90">Kết thúc sau 90 phút</button>
         </div>
         <label>Danh sách mã bài</label>
         <textarea id="createContestProblems" placeholder="tht26hn_cka_thieunhi&#10;tht26hn_cka_tongdayso"></textarea>
@@ -630,6 +635,30 @@ document.getElementById("resetTransferLimits").onclick = () => {
   }
   append("Đã trả time/memory về thông số lấy từ nguồn.");
 };
+function localDateTimeValue(date) {
+  const pad = value => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function backendDateTimeValue(value) {
+  if (!value) return "";
+  return value.length === 16 ? value.replace("T", " ") + ":00" : value.replace("T", " ");
+}
+function setContestTime(dayOffset=0, startHour=8, startMinute=0, durationMinutes=180) {
+  const start = new Date();
+  start.setDate(start.getDate() + dayOffset);
+  start.setHours(startHour, startMinute, 0, 0);
+  const end = new Date(start.getTime() + durationMinutes * 60000);
+  document.getElementById("createContestStart").value = localDateTimeValue(start);
+  document.getElementById("createContestEnd").value = localDateTimeValue(end);
+}
+document.getElementById("contestTimeToday").onclick = () => setContestTime(0, 8, 0, 180);
+document.getElementById("contestTimeTomorrow").onclick = () => setContestTime(1, 8, 0, 180);
+document.getElementById("contestTime90").onclick = () => {
+  const startInput = document.getElementById("createContestStart");
+  const start = startInput.value ? new Date(startInput.value) : new Date();
+  document.getElementById("createContestStart").value = localDateTimeValue(start);
+  document.getElementById("createContestEnd").value = localDateTimeValue(new Date(start.getTime() + 90 * 60000));
+};
 document.getElementById("chooseZip").onclick = () => document.getElementById("zipFileInput").click();
 document.getElementById("zipFileInput").onchange = event => {
   selectedZipFile = event.target.files[0] || null;
@@ -659,9 +688,10 @@ document.getElementById("transferCodes").addEventListener("blur", checkTransferL
 document.getElementById("contestSource").addEventListener("change", checkContestLogins);
 document.getElementById("contestDest").addEventListener("change", checkContestLogins);
 document.getElementById("contestCodes").addEventListener("blur", checkContestLogins);
+document.getElementById("createContestTarget").addEventListener("change", checkCreateContestLogin);
 renderLanguages();
 renderTransferLanguages();
-setTimeout(() => { checkUploadLogin(); checkTransferLogins(); checkContestLogins(); }, 300);
+setTimeout(() => { checkUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); }, 300);
 
 function selectedLanguages() {
   return [...document.querySelectorAll("#languages input:checked")].map(item => item.value);
@@ -717,6 +747,9 @@ function checkTransferLogins() {
 function checkContestLogins() {
   checkLogin(document.getElementById("contestSource").value, "contestSourceLogin");
   checkLogin(document.getElementById("contestDest").value, "contestDestLogin");
+}
+function checkCreateContestLogin() {
+  checkLogin(document.getElementById("createContestTarget").value, "createContestLogin");
 }
 function uploadSettings() {
   const target = document.getElementById("uploadTarget").value;
@@ -1026,8 +1059,8 @@ document.getElementById("createContestButton").onclick = async () => {
       account: accountPayload(target),
       key: document.getElementById("createContestKey").value.trim(),
       name: document.getElementById("createContestName").value.trim(),
-      start_time: document.getElementById("createContestStart").value.trim(),
-      end_time: document.getElementById("createContestEnd").value.trim(),
+      start_time: backendDateTimeValue(document.getElementById("createContestStart").value.trim()),
+      end_time: backendDateTimeValue(document.getElementById("createContestEnd").value.trim()),
       problems: document.getElementById("createContestProblems").value.split(/[\s,]+/).filter(Boolean),
     });
     log(data.log);
@@ -2442,7 +2475,7 @@ def api_create_contest():
         return jsonify({"error": "Cần nhập mã contest, tên contest và danh sách mã bài."}), 400
     try:
         account = payload["account"]
-        dst = login_hncode(TARGETS[target]["base_url"], account["username"], account["password"])
+        dst = login_upload_target(target, TARGETS[target], account)
         refs = []
         for idx, code in enumerate(problems):
             pid = admin_problem_id(dst, TARGETS[target]["base_url"], code)
