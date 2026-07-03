@@ -186,10 +186,12 @@ Riêng nguồn `TinHocTre`, tool đăng nhập qua `/accounts/login/` thay vì a
 
 Trên máy local có thể dùng cách tiện hơn:
 
-1. Bấm `Mở Chrome đăng nhập TinHocTre`.
-2. Đăng nhập trong cửa sổ Chrome riêng vừa mở và đảm bảo truy cập được `https://tinhoctre.vn/admin/judge/problem/add/`.
-3. Quay lại tool, bấm `Lấy cookie từ Chrome`.
+1. Bấm `Mở Edge đăng nhập TinHocTre`.
+2. Đăng nhập trong cửa sổ Edge vừa mở và đảm bảo truy cập được `https://tinhoctre.vn/admin/judge/problem/add/`.
+3. Quay lại tool, bấm `Lấy cookie từ Edge`.
 4. Tool tự điền Cookie TinHocTre, lưu tạm và kiểm tra cookie mở được form admin tạo bài.
+
+Tool ưu tiên Edge profile mặc định để dùng lại mật khẩu đã lưu trong Edge. Nếu bấm `Lấy cookie từ Edge` không kết nối được, hãy đóng hết cửa sổ Edge đang mở rồi bấm `Mở Edge đăng nhập TinHocTre` lại.
 
 ## Tab Chuyển contest
 

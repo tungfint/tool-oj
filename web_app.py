@@ -326,8 +326,8 @@ PAGE = r"""
         <textarea id="acct_tinhoctre_cookie" placeholder="Dán nguyên dòng Cookie của tinhoctre.vn sau khi đăng nhập, ví dụ: sessionid=...; csrftoken=...; ..."></textarea>
         <p>Nếu TinHocTre chặn đăng nhập tự động, hãy đăng nhập TinHocTre trên trình duyệt, mở DevTools → Network, chọn một request tới tinhoctre.vn rồi copy Request Header `Cookie` dán vào ô này.</p>
         <div class="actions">
-          <button class="action" type="button" id="openTinHocTreBrowser">Mở Chrome đăng nhập TinHocTre</button>
-          <button class="action" type="button" id="pullTinHocTreCookie">Lấy cookie từ Chrome</button>
+          <button class="action" type="button" id="openTinHocTreBrowser">Mở Edge đăng nhập TinHocTre</button>
+          <button class="action" type="button" id="pullTinHocTreCookie">Lấy cookie từ Edge</button>
         </div>
         <div class="grid-2">
           <div><label>HNOJ Contest user</label><input id="acct_contest_hnoj_user" type="text" value="admin"><span id="login_contest_hnoj" class="login-badge">Chưa kiểm tra</span></div>
@@ -557,7 +557,7 @@ document.getElementById("openTinHocTreBrowser").onclick = async () => {
   try {
     status("running");
     const data = await postJson("/api/tinhoctre-browser/start", {});
-    append(data.message || "Đã mở Chrome đăng nhập TinHocTre.");
+    append(data.message || "Đã mở Edge đăng nhập TinHocTre.");
     status("ready", "ok");
   } catch (err) {
     log(String(err));
@@ -1178,17 +1178,15 @@ def api_progress(progress_id: str):
 @app.post("/api/tinhoctre-browser/start")
 def api_tinhoctre_browser_start():
     try:
-        chrome = find_chrome_executable()
+        browser = find_edge_executable()
         port = int(os.getenv("TINHOCTRE_CHROME_DEBUG_PORT", "9223"))
-        profile = RUNTIME / "tinhoctre_chrome_profile"
-        profile.mkdir(parents=True, exist_ok=True)
         url = "https://tinhoctre.vn/admin/judge/problem/add/"
         subprocess.Popen(
             [
-                str(chrome),
+                str(browser),
                 f"--remote-debugging-port={port}",
                 "--remote-debugging-address=127.0.0.1",
-                f"--user-data-dir={profile}",
+                "--profile-directory=Default",
                 "--new-window",
                 url,
             ],
@@ -1198,7 +1196,7 @@ def api_tinhoctre_browser_start():
         return jsonify(
             {
                 "ok": True,
-                "message": "Đã mở Chrome riêng cho TinHocTre. Hãy đăng nhập admin và đảm bảo thấy form tạo bài, rồi bấm Lấy cookie từ Chrome.",
+                "message": "Đã mở Edge bằng profile mặc định. Hãy đăng nhập admin và đảm bảo thấy form tạo bài, rồi bấm Lấy cookie từ Edge. Nếu không lấy được cookie, hãy đóng hết Edge rồi bấm nút này lại.",
             }
         )
     except Exception as exc:
@@ -1213,7 +1211,7 @@ def api_tinhoctre_browser_cookie():
         check = s.get("https://tinhoctre.vn/admin/judge/problem/add/", timeout=30)
         if not check.ok or not is_problem_add_form(check.text):
             raise RuntimeError(tinhoctre_admin_cookie_error(check.url))
-        return jsonify({"ok": True, "cookie": cookie, "message": "Đã lấy Cookie TinHocTre từ Chrome và kiểm tra mở được form admin tạo bài."})
+        return jsonify({"ok": True, "cookie": cookie, "message": "Đã lấy Cookie TinHocTre từ Edge và kiểm tra mở được form admin tạo bài."})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -1743,22 +1741,23 @@ def session_from_cookie(cookie_header: str):
     return s
 
 
-def find_chrome_executable() -> Path:
+def find_edge_executable() -> Path:
     candidates = [
-        shutil.which("chrome"),
-        shutil.which("chrome.exe"),
         shutil.which("msedge"),
         shutil.which("msedge.exe"),
+        os.environ.get("EDGE_PATH"),
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        shutil.which("chrome"),
+        shutil.which("chrome.exe"),
         os.environ.get("CHROME_PATH"),
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     ]
     for candidate in candidates:
         if candidate and Path(candidate).exists():
             return Path(candidate)
-    raise RuntimeError("Không tìm thấy Chrome/Edge trên máy local. Hãy cài Chrome hoặc đặt biến môi trường CHROME_PATH.")
+    raise RuntimeError("Không tìm thấy Edge/Chrome trên máy local. Hãy cài Edge hoặc đặt biến môi trường EDGE_PATH.")
 
 
 def cdp_json(path: str, port: int) -> dict:
@@ -1770,7 +1769,7 @@ def cookie_from_tinhoctre_debug_browser() -> str:
     try:
         import websocket
     except Exception as exc:
-        raise RuntimeError("Thiếu thư viện websocket-client để đọc cookie Chrome. Hãy cài: pip install websocket-client") from exc
+        raise RuntimeError("Thiếu thư viện websocket-client để đọc cookie Edge. Hãy cài: pip install websocket-client") from exc
 
     port = int(os.getenv("TINHOCTRE_CHROME_DEBUG_PORT", "9223"))
     deadline = time.time() + 20
@@ -1784,11 +1783,11 @@ def cookie_from_tinhoctre_debug_browser() -> str:
             last_error = exc
             time.sleep(0.5)
     if not version:
-        raise RuntimeError(f"Không kết nối được Chrome đăng nhập TinHocTre ở cổng {port}. Hãy bấm Mở Chrome đăng nhập TinHocTre trước.") from last_error
+        raise RuntimeError(f"Không kết nối được Edge đăng nhập TinHocTre ở cổng {port}. Hãy đóng hết Edge, rồi bấm Mở Edge đăng nhập TinHocTre trước.") from last_error
 
     ws_url = version.get("webSocketDebuggerUrl")
     if not ws_url:
-        raise RuntimeError("Chrome DevTools không trả webSocketDebuggerUrl.")
+        raise RuntimeError("Edge DevTools không trả webSocketDebuggerUrl.")
     ws = websocket.create_connection(ws_url, timeout=10)
     counter = 0
 
@@ -1821,7 +1820,7 @@ def cookie_from_tinhoctre_debug_browser() -> str:
         if "tinhoctre.vn" in domain and name and value:
             useful.append((name, value))
     if not useful:
-        raise RuntimeError("Không thấy cookie tinhoctre.vn trong Chrome. Hãy đăng nhập TinHocTre admin trong cửa sổ Chrome vừa mở rồi thử lại.")
+        raise RuntimeError("Không thấy cookie tinhoctre.vn trong Edge. Hãy đăng nhập TinHocTre admin trong cửa sổ Edge vừa mở rồi thử lại.")
 
     priority = {"cf_clearance": 0, "aws-waf-token": 1, "csrftoken": 2, "sessionid": 3}
     useful.sort(key=lambda item: (priority.get(item[0], 50), item[0]))
