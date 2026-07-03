@@ -1310,15 +1310,10 @@ def login_upload_target(target: str, target_info: dict, settings: dict):
     if target == "tinhoctre" and settings.get("cookie"):
         s = session_from_cookie(settings.get("cookie", ""))
         check = s.get(urljoin(target_info["base_url"], "/admin/judge/problem/add/"), timeout=30)
-        if check.ok:
-            try:
-                csrf_token(check.text)
-                return s
-            except Exception:
-                pass
+        if check.ok and is_problem_add_form(check.text):
+            return s
         raise RuntimeError(
-            "Cookie TinHocTre chưa mở được form admin tạo bài. "
-            "Hãy copy lại Cookie sau khi đã đăng nhập admin trên tinhoctre.vn."
+            tinhoctre_admin_cookie_error(check.url)
         )
     try:
         return login_hncode(target_info["base_url"], settings.get("username", ""), settings.get("password", ""))
@@ -1331,6 +1326,24 @@ def login_upload_target(target: str, target_info: dict, settings: dict):
                 "rồi bấm Lưu tạm trước khi Up bài."
             )
         raise RuntimeError(message)
+
+
+def is_problem_add_form(page: str) -> bool:
+    return bool(
+        re.search(r"<input\b[^>]*name=[\"']code[\"']", page, re.S)
+        and re.search(r"<textarea\b[^>]*name=[\"']description[\"']", page, re.S)
+    )
+
+
+def tinhoctre_admin_cookie_error(final_url: str = "") -> str:
+    suffix = f" URL hiện tại: {final_url}" if final_url else ""
+    return (
+        "Cookie TinHocTre chưa vào được form admin tạo bài. "
+        "Có thể bạn copy cookie khi chưa đăng nhập admin, cookie đã hết hạn, hoặc tài khoản không có quyền staff/admin. "
+        "Hãy mở https://tinhoctre.vn/admin/judge/problem/add/ trên cùng trình duyệt, đảm bảo thấy form tạo bài, "
+        "rồi copy lại Request Header Cookie và dán vào tab Tài khoản."
+        + suffix
+    )
 
 
 def upload_one_problem(
@@ -1428,6 +1441,8 @@ def create_tinhoctre_admin_problem(
     page = session.get(add_url, timeout=30)
     if not page.ok:
         raise RuntimeError(f"TinHocTre add page failed: HTTP {page.status_code}")
+    if not is_problem_add_form(page.text):
+        raise RuntimeError(tinhoctre_admin_cookie_error(page.url))
     token = csrf_token(page.text)
     language_ids = [value for value in allowed_language_ids if value]
     data: list[tuple[str, str]] = [
@@ -1487,6 +1502,8 @@ def create_tinhoctre_admin_problem(
         )
 
     result = session.post(add_url, data=data, headers={"Referer": add_url}, allow_redirects=True, timeout=30)
+    if "/admin/login/" in result.url:
+        raise RuntimeError(tinhoctre_admin_cookie_error(result.url))
     if not result.ok:
         errors = form_errors(result.text)
         detail = ("\n" + "\n".join(errors)) if errors else ""
