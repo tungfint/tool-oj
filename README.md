@@ -16,6 +16,9 @@ Ghi chú HNCode: form test data hiện vẫn gọi endpoint
 `/problem/<ma_bai>/test_data/upload`. Nếu server trả lỗi dạng
 `Read-only file system: /mnt/efs/problems/...` thì đây là lỗi ghi storage
 phía HNCode; tool đã gửi đúng endpoint nhưng backend HNCode chưa lưu được file test.
+Trước khi upload lên HNCode, tool tự chuẩn hoá zip test về dạng phẳng
+`01.inp/01.out`, `02.inp/02.out`, ... để tránh lỗi do thư mục con hoặc tên file
+test không đồng nhất.
 
 Giao diện dùng favicon từ `static/favicon-HNCode.svg`.
 

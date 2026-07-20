@@ -15,6 +15,7 @@ import os
 import re
 import sys
 import uuid
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -296,6 +297,73 @@ def infer_cases_from_zip_paths(page: str) -> list[TestCase]:
     return cases
 
 
+def _zip_member_map(names: Iterable[str]) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    basename_counts: dict[str, int] = {}
+    for name in names:
+        normalized = name.replace("\\", "/").lstrip("/")
+        mapping[normalized] = name
+        mapping[normalized.lower()] = name
+        basename = Path(normalized).name
+        basename_counts[basename.lower()] = basename_counts.get(basename.lower(), 0) + 1
+    for name in names:
+        normalized = name.replace("\\", "/").lstrip("/")
+        basename = Path(normalized).name
+        if basename_counts.get(basename.lower()) == 1:
+            mapping[basename] = name
+            mapping[basename.lower()] = name
+    return mapping
+
+
+def _case_sort_key(case: TestCase) -> tuple[int, str]:
+    return (case.order, case.input_file)
+
+
+def normalize_hncode_test_zip(zip_path: Path, cases: Iterable[TestCase]) -> tuple[Path, list[TestCase]]:
+    """Rewrite a test archive to flat 01.inp/01.out names before HNCode upload."""
+    case_list = sorted(list(cases), key=_case_sort_key)
+    with zipfile.ZipFile(zip_path) as archive:
+        names = [name for name in archive.namelist() if not name.endswith("/")]
+        member_map = _zip_member_map(names)
+
+        if not case_list:
+            inputs = sorted(name for name in names if name.lower().endswith(".inp"))
+            for order, inp in enumerate(inputs, 1):
+                out = re.sub(r"\.inp$", ".out", inp, flags=re.I)
+                if out not in names:
+                    continue
+                case_list.append(TestCase(order=order, kind="C", input_file=inp, output_file=out, points="1"))
+
+        require(case_list, f"HNCode test zip has no test cases: {zip_path}")
+        width = max(2, len(str(len(case_list))))
+        normalized_path = zip_path.with_name(f"{zip_path.stem}_hncode.zip")
+        normalized_cases: list[TestCase] = []
+
+        with zipfile.ZipFile(normalized_path, "w", compression=zipfile.ZIP_DEFLATED) as out_zip:
+            for index, case in enumerate(case_list, 1):
+                input_member = member_map.get(case.input_file) or member_map.get(case.input_file.lower())
+                output_member = member_map.get(case.output_file) or member_map.get(case.output_file.lower())
+                require(input_member, f"HNCode test zip missing input file: {case.input_file}")
+                require(output_member, f"HNCode test zip missing output file: {case.output_file}")
+
+                new_input = f"{index:0{width}d}.inp"
+                new_output = f"{index:0{width}d}.out"
+                out_zip.writestr(new_input, archive.read(input_member))
+                out_zip.writestr(new_output, archive.read(output_member))
+                normalized_cases.append(
+                    TestCase(
+                        order=index,
+                        kind=case.kind,
+                        input_file=new_input,
+                        output_file=new_output,
+                        points=case.points,
+                        is_pretest=case.is_pretest,
+                    )
+                )
+
+    return normalized_path, normalized_cases
+
+
 def destination_problem_exists(dest: requests.Session, base_url: str, code: str) -> bool:
     page = dest.get(urljoin(base_url, f"/problem/{code}"))
     return page.status_code == 200 and code in page.text
@@ -395,6 +463,7 @@ def upload_hncode_tests(
     zip_path: Path,
     cases: Iterable[TestCase],
 ) -> str:
+    zip_path, cases = normalize_hncode_test_zip(zip_path, cases)
     test_url = urljoin(base_url, f"/problem/{problem_code}/test_data")
     page = dest.get(test_url)
     require(page.ok, f"HNCode test_data page failed: HTTP {page.status_code}")
