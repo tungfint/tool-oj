@@ -2818,6 +2818,20 @@ def problem_url(base_url: str, code: str) -> str:
     return urljoin(base_url, f"/problem/{code}")
 
 
+def normalize_problem_code_for_target(code: str, target: str) -> str:
+    code = (code or "").strip().lower()
+    if target == "hncode":
+        code = re.sub(r"[^a-z0-9]+", "", code)
+    return code
+
+
+def validate_problem_code_for_target(code: str, target: str) -> None:
+    if target == "hncode" and not re.fullmatch(r"[a-z0-9]+", code or ""):
+        normalized = normalize_problem_code_for_target(code, target)
+        hint = f" Gợi ý mã hợp lệ: {normalized}" if normalized else ""
+        raise RuntimeError(f"HNCode chỉ cho phép mã bài gồm chữ thường và số (^[a-z0-9]+$).{hint}")
+
+
 def test_data_url(base_url: str, code: str) -> str:
     return urljoin(base_url, f"/problem/{code}/test_data")
 
@@ -3534,10 +3548,12 @@ def api_prepare_transfer():
             try:
                 info, zip_path, cases, zip_url = fetch_source_problem(src, TARGETS[source]["base_url"], code, root)
                 state_items[code] = {"info": info, "zip_path": zip_path, "cases": cases, "zip_url": zip_url}
+                source_code = info.code or code
+                dest_code = normalize_problem_code_for_target(source_code, dest)
                 rows.append(
                     {
                         "original_code": code,
-                        "code": info.code or code,
+                        "code": dest_code,
                         "name": info.name,
                         "time_limit": info.time_limit or payload.get("settings", {}).get("time_limit") or "1.0",
                         "memory_limit": info.memory_limit or payload.get("settings", {}).get("memory_limit") or "1048576",
@@ -3628,7 +3644,12 @@ def api_confirm_transfer():
                 info = item["info"]
                 zip_path = item["zip_path"]
                 cases = item["cases"]
-                dest_code = row["code"] or row["original_code"]
+                raw_dest_code = row["code"] or row["original_code"]
+                dest_code = normalize_problem_code_for_target(raw_dest_code, dest)
+                validate_problem_code_for_target(dest_code, dest)
+                if dest_code != raw_dest_code:
+                    row["code"] = dest_code
+                    log_lines.append(f"{raw_dest_code}: mã đích {TARGETS[dest]['label']} được đổi thành {dest_code}")
                 if row.get("name"):
                     info.name = row["name"]
                 info.time_limit = row.get("time_limit") or settings.get("time_limit") or info.time_limit or "1.0"
