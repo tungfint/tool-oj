@@ -68,7 +68,7 @@ TARGETS = {
     },
     "hncode": {
         "label": "HNCode",
-        "base_url": "https://oj.hncode.edu.vn",
+        "base_url": "https://hncode.edu.vn",
         "type_id": "387",
         "group_id": "105",
         "languages": {"C++17": "12", "C++20": "14", "Pascal": "10", "Python 3": "8", "PyPy 3": "16"},

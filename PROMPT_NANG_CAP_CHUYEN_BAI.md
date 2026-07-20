@@ -21,7 +21,7 @@ Trước khi sửa code, hãy nghiên cứu kỹ các link tạo bài/admin form
 ```text
 https://hnoj.edu.vn/admin/judge/problem/add/
 https://tinhoctre.vn/admin/judge/problem/add/
-https://oj.hncode.edu.vn/admin/judge/problem/add/
+https://hncode.edu.vn/admin/judge/problem/add/
 ```
 
 Yêu cầu quan trọng:

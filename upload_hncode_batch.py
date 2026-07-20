@@ -22,7 +22,7 @@ from transfer_tinhoctre_to_hncode import (
 from upload_tinhoctre_batch import discover_bundles, generate_tests, statement_body_text
 
 
-DEFAULT_BASE_URL = "https://oj.hncode.edu.vn"
+DEFAULT_BASE_URL = "https://hncode.edu.vn"
 DEFAULT_TYPE_ID = "387"  # Chua phan loai
 DEFAULT_GROUP_ID = "105"  # Chua phan loai
 DEFAULT_LANGUAGE_IDS = "12,14,10,8,16"  # C++17, C++20, Pascal, Python 3, Pypy 3

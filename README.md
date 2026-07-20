@@ -3,14 +3,19 @@
 Project hỗ trợ chuẩn bị dữ liệu, tạo bài mới, upload test, nộp thử lời giải và chuyển bài giữa 3 hệ thống:
 
 - HNOJ: `https://hnoj.edu.vn`
-- HNCode: `https://oj.hncode.edu.vn`
+- HNCode: `https://hncode.edu.vn`
 - TinHocTre: `https://tinhoctre.vn`
 
 Tool ưu tiên tạo bài qua admin form:
 
 - `https://hnoj.edu.vn/admin/judge/problem/add/`
 - `https://tinhoctre.vn/admin/judge/problem/add/`
-- `https://oj.hncode.edu.vn/admin/judge/problem/add/`
+- `https://hncode.edu.vn/admin/judge/problem/add/`
+
+Ghi chú HNCode: form test data hiện vẫn gọi endpoint
+`/problem/<ma_bai>/test_data/upload`. Nếu server trả lỗi dạng
+`Read-only file system: /mnt/efs/problems/...` thì đây là lỗi ghi storage
+phía HNCode; tool đã gửi đúng endpoint nhưng backend HNCode chưa lưu được file test.
 
 Giao diện dùng favicon từ `static/favicon-HNCode.svg`.
 

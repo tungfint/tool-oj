@@ -420,7 +420,16 @@ def upload_hncode_tests(
         upload_json = upload.json()
     except json.JSONDecodeError as exc:
         raise TransferError(f"HNCode upload response is not JSON: {upload.text[:200]}") from exc
-    require(upload_json.get("success"), f"HNCode upload failed: {upload_json}")
+    if not upload_json.get("success"):
+        error_text = str(upload_json.get("error") or upload_json)
+        if "Read-only file system" in error_text or "/mnt/efs/problems" in error_text:
+            raise TransferError(
+                "HNCode test upload endpoint is failing server-side on hncode.edu.vn: "
+                f"{error_text}. Tool đã gửi đúng endpoint /problem/{problem_code}/test_data/upload, "
+                "nhưng server HNCode không ghi được vào thư mục lưu test. "
+                "Cần sửa cấu hình storage/upload của HNCode hoặc cung cấp endpoint upload test mới."
+            )
+        raise TransferError(f"HNCode upload failed: {upload_json}")
 
     page = dest.get(test_url)
     token = csrf_token(page.text)
@@ -475,12 +484,12 @@ def upload_hncode_tests(
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Transfer a problem and tests from tinhoctre.vn to oj.hncode.edu.vn"
+        description="Transfer a problem and tests from tinhoctre.vn to hncode.edu.vn"
     )
     parser.add_argument("problem_code", help="Source problem code, e.g. tht26_chiakeo")
     parser.add_argument("--dest-code", help="Destination problem code. Defaults to source code.")
     parser.add_argument("--source-base", default="https://tinhoctre.vn")
-    parser.add_argument("--dest-base", default="https://oj.hncode.edu.vn")
+    parser.add_argument("--dest-base", default="https://hncode.edu.vn")
     parser.add_argument("--source-user", default=os.getenv("TINHOCTRE_USER", DEFAULT_TINHOCTRE_USER))
     parser.add_argument("--source-pass", default=os.getenv("TINHOCTRE_PASS"))
     parser.add_argument("--dest-user", default=os.getenv("HNCODE_USER", DEFAULT_HNCODE_USER))
