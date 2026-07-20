@@ -5,19 +5,22 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import os
 import re
 import shutil
 import subprocess
 import time
 import uuid
+import zipfile
+from collections import Counter, defaultdict
 from dataclasses import replace
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 from urllib.request import urlopen
 from http.cookies import SimpleCookie
 
-from flask import Flask, Response, jsonify, render_template_string, request
+from flask import Flask, Response, jsonify, render_template_string, request, send_file
 
 from transfer_tinhoctre_to_hncode import (
     ProblemInfo,
@@ -208,6 +211,809 @@ def progress_finish(progress_id: str | None, ok: bool, message: str = "") -> Non
     progress_update(progress_id, finished=True, ok=ok, message=message)
 
 
+def safe_extract_zip(zip_path: Path, dest: Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    dest_resolved = dest.resolve()
+    with zipfile.ZipFile(zip_path) as zf:
+        for member in zf.infolist():
+            target = (dest / member.filename).resolve()
+            if dest_resolved not in target.parents and target != dest_resolved:
+                raise RuntimeError(f"File zip có đường dẫn không an toàn: {member.filename}")
+        zf.extractall(dest)
+
+
+def scratch_submission_score(student_dir: Path) -> int:
+    history = student_dir / "$History"
+    score = 0
+    if history.is_dir():
+        score += sum(1 for item in history.iterdir() if item.is_file() and item.suffix.lower() == ".sb3") * 2
+    score += sum(1 for item in student_dir.iterdir() if item.is_file() and item.suffix.lower() == ".sb3")
+    return score
+
+
+def find_scratch_data_root(extract_root: Path) -> Path:
+    candidates = [extract_root]
+    candidates.extend(item for item in extract_root.iterdir() if item.is_dir())
+    best = extract_root
+    best_score = -1
+    for candidate in candidates:
+        score = sum(1 for child in candidate.iterdir() if child.is_dir() and scratch_submission_score(child) > 0)
+        if score > best_score:
+            best = candidate
+            best_score = score
+    return best
+
+
+def history_version(path: Path) -> int:
+    match = re.search(r"_(\d+)\.sb3$", path.name, re.IGNORECASE)
+    return int(match.group(1)) if match else -1
+
+
+def get_last_scratch_submission(student_dir: Path) -> Path | None:
+    history = student_dir / "$History"
+    if history.is_dir():
+        history_files = [item for item in history.iterdir() if item.is_file() and item.suffix.lower() == ".sb3"]
+        if history_files:
+            return max(history_files, key=history_version)
+    root_files = [item for item in student_dir.iterdir() if item.is_file() and item.suffix.lower() == ".sb3"]
+    if root_files:
+        return sorted(root_files, key=lambda item: item.name.lower())[0]
+    return None
+
+
+def collect_last_scratch_submissions(data_root: Path, output_dir: Path) -> dict:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for student_dir in sorted((item for item in data_root.iterdir() if item.is_dir()), key=lambda item: item.name.lower()):
+        last_file = get_last_scratch_submission(student_dir)
+        row = {"student_id": student_dir.name, "source": "", "output": "", "status": "missing"}
+        if last_file:
+            output_name = f"{student_dir.name}.sb3"
+            output_path = output_dir / output_name
+            shutil.copy2(last_file, output_path)
+            row.update({"source": last_file.relative_to(data_root).as_posix(), "output": output_name, "status": "ok"})
+        rows.append(row)
+    report_lines = [
+        "student_id\tstatus\toutput_file\tsource_file",
+        *[f"{row['student_id']}\t{row['status']}\t{row['output']}\t{row['source']}" for row in rows],
+    ]
+    (output_dir / "report.txt").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+    found = sum(1 for row in rows if row["status"] == "ok")
+    return {"rows": rows, "total": len(rows), "found": found, "missing": len(rows) - found}
+
+
+CODE_EXTENSIONS = {".py", ".cpp", ".cc", ".cxx", ".c", ".pas", ".java"}
+AI_SOURCE_DEFAULT = r"E:\Google Drive\Google Drive\1-School\4-KiThi\THT\2026\TW\KV\Data"
+
+
+def normalize_contest_name(zip_path: Path) -> str:
+    name = zip_path.stem
+    return re.sub(r"[-_]?data$", "", name, flags=re.IGNORECASE)
+
+
+def code_problem_from_name(name: str) -> str:
+    stem = Path(name).stem
+    return re.sub(r"_\d+$", "", stem)
+
+
+def history_version_from_name(name: str) -> int:
+    match = re.search(r"_(\d+)(?:\.[^.]+)$", name)
+    return int(match.group(1)) if match else 10**18
+
+
+def read_zip_text(zf: zipfile.ZipFile, member: str) -> str:
+    raw = zf.read(member)
+    for encoding in ("utf-8-sig", "utf-8", "cp1258", "cp1252", "latin-1"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def strip_code_comments(text: str, ext: str) -> str:
+    if ext == ".py":
+        text = re.sub(r'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\')', " ", text)
+        return re.sub(r"#.*", " ", text)
+    if ext in {".cpp", ".cc", ".cxx", ".c", ".java"}:
+        text = re.sub(r"/\*[\s\S]*?\*/", " ", text)
+        return re.sub(r"//.*", " ", text)
+    if ext == ".pas":
+        text = re.sub(r"\{[\s\S]*?\}", " ", text)
+        text = re.sub(r"\(\*[\s\S]*?\*\)", " ", text)
+        return re.sub(r"//.*", " ", text)
+    return text
+
+
+def comment_line_count(text: str, ext: str) -> int:
+    lines = text.splitlines()
+    count = sum(1 for line in lines if line.strip().startswith(("#", "//", "{", "(*")))
+    if ext in {".cpp", ".cc", ".cxx", ".c", ".java"}:
+        count += len(re.findall(r"/\*[\s\S]*?\*/", text))
+    if ext == ".py":
+        count += len(re.findall(r'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\')', text))
+    return count
+
+
+def code_identifiers(cleaned: str, ext: str) -> list[str]:
+    words = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", cleaned)
+    keywords = {
+        "include", "using", "namespace", "std", "int", "long", "double", "float", "char", "bool", "return", "for",
+        "while", "if", "else", "elif", "def", "class", "import", "from", "as", "in", "and", "or", "not", "True",
+        "False", "None", "void", "const", "auto", "vector", "map", "set", "dict", "list", "str", "range", "cin",
+        "cout", "begin", "end", "var", "procedure", "function", "then", "do",
+    }
+    return [word for word in words if word not in keywords and not word.isupper()]
+
+
+def compact_style_bucket(features: dict) -> str:
+    if features["ext"] == ".py":
+        if features["line_count"] <= 8:
+            size = "py-compact"
+        elif features["function_count"] >= 2 or features["import_count"] >= 3:
+            size = "py-structured"
+        else:
+            size = "py-simple"
+        io = "fastio" if features["fast_io"] else "plainio"
+    elif features["ext"] in {".cpp", ".cc", ".cxx", ".c"}:
+        if features["macro_count"] >= 4 or features["using_alias_count"] >= 3:
+            size = "cpp-template"
+        elif features["line_count"] <= 35:
+            size = "cpp-short"
+        else:
+            size = "cpp-plain"
+        io = "bits" if features["include_bits"] else "nobits"
+    else:
+        size = features["ext"].lstrip(".")
+        io = "plain"
+    return f"{size}/{io}/c{min(features['comment_ratio_bucket'], 4)}/id{min(features['identifier_bucket'], 4)}"
+
+
+def analyze_code_text(text: str, ext: str) -> dict:
+    lines = text.splitlines()
+    nonempty = [line for line in lines if line.strip()]
+    cleaned = strip_code_comments(text, ext)
+    identifiers = code_identifiers(cleaned, ext)
+    long_ids = [item for item in identifiers if len(item) >= 10]
+    comment_count = comment_line_count(text, ext)
+    line_count = max(len(lines), 1)
+    comment_ratio = comment_count / line_count
+    avg_line_len = sum(len(line) for line in nonempty) / max(len(nonempty), 1)
+    ai_phrases = [
+        "complexity", "approach", "edge case", "edge cases", "initialize", "iterate", "we need", "we can",
+        "let's", "this function", "read input", "print result", "return answer", "time complexity",
+        "space complexity", "base case", "recursive", "dynamic programming", "greedy approach",
+    ]
+    lower = text.lower()
+    phrase_hits = [phrase for phrase in ai_phrases if phrase in lower]
+    function_count = len(re.findall(r"\bdef\s+\w+\s*\(", text)) + len(re.findall(r"\b[a-zA-Z_][\w:<>,\s*&]*\s+\w+\s*\([^;{}]*\)\s*\{", text))
+    features = {
+        "ext": ext,
+        "line_count": len(lines),
+        "char_count": len(text),
+        "avg_line_len": round(avg_line_len, 1),
+        "comment_ratio": round(comment_ratio, 3),
+        "comment_ratio_bucket": int(min(comment_ratio * 12, 9)),
+        "blank_ratio": round((line_count - len(nonempty)) / line_count, 3),
+        "macro_count": len(re.findall(r"^\s*#\s*define\b", text, re.MULTILINE)),
+        "include_count": len(re.findall(r"^\s*#\s*include\b", text, re.MULTILINE)),
+        "include_bits": bool(re.search(r"#\s*include\s*<bits/stdc\+\+\.h>", text)),
+        "using_alias_count": len(re.findall(r"\b(using|typedef)\b", text)),
+        "import_count": len(re.findall(r"^\s*(import|from)\s+", text, re.MULTILINE)),
+        "function_count": function_count,
+        "class_count": len(re.findall(r"\bclass\s+\w+", text)),
+        "fast_io": bool(re.search(r"ios::sync_with_stdio|cin\.tie|sys\.stdin|stdin\.read|readline", text)),
+        "long_identifier_ratio": round(len(long_ids) / max(len(identifiers), 1), 3),
+        "identifier_bucket": int(min((len(long_ids) / max(len(identifiers), 1)) * 10, 9)),
+        "avg_identifier_len": round(sum(len(item) for item in identifiers) / max(len(identifiers), 1), 2),
+        "ai_phrase_hits": phrase_hits,
+    }
+    reasons = []
+    score = 0
+    if phrase_hits:
+        score += min(24, 8 + 4 * len(phrase_hits))
+        reasons.append("Có chú thích/cụm từ giải thích kiểu AI: " + ", ".join(phrase_hits[:4]))
+    if comment_ratio >= 0.18 and len(lines) >= 25:
+        score += 12
+        reasons.append("Tỉ lệ chú thích cao bất thường")
+    if features["long_identifier_ratio"] >= 0.22 and len(identifiers) >= 20:
+        score += 10
+        reasons.append("Nhiều tên biến/hàm dài, mô tả rất chuẩn")
+    if ext == ".py" and features["function_count"] >= 2 and features["import_count"] >= 3 and len(lines) >= 35:
+        score += 10
+        reasons.append("Python có cấu trúc/import khá công nghiệp")
+    if ext in {".cpp", ".cc", ".cxx", ".c"} and features["macro_count"] >= 6 and features["using_alias_count"] >= 4:
+        score += 8
+        reasons.append("C++ dùng template/macro dày")
+    if features["class_count"] >= 1 and len(lines) >= 45:
+        score += 6
+        reasons.append("Có class/cấu trúc lớn so với bài thi lập trình phổ thông")
+    features["code_ai_score"] = min(score, 45)
+    features["code_reasons"] = reasons
+    features["style_bucket"] = compact_style_bucket(features)
+    return features
+
+
+def vector_distance(a: dict, b: dict) -> float:
+    if not a or not b:
+        return 0.0
+    dist = 0.0
+    if a["ext"] != b["ext"]:
+        dist += 35
+    if a["style_bucket"] != b["style_bucket"]:
+        dist += 18
+    numeric = [
+        ("line_count", 80, 10),
+        ("comment_ratio", 0.25, 10),
+        ("macro_count", 8, 7),
+        ("import_count", 6, 7),
+        ("function_count", 6, 7),
+        ("avg_identifier_len", 8, 6),
+        ("long_identifier_ratio", 0.35, 8),
+    ]
+    for key, scale, weight in numeric:
+        dist += min(abs(float(a.get(key, 0)) - float(b.get(key, 0))) / scale, 1.0) * weight
+    return round(min(dist, 100), 1)
+
+
+def normalized_code_tokens(text: str, ext: str) -> list[str]:
+    cleaned = strip_code_comments(text, ext).lower()
+    cleaned = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', " STR ", cleaned)
+    raw_tokens = re.findall(r"[a-z_][a-z0-9_]*|\d+(?:\.\d+)?|==|!=|<=|>=|\+\+|--|&&|\|\||[+\-*/%<>=(){}\[\],.;:]", cleaned)
+    keywords = {
+        "if", "else", "elif", "for", "while", "do", "return", "break", "continue", "switch", "case", "default",
+        "def", "class", "import", "from", "as", "in", "and", "or", "not", "true", "false", "none",
+        "int", "long", "double", "float", "char", "bool", "void", "const", "auto", "string", "vector", "map", "set",
+        "cin", "cout", "scanf", "printf", "readln", "writeln", "begin", "end", "var", "procedure", "function",
+    }
+    normalized = []
+    for token in raw_tokens:
+        if re.fullmatch(r"\d+(?:\.\d+)?", token):
+            normalized.append("NUM")
+        elif token == "str":
+            normalized.append("STR")
+        elif re.fullmatch(r"[a-z_][a-z0-9_]*", token) and token not in keywords:
+            normalized.append("ID")
+        else:
+            normalized.append(token)
+    return normalized
+
+
+def token_fingerprints(tokens: list[str], size: int = 7) -> set[tuple[str, ...]]:
+    if len(tokens) < size:
+        return {tuple(tokens)} if tokens else set()
+    return {tuple(tokens[i : i + size]) for i in range(len(tokens) - size + 1)}
+
+
+def code_similarity_percent(a: dict, b: dict) -> float:
+    if a["ext"] != b["ext"]:
+        return 0.0
+    fa = a.get("fingerprints") or set()
+    fb = b.get("fingerprints") or set()
+    if not fa or not fb:
+        return 0.0
+    jaccard = len(fa & fb) / max(len(fa | fb), 1)
+    containment = max(len(fa & fb) / max(len(fa), 1), len(fa & fb) / max(len(fb), 1))
+    return round(max(jaccard * 100, containment * 92), 1)
+
+
+def classify_copy_similarity(percent: float) -> str:
+    if percent >= 88:
+        return "Rất giống"
+    if percent >= 75:
+        return "Giống nhiều"
+    if percent >= 62:
+        return "Cần xem lại"
+    return "Thấp"
+
+
+def detect_code_copy_pairs(finals: list[dict]) -> tuple[list[dict], list[dict]]:
+    by_problem = defaultdict(list)
+    for item in finals:
+        tokens = normalized_code_tokens(item.get("text", ""), item["ext"])
+        item["norm_token_count"] = len(tokens)
+        item["fingerprints"] = token_fingerprints(tokens)
+        if len(tokens) >= 25 and len(item["fingerprints"]) >= 5:
+            by_problem[(item["contest"], item["problem"], item["ext"])].append(item)
+
+    detail_pairs = []
+    for (contest, problem, ext), items in by_problem.items():
+        items = sorted(items, key=lambda row: row["student_id"])
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):
+                a, b = items[i], items[j]
+                if a["student_id"] == b["student_id"]:
+                    continue
+                percent = code_similarity_percent(a, b)
+                if percent < 62:
+                    continue
+                shared = len(a["fingerprints"] & b["fingerprints"])
+                detail_pairs.append(
+                    {
+                        "contest": contest,
+                        "problem": problem,
+                        "language": ext.lstrip("."),
+                        "student_a": a["student_id"],
+                        "student_b": b["student_id"],
+                        "percent": percent,
+                        "level": classify_copy_similarity(percent),
+                        "shared_fingerprints": shared,
+                        "tokens_a": a["norm_token_count"],
+                        "tokens_b": b["norm_token_count"],
+                        "file_a": a["path"],
+                        "file_b": b["path"],
+                        "local_a": a.get("local_path", ""),
+                        "local_b": b.get("local_path", ""),
+                    }
+                )
+
+    pair_summary = {}
+    for row in detail_pairs:
+        key = tuple(sorted([row["student_a"], row["student_b"]]))
+        current = pair_summary.setdefault(
+            key,
+            {
+                "student_a": key[0],
+                "student_b": key[1],
+                "pair_count": 0,
+                "max_percent": 0.0,
+                "avg_percent": 0.0,
+                "contests": set(),
+                "problems": [],
+                "levels": Counter(),
+            },
+        )
+        current["pair_count"] += 1
+        current["max_percent"] = max(current["max_percent"], row["percent"])
+        current["avg_percent"] += row["percent"]
+        current["contests"].add(row["contest"])
+        current["problems"].append(f"{row['contest']}/{row['problem']}:{row['percent']}%")
+        current["levels"][row["level"]] += 1
+
+    summaries = []
+    for row in pair_summary.values():
+        row["avg_percent"] = round(row["avg_percent"] / max(row["pair_count"], 1), 1)
+        row["contests"] = ", ".join(sorted(row["contests"]))
+        row["problems"] = "; ".join(row["problems"][:12])
+        if row["levels"].get("Rất giống"):
+            row["level"] = "Rất giống"
+        elif row["levels"].get("Giống nhiều"):
+            row["level"] = "Giống nhiều"
+        else:
+            row["level"] = "Cần xem lại"
+        summaries.append(row)
+    return summaries, detail_pairs
+
+
+def classify_ai_score(score: float) -> str:
+    if score >= 60:
+        return "Khả năng cao"
+    if score >= 45:
+        return "Khả năng trung bình"
+    return "Khả năng thấp"
+
+
+def safe_output_part(part: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", part).strip()
+    return cleaned or "_"
+
+
+def extract_code_member(zf: zipfile.ZipFile, member: str, output_root: Path, contest: str) -> Path:
+    parts = [safe_output_part(part) for part in Path(member).parts if part not in ("", ".", "..")]
+    target = output_root / safe_output_part(contest)
+    for part in parts:
+        target = target / part
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(zf.read(member))
+    return target
+
+
+def collect_code_records_from_zip(zip_path: Path, extract_root: Path | None = None) -> list[dict]:
+    contest = normalize_contest_name(zip_path)
+    records = []
+    with zipfile.ZipFile(zip_path) as zf:
+        for name in zf.namelist():
+            if name.endswith("/"):
+                continue
+            ext = Path(name).suffix.lower()
+            if ext not in CODE_EXTENSIONS:
+                continue
+            parts = Path(name).parts
+            if len(parts) < 2:
+                continue
+            student_id = parts[0]
+            is_history = "$History" in parts
+            problem = code_problem_from_name(parts[-1])
+            try:
+                text = read_zip_text(zf, name)
+            except Exception:
+                continue
+            if not text.strip():
+                continue
+            local_path = ""
+            if extract_root is not None:
+                local_path = str(extract_code_member(zf, name, extract_root, contest))
+            features = analyze_code_text(text, ext)
+            records.append(
+                {
+                    "contest": contest,
+                    "student_id": student_id,
+                    "problem": problem,
+                    "path": name,
+                    "filename": parts[-1],
+                    "is_history": is_history,
+                    "version": history_version_from_name(parts[-1]) if is_history else 10**18,
+                    "ext": ext,
+                    "text": text,
+                    "local_path": local_path,
+                    "features": features,
+                }
+            )
+    return records
+
+
+def final_code_records(records: list[dict]) -> list[dict]:
+    grouped = defaultdict(list)
+    for record in records:
+        grouped[(record["contest"], record["student_id"], record["problem"])].append(record)
+    finals = []
+    for items in grouped.values():
+        root_items = [item for item in items if not item["is_history"]]
+        if root_items:
+            finals.append(sorted(root_items, key=lambda item: item["path"])[0])
+        else:
+            finals.append(max(items, key=lambda item: item["version"]))
+    return finals
+
+
+def analyze_ai_code_records(records: list[dict]) -> dict:
+    finals = final_code_records(records)
+    copy_summaries, copy_details = detect_code_copy_pairs(finals)
+    finals_by_student = defaultdict(list)
+    all_by_student_problem = defaultdict(list)
+    for record in records:
+        all_by_student_problem[(record["contest"], record["student_id"], record["problem"])].append(record)
+    for record in finals:
+        finals_by_student[record["student_id"]].append(record)
+
+    shifts = []
+    shift_by_student = defaultdict(list)
+    for key, items in all_by_student_problem.items():
+        if len(items) < 2:
+            continue
+        ordered = sorted(items, key=lambda item: (item["version"], item["path"]))
+        first, last = ordered[0], ordered[-1]
+        dist = vector_distance(first["features"], last["features"])
+        if dist >= 35:
+            reason = []
+            if first["ext"] != last["ext"]:
+                reason.append(f"Đổi ngôn ngữ {first['ext']} -> {last['ext']}")
+            if first["features"]["style_bucket"] != last["features"]["style_bucket"]:
+                reason.append(f"Đổi style {first['features']['style_bucket']} -> {last['features']['style_bucket']}")
+            row = {
+                "contest": key[0],
+                "student_id": key[1],
+                "problem": key[2],
+                "versions": len(items),
+                "distance": dist,
+                "first_file": first["path"],
+                "last_file": last["path"],
+                "first_local": first.get("local_path", ""),
+                "last_local": last.get("local_path", ""),
+                "reason": "; ".join(reason) or "Độ lệch đặc trưng code lớn",
+            }
+            shifts.append(row)
+            shift_by_student[key[1]].append(row)
+
+    students = []
+    for student_id, items in sorted(finals_by_student.items()):
+        languages = sorted({item["ext"].lstrip(".") for item in items})
+        buckets = Counter(item["features"]["style_bucket"] for item in items)
+        code_scores = [item["features"]["code_ai_score"] for item in items]
+        pair_distances = []
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):
+                pair_distances.append(vector_distance(items[i]["features"], items[j]["features"]))
+        max_pair = max(pair_distances) if pair_distances else 0
+        avg_pair = sum(pair_distances) / len(pair_distances) if pair_distances else 0
+        inconsistency = 0
+        reasons = []
+        if len(languages) >= 2 and len(items) >= 3:
+            inconsistency += min(18, 7 * (len(languages) - 1))
+            reasons.append("Dùng nhiều ngôn ngữ trong các bài: " + ", ".join(languages))
+        if len(buckets) >= 3 and len(items) >= 3:
+            inconsistency += min(20, 6 * (len(buckets) - 2))
+            reasons.append("Template/phong cách giữa các bài khác nhau")
+        if max_pair >= 60:
+            inconsistency += 16
+            reasons.append("Có cặp bài cùng thí sinh lệch phong cách rất mạnh")
+        elif avg_pair >= 42:
+            inconsistency += 10
+            reasons.append("Độ lệch phong cách trung bình cao")
+        if shift_by_student.get(student_id):
+            inconsistency += min(24, 10 + 4 * len(shift_by_student[student_id]))
+            reasons.append("Có lần nộp cùng bài đổi phong cách/template rõ")
+        top_code = max(code_scores) if code_scores else 0
+        avg_code = sum(code_scores) / len(code_scores) if code_scores else 0
+        score = min(100, round(top_code * 0.8 + avg_code * 0.35 + inconsistency, 1))
+        code_reason_hits = []
+        for item in sorted(items, key=lambda row: row["features"]["code_ai_score"], reverse=True)[:3]:
+            code_reason_hits.extend(item["features"]["code_reasons"][:2])
+        all_reasons = reasons + code_reason_hits
+        students.append(
+            {
+                "student_id": student_id,
+                "level": classify_ai_score(score),
+                "score": score,
+                "final_count": len(items),
+                "history_shift_count": len(shift_by_student.get(student_id, [])),
+                "languages": ", ".join(languages),
+                "style_count": len(buckets),
+                "max_pair_distance": round(max_pair, 1),
+                "avg_pair_distance": round(avg_pair, 1),
+                "reasons": "; ".join(dict.fromkeys(all_reasons)) or "Ít dấu hiệu bất thường",
+                "sample_files": "; ".join(item["path"] for item in sorted(items, key=lambda row: row["features"]["code_ai_score"], reverse=True)[:3]),
+            }
+        )
+    details = []
+    for item in sorted(records, key=lambda row: (row["contest"], row["student_id"], row["problem"], row["is_history"], row["path"])):
+        f = item["features"]
+        details.append(
+            {
+                "contest": item["contest"],
+                "student_id": item["student_id"],
+                "problem": item["problem"],
+                "kind": "history" if item["is_history"] else "final/root",
+                "file": item["path"],
+                "local_path": item.get("local_path", ""),
+                "ext": item["ext"].lstrip("."),
+                "code_ai_score": f["code_ai_score"],
+                "style_bucket": f["style_bucket"],
+                "line_count": f["line_count"],
+                "comment_ratio": f["comment_ratio"],
+                "macro_count": f["macro_count"],
+                "import_count": f["import_count"],
+                "function_count": f["function_count"],
+                "avg_identifier_len": f["avg_identifier_len"],
+                "long_identifier_ratio": f["long_identifier_ratio"],
+                "reasons": "; ".join(f["code_reasons"]),
+            }
+        )
+    return {
+        "students": students,
+        "details": details,
+        "shifts": shifts,
+        "finals": finals,
+        "copy_summaries": copy_summaries,
+        "copy_details": copy_details,
+    }
+
+
+def autosize_worksheet(ws) -> None:
+    for column in ws.columns:
+        max_length = 0
+        letter = column[0].column_letter
+        for cell in column:
+            value = "" if cell.value is None else str(cell.value)
+            max_length = max(max_length, min(len(value), 80))
+        ws.column_dimensions[letter].width = max(10, min(max_length + 2, 55))
+
+
+def write_ai_warning_excel(analysis: dict, output_path: Path) -> None:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    wb = Workbook()
+
+    def style_header(sheet) -> None:
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+
+    def set_hyperlink(cell, target: str, label: str | None = None) -> None:
+        if label is not None:
+            cell.value = label
+        if not target:
+            return
+        try:
+            if target.startswith("#"):
+                cell.hyperlink = target
+            else:
+                cell.hyperlink = Path(target).resolve().as_uri()
+            cell.style = "Hyperlink"
+        except Exception:
+            pass
+
+    def add_sheet_link(sheet, row: int, label: str, sheet_name: str, note: str) -> None:
+        sheet.cell(row=row, column=1, value=label)
+        set_hyperlink(sheet.cell(row=row, column=2), f"#'{sheet_name}'!A1", "Mở sheet")
+        sheet.cell(row=row, column=3, value=note)
+
+    ws = wb.active
+    ws.title = "Tong quan"
+    high = sum(1 for row in analysis["students"] if row["level"] == "Khả năng cao")
+    medium = sum(1 for row in analysis["students"] if row["level"] == "Khả năng trung bình")
+    low = sum(1 for row in analysis["students"] if row["level"] == "Khả năng thấp")
+    copy_very = sum(1 for row in analysis["copy_summaries"] if row["level"] == "Rất giống")
+    copy_many = sum(1 for row in analysis["copy_summaries"] if row["level"] == "Giống nhiều")
+    ws["A1"] = "Tổng quan báo cáo cảnh báo AI code và chép code"
+    ws["A1"].font = Font(bold=True, size=14)
+    overview_rows = [
+        ("Số thí sinh", len(analysis["students"])),
+        ("Khả năng AI cao", high),
+        ("Khả năng AI trung bình", medium),
+        ("Khả năng AI thấp", low),
+        ("Số file code phân tích", len(analysis["details"])),
+        ("Số trường hợp đổi style cùng bài", len(analysis["shifts"])),
+        ("Số cặp nghi chép code", len(analysis["copy_summaries"])),
+        ("Cặp rất giống", copy_very),
+        ("Cặp giống nhiều", copy_many),
+    ]
+    row_idx = 3
+    for label, value in overview_rows:
+        ws.cell(row=row_idx, column=1, value=label)
+        ws.cell(row=row_idx, column=2, value=value)
+        row_idx += 1
+    row_idx += 1
+    ws.cell(row=row_idx, column=1, value="Các sheet chi tiết").font = Font(bold=True)
+    row_idx += 1
+    add_sheet_link(ws, row_idx, "Cảnh báo AI theo thí sinh", "Canh bao AI", "Mức cao/trung bình/thấp và lý do")
+    row_idx += 1
+    add_sheet_link(ws, row_idx, "Chép code tổng hợp", "Chep code tong hop", "Mỗi cặp thí sinh chỉ liệt kê một lần")
+    row_idx += 1
+    add_sheet_link(ws, row_idx, "Chép code chi tiết", "Chep code chi tiet", "Chi tiết theo contest/bài, có % giống nhau")
+    row_idx += 1
+    add_sheet_link(ws, row_idx, "Chi tiết file code", "Chi tiet file code", "Có link mở file code đã giải nén")
+    row_idx += 1
+    add_sheet_link(ws, row_idx, "Đổi style cùng bài", "Doi style cung bai", "Các lần nộp cùng bài đổi template/phong cách")
+    row_idx += 2
+    ws.cell(row=row_idx, column=1, value="Top cảnh báo AI").font = Font(bold=True)
+    row_idx += 1
+    ws.append(["Mã thí sinh", "Mức cảnh báo", "Điểm", "Lý do"])
+    for item in sorted(analysis["students"], key=lambda r: (-r["score"], r["student_id"]))[:15]:
+        ws.append([item["student_id"], item["level"], item["score"], item["reasons"]])
+    row_idx = ws.max_row + 2
+    ws.cell(row=row_idx, column=1, value="Top cặp nghi chép code").font = Font(bold=True)
+    row_idx += 1
+    ws.append(["Thí sinh A", "Thí sinh B", "Mức", "% cao nhất", "Số bài/cặp", "Bài liên quan"])
+    for item in sorted(analysis["copy_summaries"], key=lambda r: (-r["max_percent"], -r["pair_count"], r["student_a"], r["student_b"]))[:15]:
+        ws.append([item["student_a"], item["student_b"], item["level"], item["max_percent"], item["pair_count"], item["problems"]])
+    autosize_worksheet(ws)
+
+    ws = wb.create_sheet("Canh bao AI")
+    headers = [
+        "Mã thí sinh", "Mức cảnh báo", "Điểm nghi vấn", "Số bài final", "Số đổi style trong history",
+        "Ngôn ngữ", "Số nhóm style", "Lệch lớn nhất", "Lệch trung bình", "Lý do", "File mẫu cần xem",
+    ]
+    ws.append(headers)
+    fills = {
+        "Khả năng cao": PatternFill("solid", fgColor="FCA5A5"),
+        "Khả năng trung bình": PatternFill("solid", fgColor="FDE68A"),
+        "Khả năng thấp": PatternFill("solid", fgColor="BBF7D0"),
+    }
+    for row in sorted(analysis["students"], key=lambda item: (-item["score"], item["student_id"])):
+        ws.append([
+            row["student_id"], row["level"], row["score"], row["final_count"], row["history_shift_count"],
+            row["languages"], row["style_count"], row["max_pair_distance"], row["avg_pair_distance"],
+            row["reasons"], row["sample_files"],
+        ])
+        ws.cell(ws.max_row, 2).fill = fills.get(row["level"], PatternFill())
+    style_header(ws)
+    ws.freeze_panes = "A2"
+    autosize_worksheet(ws)
+
+    ws = wb.create_sheet("Chep code tong hop")
+    ws.append(["Thí sinh A", "Thí sinh B", "Mức giống", "% cao nhất", "% trung bình", "Số bài/cặp giống", "Contest", "Bài liên quan"])
+    for row in sorted(analysis["copy_summaries"], key=lambda item: (-item["max_percent"], -item["pair_count"], item["student_a"], item["student_b"])):
+        ws.append([
+            row["student_a"], row["student_b"], row["level"], row["max_percent"], row["avg_percent"],
+            row["pair_count"], row["contests"], row["problems"],
+        ])
+    style_header(ws)
+    ws.freeze_panes = "A2"
+    autosize_worksheet(ws)
+
+    ws = wb.create_sheet("Chep code chi tiet")
+    ws.append([
+        "Contest", "Mã bài", "Ngôn ngữ", "Thí sinh A", "Thí sinh B", "% giống", "Mức",
+        "Fingerprint chung", "Token A", "Token B", "File A", "Mở file A", "File B", "Mở file B",
+    ])
+    for row in sorted(analysis["copy_details"], key=lambda item: (-item["percent"], item["contest"], item["problem"], item["student_a"], item["student_b"])):
+        ws.append([
+            row["contest"], row["problem"], row["language"], row["student_a"], row["student_b"],
+            row["percent"], row["level"], row["shared_fingerprints"], row["tokens_a"], row["tokens_b"],
+            row["file_a"], "Mở file", row["file_b"], "Mở file",
+        ])
+        set_hyperlink(ws.cell(ws.max_row, 12), row.get("local_a", ""), "Mở file")
+        set_hyperlink(ws.cell(ws.max_row, 14), row.get("local_b", ""), "Mở file")
+    style_header(ws)
+    ws.freeze_panes = "A2"
+    autosize_worksheet(ws)
+
+    ws = wb.create_sheet("Chi tiet file code")
+    detail_headers = [
+        "Contest", "Mã thí sinh", "Mã bài", "Loại", "File", "Mở file", "Ngôn ngữ", "Điểm dấu hiệu AI",
+        "Nhóm style", "Số dòng", "Tỉ lệ comment", "Macro", "Import", "Hàm", "Độ dài tên TB",
+        "Tỉ lệ tên dài", "Lý do",
+    ]
+    ws.append(detail_headers)
+    for row in analysis["details"]:
+        ws.append([
+            row["contest"], row["student_id"], row["problem"], row["kind"], row["file"], "Mở file", row["ext"],
+            row["code_ai_score"], row["style_bucket"], row["line_count"], row["comment_ratio"],
+            row["macro_count"], row["import_count"], row["function_count"], row["avg_identifier_len"],
+            row["long_identifier_ratio"], row["reasons"],
+        ])
+        set_hyperlink(ws.cell(ws.max_row, 6), row.get("local_path", ""), "Mở file")
+    style_header(ws)
+    ws.freeze_panes = "A2"
+    autosize_worksheet(ws)
+
+    ws = wb.create_sheet("Doi style cung bai")
+    shift_headers = ["Contest", "Mã thí sinh", "Mã bài", "Số phiên bản", "Độ lệch", "File đầu", "Mở file đầu", "File cuối", "Mở file cuối", "Lý do"]
+    ws.append(shift_headers)
+    for row in sorted(analysis["shifts"], key=lambda item: (-item["distance"], item["student_id"])):
+        ws.append([
+            row["contest"], row["student_id"], row["problem"], row["versions"], row["distance"],
+            row["first_file"], "Mở file", row["last_file"], "Mở file", row["reason"],
+        ])
+        set_hyperlink(ws.cell(ws.max_row, 7), row.get("first_local", ""), "Mở file")
+        set_hyperlink(ws.cell(ws.max_row, 9), row.get("last_local", ""), "Mở file")
+    style_header(ws)
+    ws.freeze_panes = "A2"
+    autosize_worksheet(ws)
+
+    ws = wb.create_sheet("Giai thich")
+    notes = [
+        ["Lưu ý", "Đây là báo cáo cảnh báo/nghi vấn, không phải kết luận chắc chắn thí sinh dùng AI."],
+        ["Nguồn điểm", "Điểm kết hợp dấu hiệu trong từng file code, độ lệch phong cách giữa các bài, và đổi phong cách trong history cùng bài."],
+        ["Khả năng cao", "Điểm nghi vấn từ 60 trở lên."],
+        ["Khả năng trung bình", "Điểm nghi vấn từ 45 đến dưới 60."],
+        ["Khả năng thấp", "Điểm nghi vấn dưới 45."],
+        ["Nên xem lại", "Ưu tiên mở các file trong cột File mẫu cần xem và sheet Đổi style cùng bài."],
+        ["Chép code", "So khớp các cặp final/root cùng contest và cùng bài. File quá ngắn không được chấm để tránh nhiễu."],
+        ["% giống", "Dựa trên token code đã bỏ comment, chuẩn hóa tên biến/hằng số và so fingerprint k-gram."],
+        ["Link file", "Báo cáo có link tới thư mục code đã giải nén trong .runtime/misc của tool local."],
+        ["Không phân tích", "File Scratch .sb3 là nhị phân nên không được chấm bằng heuristic code văn bản."],
+    ]
+    for row in notes:
+        ws.append(row)
+    style_header(ws)
+    autosize_worksheet(ws)
+    wb.save(output_path)
+
+
+def build_ai_warning_report(source_zips: list[Path], output_path: Path) -> dict:
+    records = []
+    extract_root = output_path.parent / "extracted_code"
+    if extract_root.exists():
+        shutil.rmtree(extract_root)
+    extract_root.mkdir(parents=True, exist_ok=True)
+    for zip_path in source_zips:
+        records.extend(collect_code_records_from_zip(zip_path, extract_root))
+    if not records:
+        raise RuntimeError("Không tìm thấy file code văn bản (.py/.cpp/.pas/.c/.java) trong dữ liệu.")
+    analysis = analyze_ai_code_records(records)
+    write_ai_warning_excel(analysis, output_path)
+    high = sum(1 for row in analysis["students"] if row["level"] == "Khả năng cao")
+    medium = sum(1 for row in analysis["students"] if row["level"] == "Khả năng trung bình")
+    low = sum(1 for row in analysis["students"] if row["level"] == "Khả năng thấp")
+    return {
+        "zip_count": len(source_zips),
+        "code_file_count": len(records),
+        "student_count": len(analysis["students"]),
+        "high": high,
+        "medium": medium,
+        "low": low,
+        "shift_count": len(analysis["shifts"]),
+        "copy_pair_count": len(analysis["copy_summaries"]),
+        "copy_detail_count": len(analysis["copy_details"]),
+        "copy_very_similar": sum(1 for row in analysis["copy_summaries"] if row["level"] == "Rất giống"),
+        "copy_many": sum(1 for row in analysis["copy_summaries"] if row["level"] == "Giống nhiều"),
+        "extracted_folder": str(extract_root),
+        "filename": output_path.name,
+    }
+
+
 @app.before_request
 def require_basic_auth():
     auth_user = os.getenv("TOOL_OJ_AUTH_USER")
@@ -263,6 +1069,11 @@ PAGE = r"""
     .table-tools { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
     .note, .guide { border:1px solid #b8d8d3; background:#f0fdfa; color:#134e48; border-radius:8px; padding:12px; line-height:1.48; margin:12px 0; }
     .guide { border-color:var(--line); background:#fafbfc; color:var(--ink); }
+    .tool-card { border:1px solid #cbd5e1; background:#fff; border-radius:8px; padding:16px; margin-top:16px; box-shadow:0 1px 3px rgba(16,24,40,.08); }
+    .tool-card + .tool-card { margin-top:18px; }
+    .tool-title { display:flex; align-items:center; gap:10px; margin:0 0 8px; font-size:18px; color:#0f172a; }
+    .tool-title::before { content:""; width:6px; height:24px; border-radius:999px; background:var(--accent); display:inline-block; }
+    .tool-subtitle { margin-bottom:14px; }
     .sample, pre#log { background:var(--code); color:#f2f4f7; border-radius:6px; padding:12px; white-space:pre-wrap; overflow:auto; font-family:Consolas, "Cascadia Mono", monospace; font-size:12px; line-height:1.45; }
     .log-panel { display:grid; grid-template-rows:auto minmax(560px, 1fr); min-height:700px; }
     .log-head { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:12px; align-items:center; }
@@ -304,6 +1115,7 @@ PAGE = r"""
       <button type="button" data-panel="transfer">Chuyển bài</button>
       <button type="button" data-panel="contest-transfer">Chuyển contest</button>
       <button type="button" data-panel="contest-create">Tạo contest</button>
+      <button type="button" data-panel="misc-tools">Tool lẻ</button>
     </div>
   </header>
 
@@ -489,6 +1301,43 @@ PAGE = r"""
         <textarea id="createContestProblems" placeholder="tht26hn_cka_thieunhi&#10;tht26hn_cka_tongdayso"></textarea>
         <div class="actions">
           <button class="action primary" type="button" id="createContestButton">Tạo contest</button>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-misc-tools">
+        <h2>Tool lẻ</h2>
+        <p>Các chức năng phụ chạy ổn định trên local, không cần đăng nhập web OJ.</p>
+        <div class="tool-card">
+          <h3 class="tool-title">Lấy last submissions Scratch</h3>
+          <p class="tool-subtitle">Upload file zip data. Tool sẽ lấy mỗi thí sinh 1 file `.sb3`: ưu tiên file trong thư mục `$History` có số cuối lớn nhất, nếu không có thì lấy file `.sb3` ở thư mục gốc của thí sinh.</p>
+          <label>File zip data</label>
+          <div class="row">
+            <div class="grow"><input id="lastSubZipName" type="text" placeholder="Chưa chọn file zip" readonly></div>
+            <button class="action" type="button" id="chooseLastSubZip">Chọn file</button>
+            <input id="lastSubZipFile" class="hidden" type="file" accept=".zip,application/zip">
+          </div>
+          <div class="actions">
+            <button class="action primary" type="button" id="runLastSubmissions">Tạo zip last submissions</button>
+          </div>
+          <div id="lastSubmissionsSummary"></div>
+        </div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Cảnh báo sử dụng AI để code</h3>
+          <p class="tool-subtitle">Nhận vào một folder chứa nhiều file zip contest hoặc chọn một file zip data contest. Tool phân tích dấu hiệu AI code, đổi phong cách code và nghi vấn chép code nhau, rồi xuất Excel có link mở file code.</p>
+          <label>Folder chứa các zip contest</label>
+          <input id="aiWarningFolder" type="text" value="{{ ai_source_default }}">
+          <label>Hoặc chọn 1 file zip data contest</label>
+          <div class="row">
+            <div class="grow"><input id="aiWarningZipName" type="text" placeholder="Không chọn thì dùng folder ở trên" readonly></div>
+            <button class="action" type="button" id="chooseAiWarningZip">Chọn file zip</button>
+            <input id="aiWarningZipFile" class="hidden" type="file" accept=".zip,application/zip">
+          </div>
+          <p>Đây là báo cáo cảnh báo/nghi vấn, không phải kết luận chắc chắn. Nên mở các file mẫu trong Excel để kiểm tra lại.</p>
+          <div class="actions">
+            <button class="action primary" type="button" id="runAiWarning">Tạo báo cáo Excel</button>
+          </div>
+          <div id="aiWarningSummary"></div>
         </div>
       </div>
     </section>
@@ -1071,6 +1920,87 @@ document.getElementById("createContestButton").onclick = async () => {
   }
 };
 
+document.getElementById("chooseLastSubZip").onclick = () => document.getElementById("lastSubZipFile").click();
+document.getElementById("lastSubZipFile").addEventListener("change", event => {
+  const file = event.target.files && event.target.files[0];
+  document.getElementById("lastSubZipName").value = file ? file.name : "";
+});
+document.getElementById("runLastSubmissions").onclick = async () => {
+  try {
+    const input = document.getElementById("lastSubZipFile");
+    const file = input.files && input.files[0];
+    if (!file) throw new Error("Hãy chọn file zip data trước.");
+    status("running");
+    log("Đang xử lý last submissions...");
+    const form = new FormData();
+    form.append("zip_file", file);
+    const res = await fetch("/api/misc/last-submissions", {method:"POST", body:form});
+    if (!res.ok) {
+      const data = await parseJsonResponse(res);
+      throw new Error(data.error || "Không xử lý được file zip.");
+    }
+    const summaryRaw = res.headers.get("X-Last-Submissions-Summary") || "";
+    const summary = summaryRaw ? JSON.parse(decodeURIComponent(summaryRaw)) : {};
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = summary.filename || "last_submissions.zip";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const text = `✓ Đã tạo file zip last submissions.\nTìm thấy: ${summary.found || 0}/${summary.total || 0} thí sinh\nThiếu file: ${summary.missing || 0}\nFile tải về: ${summary.filename || "last_submissions.zip"}`;
+    document.getElementById("lastSubmissionsSummary").innerHTML = `<div class="note">${escapeHtml(text).replaceAll("\n", "<br>")}</div>`;
+    log(text);
+    status("done", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+document.getElementById("chooseAiWarningZip").onclick = () => document.getElementById("aiWarningZipFile").click();
+document.getElementById("aiWarningZipFile").addEventListener("change", event => {
+  const file = event.target.files && event.target.files[0];
+  document.getElementById("aiWarningZipName").value = file ? file.name : "";
+});
+document.getElementById("runAiWarning").onclick = async () => {
+  try {
+    status("running");
+    log("Đang phân tích dấu hiệu sử dụng AI để code...");
+    const input = document.getElementById("aiWarningZipFile");
+    const file = input.files && input.files[0];
+    const folder = document.getElementById("aiWarningFolder").value.trim();
+    const form = new FormData();
+    if (file) form.append("zip_file", file);
+    else form.append("folder_path", folder);
+    const res = await fetch("/api/misc/ai-code-warning", {method:"POST", body:form});
+    if (!res.ok) {
+      const data = await parseJsonResponse(res);
+      throw new Error(data.error || "Không tạo được báo cáo.");
+    }
+    const summaryRaw = res.headers.get("X-AI-Warning-Summary") || "";
+    const summary = summaryRaw ? JSON.parse(decodeURIComponent(summaryRaw)) : {};
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = summary.filename || "ai_code_warning_report.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const text = `✓ Đã tạo báo cáo Excel cảnh báo AI code.\nSố contest zip: ${summary.zip_count || 0}\nSố file code: ${summary.code_file_count || 0}\nSố thí sinh: ${summary.student_count || 0}\nKhả năng cao: ${summary.high || 0}\nKhả năng trung bình: ${summary.medium || 0}\nKhả năng thấp: ${summary.low || 0}\nĐổi style cùng bài: ${summary.shift_count || 0}\nCặp nghi chép code: ${summary.copy_pair_count || 0}\nCặp rất giống: ${summary.copy_very_similar || 0}\nChi tiết cặp theo bài: ${summary.copy_detail_count || 0}\nThư mục code đã giải nén: ${summary.extracted_folder || ""}\nFile tải về: ${summary.filename || "ai_code_warning_report.xlsx"}`;
+    document.getElementById("aiWarningSummary").innerHTML = `<div class="note">${escapeHtml(text).replaceAll("\n", "<br>")}</div>`;
+    log(text);
+    status("done", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
 function contestTransferSettings() {
   return {
     reuse_existing_problems: document.getElementById("contestReuseExistingProblems").checked,
@@ -1178,6 +2108,7 @@ def index():
     return render_template_string(
         PAGE,
         default_zip=DEFAULT_ZIP,
+        ai_source_default=AI_SOURCE_DEFAULT,
         prompt_guide=PROMPT_GUIDE,
         targets_json=json.dumps(TARGETS, ensure_ascii=False),
     )
@@ -1223,6 +2154,80 @@ def api_progress(progress_id: str):
     if not path.exists():
         return jsonify({"phase": "waiting", "done": 0, "total": 0, "message": ""})
     return jsonify(json.loads(path.read_text(encoding="utf-8")))
+
+
+@app.post("/api/misc/last-submissions")
+def api_misc_last_submissions():
+    uploaded = request.files.get("zip_file")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"error": "Chưa chọn file zip data."}), 400
+    if Path(uploaded.filename).suffix.lower() != ".zip":
+        return jsonify({"error": "File data phải là .zip."}), 400
+    job_root = RUNTIME / "misc" / uuid.uuid4().hex
+    input_zip = job_root / "input.zip"
+    extract_root = job_root / "extract"
+    output_dir = job_root / "Last_Submissions"
+    try:
+        job_root.mkdir(parents=True, exist_ok=True)
+        uploaded.save(input_zip)
+        safe_extract_zip(input_zip, extract_root)
+        data_root = find_scratch_data_root(extract_root)
+        summary = collect_last_scratch_submissions(data_root, output_dir)
+        if summary["total"] == 0:
+            return jsonify({"error": "Không tìm thấy thư mục thí sinh nào trong file zip."}), 400
+        output_zip = job_root / "last_submissions.zip"
+        with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for item in sorted(output_dir.iterdir(), key=lambda path: path.name.lower()):
+                if item.is_file():
+                    zf.write(item, item.name)
+        summary_payload = {
+            "total": summary["total"],
+            "found": summary["found"],
+            "missing": summary["missing"],
+            "filename": output_zip.name,
+        }
+        response = send_file(output_zip, as_attachment=True, download_name=output_zip.name, mimetype="application/zip")
+        response.headers["X-Last-Submissions-Summary"] = quote(json.dumps(summary_payload, ensure_ascii=False))
+        return response
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/api/misc/ai-code-warning")
+def api_misc_ai_code_warning():
+    job_root = RUNTIME / "misc" / uuid.uuid4().hex
+    try:
+        job_root.mkdir(parents=True, exist_ok=True)
+        uploaded = request.files.get("zip_file")
+        source_zips: list[Path] = []
+        if uploaded and uploaded.filename:
+            if Path(uploaded.filename).suffix.lower() != ".zip":
+                return jsonify({"error": "File data phải là .zip."}), 400
+            input_zip = job_root / safe_output_part(Path(uploaded.filename).name)
+            uploaded.save(input_zip)
+            source_zips = [input_zip]
+        else:
+            folder_path = (request.form.get("folder_path") or "").strip()
+            if not folder_path:
+                return jsonify({"error": "Hãy chọn file zip hoặc nhập folder chứa các zip contest."}), 400
+            folder = Path(folder_path)
+            if not folder.exists() or not folder.is_dir():
+                return jsonify({"error": f"Folder không tồn tại: {folder_path}"}), 400
+            source_zips = sorted(folder.glob("*.zip"))
+            if not source_zips:
+                return jsonify({"error": f"Không tìm thấy file .zip nào trong folder: {folder_path}"}), 400
+        output_path = job_root / "ai_code_warning_report.xlsx"
+        summary = build_ai_warning_report(source_zips, output_path)
+        response = send_file(
+            output_path,
+            as_attachment=True,
+            download_name=output_path.name,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response.headers["X-AI-Warning-Summary"] = quote(json.dumps(summary, ensure_ascii=False))
+        return response
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 @app.post("/api/tinhoctre-browser/start")
