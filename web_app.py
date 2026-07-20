@@ -3198,6 +3198,12 @@ def remove_contest_problem_fields(data: list[tuple[str, str]]) -> list[tuple[str
     return [(name, value) for name, value in data if not any(name.startswith(prefix) for prefix in prefixes)]
 
 
+def clean_contest_base_field(name: str, value: str) -> str:
+    if name in {"format_config", "problem_label_script", "summary"} and not str(value).strip():
+        return ""
+    return value
+
+
 def form_has_field(page: str, name: str) -> bool:
     return bool(re.search(r'\bname=["\']' + re.escape(name) + r'["\']', page))
 
@@ -3367,7 +3373,7 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
                 (f"contest_problems-{idx}-contest", ""),
                 (f"contest_problems-{idx}-problem", str(problem["id"])),
                 (f"contest_problems-{idx}-points", str(problem.get("points") or "100")),
-                (f"contest_problems-{idx}-max_submissions", str(problem.get("max_submissions") if problem.get("max_submissions") not in (None, "") else "0")),
+                (f"contest_problems-{idx}-max_submissions", contest_max_submissions_value(problem, dest)),
                 (f"contest_problems-{idx}-hidden_subtasks", str(problem.get("hidden_subtasks") or "")),
                 (f"contest_problems-{idx}-output_prefix_override", ""),
                 (f"contest_problems-{idx}-order", str(problem.get("order", idx))),
@@ -3405,7 +3411,7 @@ def existing_contest_problem_rows(page: str) -> list[dict]:
                 "is_pretested": checkbox_checked(page, f"contest_problems-{idx}-is_pretested"),
                 "is_result_hidden": checkbox_checked(page, f"contest_problems-{idx}-is_result_hidden"),
                 "show_testcases": checkbox_checked(page, f"contest_problems-{idx}-show_testcases"),
-                "max_submissions": input_value(page, f"contest_problems-{idx}-max_submissions", "0") or "0",
+                "max_submissions": input_value(page, f"contest_problems-{idx}-max_submissions", ""),
                 "hidden_subtasks": input_value(page, f"contest_problems-{idx}-hidden_subtasks", ""),
                 "output_prefix_override": input_value(page, f"contest_problems-{idx}-output_prefix_override", ""),
                 "order": input_value(page, f"contest_problems-{idx}-order", str(idx)) or str(idx),
@@ -3414,7 +3420,14 @@ def existing_contest_problem_rows(page: str) -> list[dict]:
     return rows
 
 
-def append_contest_problem_fields(data: list[tuple[str, str]], page: str, rows: list[dict], initial_forms: int) -> None:
+def contest_max_submissions_value(problem: dict, dest: str) -> str:
+    value = problem.get("max_submissions")
+    if value not in (None, ""):
+        return str(value)
+    return "0" if dest == "hncode" else ""
+
+
+def append_contest_problem_fields(data: list[tuple[str, str]], page: str, rows: list[dict], initial_forms: int, dest: str) -> None:
     data.extend(
         [
             ("contest_problems-TOTAL_FORMS", str(len(rows))),
@@ -3433,7 +3446,7 @@ def append_contest_problem_fields(data: list[tuple[str, str]], page: str, rows: 
                 (f"contest_problems-{idx}-contest", str(problem.get("contest") or "")),
                 (f"contest_problems-{idx}-problem", str(problem["id"])),
                 (f"contest_problems-{idx}-points", str(problem.get("points") or "100")),
-                (f"contest_problems-{idx}-max_submissions", str(problem.get("max_submissions") if problem.get("max_submissions") not in (None, "") else "0")),
+                (f"contest_problems-{idx}-max_submissions", contest_max_submissions_value(problem, dest)),
                 (f"contest_problems-{idx}-hidden_subtasks", str(problem.get("hidden_subtasks") or "")),
                 (f"contest_problems-{idx}-output_prefix_override", str(problem.get("output_prefix_override") or "")),
                 (f"contest_problems-{idx}-order", str(problem.get("order", idx))),
@@ -3451,7 +3464,7 @@ def append_contest_problem_fields(data: list[tuple[str, str]], page: str, rows: 
             data.append((f"contest_problems-{idx}-show_testcases", "on"))
 
 
-def append_problems_to_existing_contest(session, base_url: str, change_url: str, problem_ids: list[dict]) -> str:
+def append_problems_to_existing_contest(session, base_url: str, dest: str, change_url: str, problem_ids: list[dict]) -> str:
     page = session.get(change_url)
     if not page.ok:
         raise RuntimeError(f"Không mở được form sửa contest: HTTP {page.status_code}")
@@ -3472,14 +3485,18 @@ def append_problems_to_existing_contest(session, base_url: str, change_url: str,
         item["contest"] = ""
         item["id"] = problem_id
         item["order"] = str(next_order + added)
-        item["max_submissions"] = item.get("max_submissions") if item.get("max_submissions") not in (None, "") else "0"
+        item["max_submissions"] = contest_max_submissions_value(item, dest)
         rows.append(item)
         existing_ids.add(problem_id)
         added += 1
     if not added:
         return change_url
-    data = [(name, value) for name, value in base_data if name not in {"_save", "_addanother", "_continue"}]
-    append_contest_problem_fields(data, page.text, rows, initial_forms)
+    data = [
+        (name, clean_contest_base_field(name, value))
+        for name, value in base_data
+        if name not in {"_save", "_addanother", "_continue"}
+    ]
+    append_contest_problem_fields(data, page.text, rows, initial_forms, dest)
     data.append(("_continue", "Save and continue editing"))
     result = session.post(change_url, data=data, headers={"Referer": change_url}, allow_redirects=True)
     if not result.ok:
@@ -3495,7 +3512,7 @@ def append_problems_to_existing_contest(session, base_url: str, change_url: str,
 def create_contest(session, base_url: str, dest: str, info: dict, problem_ids: list[dict], author_username: str = "") -> str:
     change_url = admin_contest_change_url(session, base_url, info["key"])
     if change_url:
-        return append_problems_to_existing_contest(session, base_url, change_url, problem_ids)
+        return append_problems_to_existing_contest(session, base_url, dest, change_url, problem_ids)
     add_url = urljoin(base_url, "/admin/judge/contest/add/")
     page = session.get(add_url)
     if not page.ok:
