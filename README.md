@@ -12,10 +12,13 @@ Tool ưu tiên tạo bài qua admin form:
 - `https://tinhoctre.vn/admin/judge/problem/add/`
 - `https://hncode.edu.vn/admin/judge/problem/add/`
 
-Ghi chú HNCode: form test data hiện vẫn gọi endpoint
-`/problem/<ma_bai>/test_data/upload`. Nếu server trả lỗi dạng
-`Read-only file system: /mnt/efs/problems/...` thì đây là lỗi ghi storage
-phía HNCode; tool đã gửi đúng endpoint nhưng backend HNCode chưa lưu được file test.
+Ghi chú HNCode: trang upload test đúng là
+`https://hncode.edu.vn/problem/<ma_bai>/test_data`. Trang này dùng
+FineUploader gọi endpoint con `/problem/<ma_bai>/test_data/upload`. Nếu server
+trả lỗi dạng `Read-only file system: /mnt/efs/problems/...` thì đây là lỗi ghi
+storage phía HNCode; tool đã gửi đúng endpoint nhưng backend HNCode chưa lưu
+được file test. Form HNCode mới cũng bắt buộc mỗi test có
+`batch_scoring=sum`, tool đã tự gửi field này khi lưu metadata test.
 Trước khi upload lên HNCode, tool tự chuẩn hoá zip test về dạng phẳng
 `01.inp/01.out`, `02.inp/02.out`, ... để tránh lỗi do thư mục con hoặc tên file
 test không đồng nhất.

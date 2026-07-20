@@ -512,6 +512,9 @@ def upload_hncode_tests(
         ("problem-data-checker", "standard"),
         ("problem-data-fileio_input", ""),
         ("problem-data-fileio_output", ""),
+        ("problem-data-output_zip_size_mb", ""),
+        ("problem-data-communication_num_processes", ""),
+        ("problem-data-generator_script", ""),
         ("problem-data-checker_args", ""),
         ("signature-graders-TOTAL_FORMS", "3"),
         ("signature-graders-INITIAL_FORMS", "0"),
@@ -529,11 +532,13 @@ def upload_hncode_tests(
         data.extend(
             [
                 (f"cases-{idx}-id", ""),
-                (f"cases-{idx}-order", str(case.order)),
+                (f"cases-{idx}-order", str(idx)),
                 (f"cases-{idx}-type", case.kind),
                 (f"cases-{idx}-input_file", case.input_file),
                 (f"cases-{idx}-output_file", case.output_file),
                 (f"cases-{idx}-points", case.points),
+                (f"cases-{idx}-batch_scoring", "sum"),
+                (f"cases-{idx}-generator_args", ""),
             ]
         )
         if case.is_pretest:
@@ -541,6 +546,8 @@ def upload_hncode_tests(
 
     result = dest.post(test_url, data=data, headers={"Referer": test_url}, allow_redirects=True)
     require(result.ok, f"HNCode test_data apply failed: HTTP {result.status_code}")
+    errors = form_errors(result.text)
+    require(not errors, "HNCode test_data form errors: " + "; ".join(errors))
 
     yaml_url = urljoin(base_url, f"/problem/{problem_code}/test_data/init")
     yaml_page = dest.get(yaml_url)
