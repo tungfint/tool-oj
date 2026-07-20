@@ -15,6 +15,7 @@ import uuid
 import zipfile
 from collections import Counter, defaultdict
 from dataclasses import replace
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote, urljoin
 from urllib.request import urlopen
@@ -3095,6 +3096,112 @@ def valid_select_value(page: str, name: str, wanted: str, default: str = "") -> 
     return values[0] if values else wanted
 
 
+class FormDataParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.forms: list[list[tuple[str, str]]] = []
+        self.current: list[tuple[str, str]] | None = None
+        self.select: dict | None = None
+        self.textarea: dict | None = None
+
+    @staticmethod
+    def attrs_dict(attrs) -> dict[str, str]:
+        return {str(k): "" if v is None else str(v) for k, v in attrs}
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        attrs_map = self.attrs_dict(attrs)
+        if tag == "form":
+            self.current = []
+            return
+        if self.current is None:
+            return
+        if tag == "input":
+            name = attrs_map.get("name", "")
+            if not name or attrs_map.get("disabled") is not None:
+                return
+            input_type = attrs_map.get("type", "text").lower()
+            if input_type in {"file", "submit", "button", "image", "reset"}:
+                return
+            if input_type in {"checkbox", "radio"}:
+                if "checked" in attrs_map:
+                    self.current.append((name, attrs_map.get("value") or "on"))
+                return
+            self.current.append((name, attrs_map.get("value", "")))
+            return
+        if tag == "select":
+            name = attrs_map.get("name", "")
+            self.select = {
+                "name": name,
+                "multiple": "multiple" in attrs_map,
+                "disabled": "disabled" in attrs_map,
+                "options": [],
+            }
+            return
+        if tag == "option" and self.select is not None:
+            self.select["options"].append(
+                {
+                    "value": attrs_map.get("value", ""),
+                    "selected": "selected" in attrs_map,
+                }
+            )
+            return
+        if tag == "textarea":
+            name = attrs_map.get("name", "")
+            self.textarea = {"name": name, "disabled": "disabled" in attrs_map, "parts": []}
+
+    def handle_data(self, data: str) -> None:
+        if self.textarea is not None:
+            self.textarea["parts"].append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "form" and self.current is not None:
+            self.forms.append(self.current)
+            self.current = None
+            return
+        if self.current is None:
+            return
+        if tag == "select" and self.select is not None:
+            name = self.select.get("name", "")
+            if name and not self.select.get("disabled"):
+                options = self.select.get("options") or []
+                selected = [option for option in options if option.get("selected")]
+                if not selected and not self.select.get("multiple") and options:
+                    selected = [options[0]]
+                for option in selected:
+                    self.current.append((name, str(option.get("value", ""))))
+            self.select = None
+            return
+        if tag == "textarea" and self.textarea is not None:
+            name = self.textarea.get("name", "")
+            if name and not self.textarea.get("disabled"):
+                self.current.append((str(name), "".join(self.textarea.get("parts") or [])))
+            self.textarea = None
+
+
+def collect_contest_form_data(page: str) -> list[tuple[str, str]]:
+    parser = FormDataParser()
+    parser.feed(page)
+    for form in parser.forms:
+        if any(name == "contest_problems-TOTAL_FORMS" for name, _value in form):
+            return form
+    return []
+
+
+def remove_contest_problem_fields(data: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    prefixes = (
+        "contest_problems-",
+        "contest_problems-TOTAL_FORMS",
+        "contest_problems-INITIAL_FORMS",
+        "contest_problems-MIN_NUM_FORMS",
+        "contest_problems-MAX_NUM_FORMS",
+    )
+    return [(name, value) for name, value in data if not any(name.startswith(prefix) for prefix in prefixes)]
+
+
+def form_has_field(page: str, name: str) -> bool:
+    return bool(re.search(r'\bname=["\']' + re.escape(name) + r'["\']', page))
+
+
 def select2_field_id(page: str, name: str) -> str:
     match = re.search(r'name="' + re.escape(name) + r'"[^>]*data-field_id="([^"]+)"', page)
     return html.unescape(match.group(1)) if match else ""
@@ -3204,6 +3311,8 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
         ("format_name", format_name),
         ("format_config", info.get("format_config", "")),
         ("frozen_last_minutes", info.get("frozen_last_minutes", "0") or "0"),
+        ("rate_limit", info.get("rate_limit", "")),
+        ("freeze_after", info.get("freeze_after", "")),
         ("problem_label_script", info.get("problem_label_script", "")),
         ("rating_floor", info.get("rating_floor", "")),
         ("rating_ceiling", info.get("rating_ceiling", "")),
@@ -3238,6 +3347,9 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
         "hide_problem_authors",
         "show_short_display",
         "show_submission_list",
+        "public_scoreboard",
+        "run_pretests_only",
+        "rate_all",
     ]:
         if info.get(flag):
             data.append((flag, "on"))
@@ -3245,6 +3357,9 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
         data.append(("is_rated", "on"))
     if info.get("is_private"):
         data.append(("is_private", "on"))
+    has_quiz = form_has_field(page, "contest_problems-0-quiz") or form_has_field(page, "contest_problems-__prefix__-quiz")
+    has_result_hidden = form_has_field(page, "contest_problems-0-is_result_hidden") or form_has_field(page, "contest_problems-__prefix__-is_result_hidden")
+    has_show_testcases = form_has_field(page, "contest_problems-0-show_testcases") or form_has_field(page, "contest_problems-__prefix__-show_testcases")
     for idx, problem in enumerate(problem_ids):
         data.extend(
             [
@@ -3252,22 +3367,135 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
                 (f"contest_problems-{idx}-contest", ""),
                 (f"contest_problems-{idx}-problem", str(problem["id"])),
                 (f"contest_problems-{idx}-points", str(problem.get("points") or "100")),
-                (f"contest_problems-{idx}-max_submissions", str(problem.get("max_submissions") or "")),
+                (f"contest_problems-{idx}-max_submissions", str(problem.get("max_submissions") if problem.get("max_submissions") not in (None, "") else "0")),
                 (f"contest_problems-{idx}-hidden_subtasks", str(problem.get("hidden_subtasks") or "")),
                 (f"contest_problems-{idx}-output_prefix_override", ""),
                 (f"contest_problems-{idx}-order", str(problem.get("order", idx))),
             ]
         )
+        if has_quiz:
+            data.append((f"contest_problems-{idx}-quiz", str(problem.get("quiz") or "")))
         if problem.get("partial", True):
             data.append((f"contest_problems-{idx}-partial", "on"))
         if problem.get("is_pretested"):
             data.append((f"contest_problems-{idx}-is_pretested", "on"))
+        if has_result_hidden and problem.get("is_result_hidden"):
+            data.append((f"contest_problems-{idx}-is_result_hidden", "on"))
+        if has_show_testcases and problem.get("show_testcases"):
+            data.append((f"contest_problems-{idx}-show_testcases", "on"))
     return data
 
 
+def existing_contest_problem_rows(page: str) -> list[dict]:
+    total = int(input_value(page, "contest_problems-TOTAL_FORMS", "0") or "0")
+    initial = int(input_value(page, "contest_problems-INITIAL_FORMS", "0") or "0")
+    rows: list[dict] = []
+    for idx in range(initial):
+        problem_id = selected_option(page, f"contest_problems-{idx}-problem", "") or input_value(page, f"contest_problems-{idx}-problem", "")
+        if not problem_id:
+            continue
+        rows.append(
+            {
+                "form_id": input_value(page, f"contest_problems-{idx}-id", ""),
+                "contest": input_value(page, f"contest_problems-{idx}-contest", ""),
+                "id": problem_id,
+                "quiz": selected_option(page, f"contest_problems-{idx}-quiz", "") or input_value(page, f"contest_problems-{idx}-quiz", ""),
+                "points": input_value(page, f"contest_problems-{idx}-points", "100") or "100",
+                "partial": checkbox_checked(page, f"contest_problems-{idx}-partial"),
+                "is_pretested": checkbox_checked(page, f"contest_problems-{idx}-is_pretested"),
+                "is_result_hidden": checkbox_checked(page, f"contest_problems-{idx}-is_result_hidden"),
+                "show_testcases": checkbox_checked(page, f"contest_problems-{idx}-show_testcases"),
+                "max_submissions": input_value(page, f"contest_problems-{idx}-max_submissions", "0") or "0",
+                "hidden_subtasks": input_value(page, f"contest_problems-{idx}-hidden_subtasks", ""),
+                "output_prefix_override": input_value(page, f"contest_problems-{idx}-output_prefix_override", ""),
+                "order": input_value(page, f"contest_problems-{idx}-order", str(idx)) or str(idx),
+            }
+        )
+    return rows
+
+
+def append_contest_problem_fields(data: list[tuple[str, str]], page: str, rows: list[dict], initial_forms: int) -> None:
+    data.extend(
+        [
+            ("contest_problems-TOTAL_FORMS", str(len(rows))),
+            ("contest_problems-INITIAL_FORMS", str(initial_forms)),
+            ("contest_problems-MIN_NUM_FORMS", "0"),
+            ("contest_problems-MAX_NUM_FORMS", "1000"),
+        ]
+    )
+    has_quiz = form_has_field(page, "contest_problems-0-quiz") or form_has_field(page, "contest_problems-__prefix__-quiz")
+    has_result_hidden = form_has_field(page, "contest_problems-0-is_result_hidden") or form_has_field(page, "contest_problems-__prefix__-is_result_hidden")
+    has_show_testcases = form_has_field(page, "contest_problems-0-show_testcases") or form_has_field(page, "contest_problems-__prefix__-show_testcases")
+    for idx, problem in enumerate(rows):
+        data.extend(
+            [
+                (f"contest_problems-{idx}-id", str(problem.get("form_id") or "")),
+                (f"contest_problems-{idx}-contest", str(problem.get("contest") or "")),
+                (f"contest_problems-{idx}-problem", str(problem["id"])),
+                (f"contest_problems-{idx}-points", str(problem.get("points") or "100")),
+                (f"contest_problems-{idx}-max_submissions", str(problem.get("max_submissions") if problem.get("max_submissions") not in (None, "") else "0")),
+                (f"contest_problems-{idx}-hidden_subtasks", str(problem.get("hidden_subtasks") or "")),
+                (f"contest_problems-{idx}-output_prefix_override", str(problem.get("output_prefix_override") or "")),
+                (f"contest_problems-{idx}-order", str(problem.get("order", idx))),
+            ]
+        )
+        if has_quiz:
+            data.append((f"contest_problems-{idx}-quiz", str(problem.get("quiz") or "")))
+        if problem.get("partial", True):
+            data.append((f"contest_problems-{idx}-partial", "on"))
+        if problem.get("is_pretested"):
+            data.append((f"contest_problems-{idx}-is_pretested", "on"))
+        if has_result_hidden and problem.get("is_result_hidden"):
+            data.append((f"contest_problems-{idx}-is_result_hidden", "on"))
+        if has_show_testcases and problem.get("show_testcases"):
+            data.append((f"contest_problems-{idx}-show_testcases", "on"))
+
+
+def append_problems_to_existing_contest(session, base_url: str, change_url: str, problem_ids: list[dict]) -> str:
+    page = session.get(change_url)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được form sửa contest: HTTP {page.status_code}")
+    base_data = remove_contest_problem_fields(collect_contest_form_data(page.text))
+    if not base_data:
+        raise RuntimeError("Không đọc được form sửa contest để thêm bài.")
+    rows = existing_contest_problem_rows(page.text)
+    initial_forms = int(input_value(page.text, "contest_problems-INITIAL_FORMS", str(len(rows))) or str(len(rows)))
+    existing_ids = {str(row["id"]) for row in rows}
+    next_order = max([int(str(row.get("order") or 0)) for row in rows if str(row.get("order") or "").isdigit()] or [-1]) + 1
+    added = 0
+    for problem in problem_ids:
+        problem_id = str(problem["id"])
+        if problem_id in existing_ids:
+            continue
+        item = dict(problem)
+        item["form_id"] = ""
+        item["contest"] = ""
+        item["id"] = problem_id
+        item["order"] = str(next_order + added)
+        item["max_submissions"] = item.get("max_submissions") if item.get("max_submissions") not in (None, "") else "0"
+        rows.append(item)
+        existing_ids.add(problem_id)
+        added += 1
+    if not added:
+        return change_url
+    data = [(name, value) for name, value in base_data if name not in {"_save", "_addanother", "_continue"}]
+    append_contest_problem_fields(data, page.text, rows, initial_forms)
+    data.append(("_continue", "Save and continue editing"))
+    result = session.post(change_url, data=data, headers={"Referer": change_url}, allow_redirects=True)
+    if not result.ok:
+        raise RuntimeError(f"Thêm bài vào contest lỗi HTTP {result.status_code}")
+    errors = form_errors(result.text)
+    if errors:
+        raise RuntimeError("Form thêm bài vào contest báo lỗi:\n" + "\n".join(errors))
+    if "/change/" not in result.url:
+        raise RuntimeError(f"Thêm bài vào contest chưa quay lại trang sửa: {result.url}")
+    return result.url
+
+
 def create_contest(session, base_url: str, dest: str, info: dict, problem_ids: list[dict], author_username: str = "") -> str:
-    if admin_contest_change_url(session, base_url, info["key"]):
-        raise ContestAlreadyExists(f"Contest {info['key']} đã tồn tại tại {contest_url(base_url, info['key'])}")
+    change_url = admin_contest_change_url(session, base_url, info["key"])
+    if change_url:
+        return append_problems_to_existing_contest(session, base_url, change_url, problem_ids)
     add_url = urljoin(base_url, "/admin/judge/contest/add/")
     page = session.get(add_url)
     if not page.ok:
@@ -3429,8 +3657,6 @@ def api_confirm_contest_transfer():
                     info["problems"] = [problem for problem in info["problems"] if problem["code"] in selected_codes]
                 if not info["problems"]:
                     raise RuntimeError("Chưa chọn bài nào trong contest")
-                if admin_contest_change_url(dst, TARGETS[dest]["base_url"], info["key"]):
-                    raise ContestAlreadyExists(f"Contest {info['key']} đã tồn tại tại {contest_url(TARGETS[dest]['base_url'], info['key'])}")
                 problem_refs = []
                 for problem in info["problems"]:
                     code = problem["code"]
@@ -3461,7 +3687,7 @@ def api_confirm_contest_transfer():
                 create_contest(dst, TARGETS[dest]["base_url"], dest, info, problem_refs, dest_account.get("username", ""))
                 row["status"] = "✓ Thành công"
                 row["link"] = contest_url(TARGETS[dest]["base_url"], info["key"])
-                log_lines.append(f"✓ {info['key']}: đã tạo contest với {len(problem_refs)} bài.")
+                log_lines.append(f"✓ {info['key']}: đã tạo/cập nhật contest với {len(problem_refs)} bài theo đúng thứ tự gửi lên.")
             except ContestAlreadyExists as exc:
                 row["status"] = "✗ Contest đã tồn tại"
                 row["link"] = contest_url(TARGETS[dest]["base_url"], row.get("key") or row.get("original_key"))
@@ -3516,9 +3742,7 @@ def api_create_contest():
         }
         create_contest(dst, TARGETS[target]["base_url"], target, info, refs, account.get("username", ""))
         link = contest_url(TARGETS[target]["base_url"], key)
-        return jsonify({"ok": True, "log": f"✓ Đã tạo contest {key}\nLink: {link}", "link": link})
-    except ContestAlreadyExists as exc:
-        return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "log": f"✓ Đã tạo/cập nhật contest {key}\nLink: {link}", "link": link})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
