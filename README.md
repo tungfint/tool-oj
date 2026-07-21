@@ -235,7 +235,7 @@ Khi chuyển bài/contest, nếu đề nguồn chỉ có file PDF mà không có
 
 Sau khi bấm `Chuẩn bị dữ liệu`, trạng thái chuẩn bị của phần chuyển contest được lưu xuống `.runtime/contest_transfer_<prepare_id>/state.json`. Vì vậy nếu request xác nhận đi sang worker khác hoặc service vừa restart nhẹ, nút `Xác nhận chuyển contest` vẫn có thể tiếp tục dùng dữ liệu đã chuẩn bị.
 
-Nếu contest đã tồn tại ở đích, tool báo rõ `Contest đã tồn tại` và hiển thị `Link`, không tự ghi đè setup cũ.
+Nếu contest đã tồn tại ở đích, tool mở form sửa contest và thêm các bài chưa có vào cuối danh sách theo đúng thứ tự gửi lên. Bài đã có trong contest được bỏ qua để tránh trùng.
 
 ## Tab Tạo contest
 
@@ -250,6 +250,65 @@ Nhập:
 - Danh sách mã bài.
 
 Sau khi tạo xong, người dùng có thể vào admin của web đích để chỉnh setup chi tiết hơn.
+
+## Tab Up Quiz
+
+Tab này up danh sách câu hỏi lên HNCode Quiz qua form:
+
+```text
+https://oj.hncode.edu.vn/quiz/questions/create/
+```
+
+Tool hỗ trợ 4 loại câu hỏi:
+
+- `MC`: Trắc nghiệm 1 đáp án.
+- `MA`: Trắc nghiệm nhiều đáp án.
+- `SA`: Trả lời ngắn.
+- `TF`: Đúng / Sai.
+
+Nhãn để trống. Hai lựa chọn `Xáo trộn lựa chọn` và `Công khai` được chọn trực tiếp trên giao diện.
+
+Format mỗi câu hỏi:
+
+```text
+Loại: MC
+Tiêu đề: Câu hỏi ví dụ 1
+Nội dung:
+Trong Python, hàm nào dùng để in ra màn hình?
+Lựa chọn:
+- A. input()
+- B. print()
+- C. len()
+- D. range()
+Đáp án: B
+Giải thích:
+`print()` dùng để in dữ liệu ra màn hình.
+---
+Loại: MA
+Tiêu đề: Số nguyên tố
+Nội dung:
+Những số nào sau đây là số nguyên tố?
+Lựa chọn:
+- A. 2
+- B. 3
+- C. 4
+- D. 9
+Đáp án: A, B
+---
+Loại: SA
+Tiêu đề: Kết quả phép tính
+Nội dung:
+Tính 6 * 7.
+Đáp án:
+- 42
+- bốn mươi hai
+---
+Loại: TF
+Tiêu đề: Đúng sai
+Nội dung:
+Python là một ngôn ngữ lập trình.
+Đáp án: Đúng
+```
 
 ## Script dòng lệnh
 

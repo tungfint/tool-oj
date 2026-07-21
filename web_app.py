@@ -56,6 +56,7 @@ from upload_tinhoctre_batch import (
 ROOT = Path(__file__).resolve().parent
 RUNTIME = ROOT / ".runtime"
 DEFAULT_ZIP = r"E:\Google Drive\Google Drive\1-School\4-KiThi\THT\2026\5Tinh\04-06\tht26_5_bai_files.zip"
+QUIZ_BASE_URL = "https://oj.hncode.edu.vn"
 
 TARGETS = {
     "hnoj": {
@@ -165,6 +166,62 @@ Cần tạo 4 file:
 
 Hãy thực hiện cho toàn bộ các bài được cung cấp bên dưới."""
 
+QUIZ_FORMAT_GUIDE = """# Format soạn danh sách quiz
+
+Mỗi câu hỏi tách nhau bằng một dòng chỉ gồm `---`.
+
+Các loại hợp lệ:
+- `MC` hoặc `Trắc nghiệm 1 đáp án`
+- `MA` hoặc `Trắc nghiệm nhiều đáp án`
+- `SA` hoặc `Trả lời ngắn`
+- `TF` hoặc `Đúng / Sai`
+
+Mẫu:
+
+Loại: MC
+Tiêu đề: Câu hỏi ví dụ 1
+Nội dung:
+Trong Python, hàm nào dùng để in ra màn hình?
+Lựa chọn:
+- A. input()
+- B. print()
+- C. len()
+- D. range()
+Đáp án: B
+Giải thích:
+`print()` dùng để in dữ liệu ra màn hình.
+---
+Loại: MA
+Tiêu đề: Số nguyên tố
+Nội dung:
+Những số nào sau đây là số nguyên tố?
+Lựa chọn:
+- A. 2
+- B. 3
+- C. 4
+- D. 9
+Đáp án: A, B
+---
+Loại: SA
+Tiêu đề: Kết quả phép tính
+Nội dung:
+Tính 6 * 7.
+Đáp án:
+- 42
+- bốn mươi hai
+---
+Loại: TF
+Tiêu đề: Đúng sai
+Nội dung:
+Python là một ngôn ngữ lập trình.
+Đáp án: Đúng
+
+Ghi chú:
+- Nhãn quiz để trống.
+- `Xáo trộn lựa chọn` và `Công khai` chọn trên giao diện tool.
+- Với câu `TF`, tool tự tạo hai lựa chọn `Đúng` và `Sai`.
+"""
+
 app = Flask(__name__)
 PROGRESS_DIR = RUNTIME / "progress"
 prepared_uploads: dict[str, dict] = {}
@@ -178,6 +235,209 @@ class ProblemAlreadyExists(RuntimeError):
 
 class ContestAlreadyExists(RuntimeError):
     pass
+
+
+QUESTION_TYPE_ALIASES = {
+    "mc": "MC",
+    "trac nghiem 1 dap an": "MC",
+    "trac nghiem mot dap an": "MC",
+    "trắc nghiệm 1 đáp án": "MC",
+    "trắc nghiệm một đáp án": "MC",
+    "ma": "MA",
+    "trac nghiem nhieu dap an": "MA",
+    "trắc nghiệm nhiều đáp án": "MA",
+    "sa": "SA",
+    "tra loi ngan": "SA",
+    "trả lời ngắn": "SA",
+    "tf": "TF",
+    "dung sai": "TF",
+    "dung / sai": "TF",
+    "đúng sai": "TF",
+    "đúng / sai": "TF",
+}
+
+QUIZ_FIELD_ALIASES = {
+    "loại": "type",
+    "loai": "type",
+    "type": "type",
+    "tiêu đề": "title",
+    "tieu de": "title",
+    "title": "title",
+    "nội dung": "content",
+    "noi dung": "content",
+    "content": "content",
+    "lựa chọn": "choices",
+    "lua chon": "choices",
+    "choices": "choices",
+    "đáp án": "answer",
+    "dap an": "answer",
+    "answer": "answer",
+    "answers": "answer",
+    "giải thích": "explanation",
+    "giai thich": "explanation",
+    "explanation": "explanation",
+}
+
+
+def normalize_key_text(value: str) -> str:
+    value = value.strip().lower()
+    replacements = {
+        "áàảãạăắằẳẵặâấầẩẫậ": "a",
+        "éèẻẽẹêếềểễệ": "e",
+        "íìỉĩị": "i",
+        "óòỏõọôốồổỗộơớờởỡợ": "o",
+        "úùủũụưứừửữự": "u",
+        "ýỳỷỹỵ": "y",
+        "đ": "d",
+    }
+    for chars, repl in replacements.items():
+        for ch in chars:
+            value = value.replace(ch, repl)
+    value = re.sub(r"\s+", " ", value)
+    return value
+
+
+def quiz_field_from_line(line: str) -> tuple[str, str] | None:
+    match = re.match(r"^\s*([^:：]{1,40})\s*[:：]\s*(.*)$", line)
+    if not match:
+        return None
+    raw_key = match.group(1).strip()
+    key = QUIZ_FIELD_ALIASES.get(raw_key.lower()) or QUIZ_FIELD_ALIASES.get(normalize_key_text(raw_key))
+    if not key:
+        return None
+    return key, match.group(2).strip()
+
+
+def split_quiz_blocks(text: str) -> list[str]:
+    blocks: list[list[str]] = [[]]
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if line.strip() == "---":
+            if blocks[-1]:
+                blocks.append([])
+            continue
+        blocks[-1].append(line)
+    return ["\n".join(block).strip() for block in blocks if "\n".join(block).strip()]
+
+
+def parse_choice_lines(text: str) -> list[dict]:
+    choices = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = re.match(r"^(?:[-*]\s*)?([A-Za-z0-9]+)\s*[\.\):：-]\s*(.+)$", line)
+        if not match:
+            raise RuntimeError(f"Lựa chọn không đúng dạng `- A. Nội dung`: {line}")
+        choices.append({"id": match.group(1).strip(), "text": match.group(2).strip()})
+    return choices
+
+
+def split_answers(text: str) -> list[str]:
+    parts: list[str] = []
+    for line in text.splitlines():
+        line = re.sub(r"^\s*[-*]\s*", "", line).strip()
+        if not line:
+            continue
+        if "," in line or ";" in line or "|" in line:
+            parts.extend(item.strip() for item in re.split(r"[,;|]", line) if item.strip())
+        else:
+            parts.append(line)
+    return parts
+
+
+def parse_quiz_markdown(text: str) -> list[dict]:
+    items = []
+    for index, block in enumerate(split_quiz_blocks(text), 1):
+        fields = {"type": "", "title": "", "content": "", "choices": "", "answer": "", "explanation": ""}
+        current: str | None = None
+        for line in block.splitlines():
+            parsed = quiz_field_from_line(line)
+            if parsed:
+                current, value = parsed
+                fields[current] = value
+                continue
+            if current:
+                fields[current] = (fields[current] + "\n" + line).strip("\n")
+        qtype = QUESTION_TYPE_ALIASES.get(fields["type"].strip().lower()) or QUESTION_TYPE_ALIASES.get(normalize_key_text(fields["type"]))
+        if not qtype:
+            raise RuntimeError(f"Câu {index}: Loại câu hỏi không hợp lệ: {fields['type']!r}")
+        content = fields["content"].strip()
+        if not content:
+            raise RuntimeError(f"Câu {index}: thiếu Nội dung.")
+        title = fields["title"].strip() or re.sub(r"\s+", " ", content)[:80] or f"Câu hỏi {index}"
+        choices = parse_choice_lines(fields["choices"]) if fields["choices"].strip() else []
+        answers = split_answers(fields["answer"])
+        if qtype in {"MC", "MA"}:
+            if not choices:
+                raise RuntimeError(f"Câu {index}: câu trắc nghiệm cần có Lựa chọn.")
+            if not answers:
+                raise RuntimeError(f"Câu {index}: câu trắc nghiệm cần có Đáp án.")
+            valid_ids = {choice["id"] for choice in choices}
+            missing = [answer for answer in answers if answer not in valid_ids]
+            if missing:
+                raise RuntimeError(f"Câu {index}: đáp án {', '.join(missing)} không có trong lựa chọn.")
+            correct = {"answers": answers if qtype == "MA" else (answers[0] if answers else "")}
+        elif qtype == "SA":
+            if not answers:
+                raise RuntimeError(f"Câu {index}: câu trả lời ngắn cần có ít nhất một Đáp án.")
+            choices = []
+            correct = {"type": "exact", "answers": answers, "case_sensitive": False}
+        else:
+            if not choices:
+                choices = [{"id": "T", "text": "Đúng"}, {"id": "F", "text": "Sai"}]
+            if not answers:
+                raise RuntimeError(f"Câu {index}: câu Đúng/Sai cần có Đáp án.")
+            raw = normalize_key_text(answers[0] if answers else "")
+            correct_id = "T" if raw in {"dung", "true", "t", "1", "yes"} else "F" if raw in {"sai", "false", "f", "0", "no"} else answers[0] if answers else ""
+            if correct_id not in {choice["id"] for choice in choices}:
+                raise RuntimeError(f"Câu {index}: đáp án Đúng/Sai phải là Đúng hoặc Sai.")
+            correct = {"answers": correct_id}
+        items.append(
+            {
+                "index": index,
+                "type": qtype,
+                "title": title,
+                "content": content,
+                "choices": choices,
+                "correct_answers": correct,
+                "explanation": fields["explanation"].strip(),
+            }
+        )
+    if not items:
+        raise RuntimeError("Chưa có câu hỏi nào trong nội dung quiz.")
+    return items
+
+
+def create_quiz_question(session, question: dict, *, shuffle_choices: bool, is_public: bool) -> str:
+    create_url = urljoin(QUIZ_BASE_URL, "/quiz/questions/create/")
+    page = session.get(create_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được form tạo quiz: HTTP {page.status_code}")
+    data = {
+        "csrfmiddlewaretoken": csrf_token(page.text),
+        "title": question["title"],
+        "question_type": question["type"],
+        "content": question["content"],
+        "choices": json.dumps(question["choices"], ensure_ascii=False),
+        "correct_answers": json.dumps(question["correct_answers"], ensure_ascii=False),
+        "grading_strategy": "all_or_nothing",
+        "tags": "",
+        "explanation": question.get("explanation", ""),
+    }
+    if shuffle_choices:
+        data["shuffle_choices"] = "on"
+    if is_public:
+        data["is_public"] = "on"
+    result = session.post(create_url, data=data, headers={"Referer": create_url}, allow_redirects=True, timeout=30)
+    if not result.ok:
+        raise RuntimeError(f"Tạo quiz lỗi HTTP {result.status_code}")
+    errors = form_errors(result.text)
+    if errors:
+        raise RuntimeError("Form tạo quiz báo lỗi: " + "; ".join(errors))
+    match = re.search(r"/quiz/questions/(\d+)/", result.url)
+    if not match:
+        raise RuntimeError(f"Tạo quiz chưa trả về trang câu hỏi: {result.url}")
+    return urljoin(QUIZ_BASE_URL, f"/quiz/questions/{match.group(1)}/")
 
 
 def valid_progress_id(progress_id: str | None) -> str | None:
@@ -1116,6 +1376,7 @@ PAGE = r"""
       <button type="button" data-panel="transfer">Chuyển bài</button>
       <button type="button" data-panel="contest-transfer">Chuyển contest</button>
       <button type="button" data-panel="contest-create">Tạo contest</button>
+      <button type="button" data-panel="quiz-upload">Up Quiz</button>
       <button type="button" data-panel="misc-tools">Tool lẻ</button>
     </div>
   </header>
@@ -1305,6 +1566,26 @@ PAGE = r"""
         </div>
       </div>
 
+      <div class="panel" id="panel-quiz-upload">
+        <h2>Up Quiz</h2>
+        <p>Up danh sách câu hỏi lên HNCode Quiz tại <code>https://oj.hncode.edu.vn/quiz/questions/create/</code>. Nhãn để trống.</p>
+        <div class="grid-2">
+          <div><label>HNCode user</label><input id="quizUserMirror" type="text" value="hncode" readonly><span id="quizLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>File quiz Markdown/TXT</label><div class="row"><div class="grow"><input id="quizFileName" type="text" placeholder="Có thể bỏ trống và dán trực tiếp nội dung bên dưới" readonly></div><button class="action" type="button" id="chooseQuizFile">Chọn file</button><input id="quizFileInput" class="hidden" type="file" accept=".md,.txt,text/markdown,text/plain"></div></div>
+        </div>
+        <div class="grid-2" style="margin-top:12px">
+          <label class="check"><input type="checkbox" id="quizShuffleChoices" checked> Xáo trộn lựa chọn</label>
+          <label class="check"><input type="checkbox" id="quizPublic"> Công khai</label>
+        </div>
+        <label>Nội dung danh sách quiz</label>
+        <textarea id="quizMarkdown" style="min-height:340px" placeholder="Dán danh sách quiz theo format, hoặc bấm Chèn mẫu format."></textarea>
+        <div class="actions">
+          <button class="action" type="button" id="fillQuizSample">Chèn mẫu format</button>
+          <button class="action primary" type="button" id="uploadQuizButton">Up list quiz</button>
+        </div>
+        <div id="quizUploadSummary"></div>
+      </div>
+
       <div class="panel" id="panel-misc-tools">
         <h2>Tool lẻ</h2>
         <p>Các chức năng phụ chạy ổn định trên local, không cần đăng nhập web OJ.</p>
@@ -1355,6 +1636,7 @@ let preparedUpload = null;
 let preparedTransfer = null;
 let preparedContestTransfer = null;
 let selectedZipFile = null;
+const QUIZ_FORMAT_GUIDE = {{ quiz_format_guide_json | safe }};
 
 const logEl = document.getElementById("log");
 const statusEl = document.getElementById("jobStatus");
@@ -1541,7 +1823,7 @@ document.getElementById("contestCodes").addEventListener("blur", checkContestLog
 document.getElementById("createContestTarget").addEventListener("change", checkCreateContestLogin);
 renderLanguages();
 renderTransferLanguages();
-setTimeout(() => { checkUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); }, 300);
+setTimeout(() => { checkUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); }, 300);
 
 function selectedLanguages() {
   return [...document.querySelectorAll("#languages input:checked")].map(item => item.value);
@@ -1600,6 +1882,10 @@ function checkContestLogins() {
 }
 function checkCreateContestLogin() {
   checkLogin(document.getElementById("createContestTarget").value, "createContestLogin");
+}
+function checkQuizLogin() {
+  document.getElementById("quizUserMirror").value = accountFields.hncode_user.value || "hncode";
+  checkLogin("hncode", "quizLogin");
 }
 function uploadSettings() {
   const target = document.getElementById("uploadTarget").value;
@@ -1921,6 +2207,36 @@ document.getElementById("createContestButton").onclick = async () => {
   }
 };
 
+document.getElementById("chooseQuizFile").onclick = () => document.getElementById("quizFileInput").click();
+document.getElementById("quizFileInput").addEventListener("change", async event => {
+  const file = event.target.files && event.target.files[0];
+  document.getElementById("quizFileName").value = file ? file.name : "";
+  if (file) document.getElementById("quizMarkdown").value = await file.text();
+});
+document.getElementById("fillQuizSample").onclick = () => {
+  document.getElementById("quizMarkdown").value = QUIZ_FORMAT_GUIDE;
+};
+document.getElementById("uploadQuizButton").onclick = async () => {
+  try {
+    status("running");
+    log("Đang up list quiz lên HNCode...");
+    saveAccounts();
+    const data = await postJson("/api/upload-quiz", {
+      account: accountPayload("hncode"),
+      text: document.getElementById("quizMarkdown").value,
+      shuffle_choices: document.getElementById("quizShuffleChoices").checked,
+      is_public: document.getElementById("quizPublic").checked,
+    });
+    const rows = (data.rows || []).map(row => `${row.status} ${row.index}. ${row.title}${row.link ? " - " + row.link : ""}`).join("\n");
+    document.getElementById("quizUploadSummary").innerHTML = `<div class="note">${escapeHtml(rows || data.log || "").replaceAll("\n", "<br>")}</div>`;
+    log(data.log || rows);
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
 document.getElementById("chooseLastSubZip").onclick = () => document.getElementById("lastSubZipFile").click();
 document.getElementById("lastSubZipFile").addEventListener("change", event => {
   const file = event.target.files && event.target.files[0];
@@ -2111,6 +2427,7 @@ def index():
         default_zip=DEFAULT_ZIP,
         ai_source_default=AI_SOURCE_DEFAULT,
         prompt_guide=PROMPT_GUIDE,
+        quiz_format_guide_json=json.dumps(QUIZ_FORMAT_GUIDE, ensure_ascii=False),
         targets_json=json.dumps(TARGETS, ensure_ascii=False),
     )
 
@@ -2145,6 +2462,41 @@ def api_check_login():
         return jsonify({"ok": True, "message": "Đăng nhập OK"})
     except Exception as exc:
         return jsonify({"ok": False, "message": str(exc)[:180]})
+
+
+@app.post("/api/upload-quiz")
+def api_upload_quiz():
+    payload = request.get_json(force=True)
+    account = payload.get("account", {})
+    try:
+        questions = parse_quiz_markdown(payload.get("text", ""))
+        session = login_hncode(QUIZ_BASE_URL, account.get("username", ""), account.get("password", ""))
+        shuffle_choices = bool(payload.get("shuffle_choices"))
+        is_public = bool(payload.get("is_public"))
+        rows = []
+        ok = True
+        log_lines = [
+            f"Up Quiz HNCode: {QUIZ_BASE_URL}/quiz/questions/create/",
+            f"Số câu hỏi: {len(questions)}",
+            f"Xáo trộn lựa chọn: {'Có' if shuffle_choices else 'Không'}",
+            f"Công khai: {'Có' if is_public else 'Không'}",
+        ]
+        for question in questions:
+            row = {"index": question["index"], "title": question["title"], "type": question["type"], "status": "", "link": ""}
+            try:
+                link = create_quiz_question(session, question, shuffle_choices=shuffle_choices, is_public=is_public)
+                row["status"] = "✓ Thành công"
+                row["link"] = link
+                log_lines.append(f"✓ Câu {question['index']}: {question['title']} - {link}")
+            except Exception as exc:
+                ok = False
+                row["status"] = "✗ Lỗi"
+                row["error"] = str(exc)
+                log_lines.append(f"✗ Câu {question['index']}: {question['title']} - {exc}")
+            rows.append(row)
+        return jsonify({"ok": ok, "rows": rows, "log": "\n".join(log_lines)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
 
 @app.get("/api/progress/<progress_id>")
