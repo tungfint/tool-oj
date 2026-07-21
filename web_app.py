@@ -2323,7 +2323,11 @@ function applyQuizStatuses(rows) {
   for (const tr of document.querySelectorAll("#quizUploadSummary tr[data-quiz-index]")) {
     const row = byIndex.get(tr.dataset.quizIndex);
     if (!row) continue;
-    setStatusCell(tr.querySelector(".row-status"), row.status, row.link || "");
+    const cell = tr.querySelector(".row-status");
+    cell.className = "row-status " + statusClass(row.status);
+    const linkHtml = row.link ? ` <a class="problem-link" href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : "";
+    const errorHtml = row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : "";
+    cell.innerHTML = `${escapeHtml(row.status || "")}${linkHtml}${errorHtml}`;
   }
 }
 
@@ -2581,6 +2585,7 @@ def api_upload_quiz():
                 link = create_quiz_question(session, question, shuffle_choices=shuffle_choices, is_public=is_public)
                 row["status"] = "✓ Thành công"
                 row["link"] = link
+                row["error"] = ""
                 log_lines.append(f"✓ Câu {question['index']}: {question['title']} - {link}")
             except Exception as exc:
                 ok = False
