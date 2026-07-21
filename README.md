@@ -267,6 +267,7 @@ Tool hỗ trợ 4 loại câu hỏi:
 - `TF`: Đúng / Sai.
 
 Nhãn để trống. Hai lựa chọn `Xáo trộn lựa chọn` và `Công khai` được chọn trực tiếp trên giao diện.
+Trước khi up thật, bấm `Chuẩn bị dữ liệu` để tool kiểm tra format và hiển thị bảng gồm `STT`, `Tiêu đề`, `Loại`, `Trạng thái`. Khung `Thông tin trả về` sẽ ghi chi tiết từng câu hợp lệ hoặc lỗi cụ thể.
 
 Format mỗi câu hỏi:
 

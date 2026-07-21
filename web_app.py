@@ -227,6 +227,7 @@ PROGRESS_DIR = RUNTIME / "progress"
 prepared_uploads: dict[str, dict] = {}
 prepared_transfers: dict[str, dict] = {}
 prepared_contest_transfers: dict[str, dict] = {}
+prepared_quizzes: dict[str, dict] = {}
 
 
 class ProblemAlreadyExists(RuntimeError):
@@ -406,6 +407,41 @@ def parse_quiz_markdown(text: str) -> list[dict]:
     if not items:
         raise RuntimeError("Chưa có câu hỏi nào trong nội dung quiz.")
     return items
+
+
+def prepare_quiz_items(text: str) -> tuple[list[dict], list[dict]]:
+    rows = []
+    valid_questions = []
+    blocks = split_quiz_blocks(text)
+    if not blocks:
+        raise RuntimeError("Chưa có câu hỏi nào trong nội dung quiz.")
+    for index, block in enumerate(blocks, 1):
+        try:
+            question = parse_quiz_markdown(block)[0]
+            question["index"] = index
+            valid_questions.append(question)
+            rows.append(
+                {
+                    "index": index,
+                    "title": question["title"],
+                    "type": question["type"],
+                    "status": "✓ Hợp lệ",
+                    "error": "",
+                    "can_upload": True,
+                }
+            )
+        except Exception as exc:
+            rows.append(
+                {
+                    "index": index,
+                    "title": f"Câu {index}",
+                    "type": "",
+                    "status": "✗ Lỗi",
+                    "error": str(exc),
+                    "can_upload": False,
+                }
+            )
+    return valid_questions, rows
 
 
 def create_quiz_question(session, question: dict, *, shuffle_choices: bool, is_public: bool) -> str:
@@ -1581,6 +1617,7 @@ PAGE = r"""
         <textarea id="quizMarkdown" style="min-height:340px" placeholder="Dán danh sách quiz theo format, hoặc bấm Chèn mẫu format."></textarea>
         <div class="actions">
           <button class="action" type="button" id="fillQuizSample">Chèn mẫu format</button>
+          <button class="action primary" type="button" id="prepareQuizButton">Chuẩn bị dữ liệu</button>
           <button class="action primary" type="button" id="uploadQuizButton">Up list quiz</button>
         </div>
         <div id="quizUploadSummary"></div>
@@ -1635,6 +1672,7 @@ const TARGETS = {{ targets_json | safe }};
 let preparedUpload = null;
 let preparedTransfer = null;
 let preparedContestTransfer = null;
+let preparedQuiz = null;
 let selectedZipFile = null;
 const QUIZ_FORMAT_GUIDE = {{ quiz_format_guide_json | safe }};
 
@@ -2211,23 +2249,54 @@ document.getElementById("chooseQuizFile").onclick = () => document.getElementByI
 document.getElementById("quizFileInput").addEventListener("change", async event => {
   const file = event.target.files && event.target.files[0];
   document.getElementById("quizFileName").value = file ? file.name : "";
-  if (file) document.getElementById("quizMarkdown").value = await file.text();
+  if (file) {
+    document.getElementById("quizMarkdown").value = await file.text();
+    preparedQuiz = null;
+    document.getElementById("uploadQuizButton").disabled = true;
+  }
 });
 document.getElementById("fillQuizSample").onclick = () => {
   document.getElementById("quizMarkdown").value = QUIZ_FORMAT_GUIDE;
+  preparedQuiz = null;
+  document.getElementById("uploadQuizButton").disabled = true;
+};
+document.getElementById("uploadQuizButton").disabled = true;
+document.getElementById("quizMarkdown").addEventListener("input", () => {
+  preparedQuiz = null;
+  document.getElementById("uploadQuizButton").disabled = true;
+});
+document.getElementById("prepareQuizButton").onclick = async () => {
+  try {
+    status("running");
+    log("Đang kiểm tra dữ liệu quiz...");
+    const data = await postJson("/api/prepare-quiz", {text: document.getElementById("quizMarkdown").value});
+    preparedQuiz = data.prepare_id;
+    renderQuizTable(data.rows || []);
+    log(data.log);
+    document.getElementById("uploadQuizButton").disabled = !data.can_upload;
+    status(data.can_upload ? "ready" : "failed", data.can_upload ? "ok" : "err");
+  } catch (err) {
+    preparedQuiz = null;
+    document.getElementById("uploadQuizButton").disabled = true;
+    document.getElementById("quizUploadSummary").innerHTML = "";
+    log(String(err));
+    status("failed", "err");
+  }
 };
 document.getElementById("uploadQuizButton").onclick = async () => {
   try {
+    if (!preparedQuiz) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi up quiz.");
     status("running");
     log("Đang up list quiz lên HNCode...");
     saveAccounts();
     const data = await postJson("/api/upload-quiz", {
+      prepare_id: preparedQuiz,
       account: accountPayload("hncode"),
-      text: document.getElementById("quizMarkdown").value,
       shuffle_choices: document.getElementById("quizShuffleChoices").checked,
       is_public: document.getElementById("quizPublic").checked,
     });
     const rows = (data.rows || []).map(row => `${row.status} ${row.index}. ${row.title}${row.link ? " - " + row.link : ""}`).join("\n");
+    applyQuizStatuses(data.rows || []);
     document.getElementById("quizUploadSummary").innerHTML = `<div class="note">${escapeHtml(rows || data.log || "").replaceAll("\n", "<br>")}</div>`;
     log(data.log || rows);
     status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
@@ -2236,6 +2305,27 @@ document.getElementById("uploadQuizButton").onclick = async () => {
     status("failed", "err");
   }
 };
+
+function renderQuizTable(rows) {
+  document.getElementById("quizUploadSummary").innerHTML = `<table>
+    <thead><tr><th>STT</th><th>Tiêu đề</th><th>Loại</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map(row => `<tr data-quiz-index="${row.index}">
+      <td>${row.index}</td>
+      <td>${escapeHtml(row.title || "")}</td>
+      <td>${escapeHtml(row.type || "")}</td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : ""}</td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+}
+
+function applyQuizStatuses(rows) {
+  const byIndex = new Map(rows.map(row => [String(row.index), row]));
+  for (const tr of document.querySelectorAll("#quizUploadSummary tr[data-quiz-index]")) {
+    const row = byIndex.get(tr.dataset.quizIndex);
+    if (!row) continue;
+    setStatusCell(tr.querySelector(".row-status"), row.status, row.link || "");
+  }
+}
 
 document.getElementById("chooseLastSubZip").onclick = () => document.getElementById("lastSubZipFile").click();
 document.getElementById("lastSubZipFile").addEventListener("change", event => {
@@ -2469,7 +2559,11 @@ def api_upload_quiz():
     payload = request.get_json(force=True)
     account = payload.get("account", {})
     try:
-        questions = parse_quiz_markdown(payload.get("text", ""))
+        prepare_id = payload.get("prepare_id", "")
+        state = prepared_quizzes.get(prepare_id)
+        if not state:
+            return jsonify({"ok": False, "error": "Dữ liệu quiz đã hết hạn hoặc chưa chuẩn bị. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+        questions = state["questions"]
         session = login_hncode(QUIZ_BASE_URL, account.get("username", ""), account.get("password", ""))
         shuffle_choices = bool(payload.get("shuffle_choices"))
         is_public = bool(payload.get("is_public"))
@@ -2495,6 +2589,34 @@ def api_upload_quiz():
                 log_lines.append(f"✗ Câu {question['index']}: {question['title']} - {exc}")
             rows.append(row)
         return jsonify({"ok": ok, "rows": rows, "log": "\n".join(log_lines)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/prepare-quiz")
+def api_prepare_quiz():
+    payload = request.get_json(force=True)
+    try:
+        questions, rows = prepare_quiz_items(payload.get("text", ""))
+        prepare_id = uuid.uuid4().hex
+        prepared_quizzes[prepare_id] = {"questions": questions, "rows": rows, "created_at": time.time()}
+        ok_count = sum(1 for row in rows if row.get("can_upload"))
+        bad_count = len(rows) - ok_count
+        log_lines = [f"Chuẩn bị dữ liệu quiz: {ok_count}/{len(rows)} câu hợp lệ."]
+        for row in rows:
+            if row.get("can_upload"):
+                log_lines.append(f"✓ Câu {row['index']}: {row['title']} ({row['type']}) hợp lệ.")
+            else:
+                log_lines.append(f"✗ Câu {row['index']}: {row.get('error')}")
+        return jsonify(
+            {
+                "ok": bad_count == 0,
+                "can_upload": bad_count == 0 and ok_count > 0,
+                "prepare_id": prepare_id,
+                "rows": rows,
+                "log": "\n".join(log_lines),
+            }
+        )
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
