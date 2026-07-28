@@ -138,7 +138,11 @@ def login(base_url: str, username: str, password: str, next_path: str) -> reques
 
 def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
     bundles: list[ProblemBundle] = []
-    for statement in sorted(source_dir.glob("*.md")):
+    statements = sorted(
+        (path for path in source_dir.rglob("*") if path.is_file() and path.suffix.lower() == ".md"),
+        key=lambda path: path.relative_to(source_dir).as_posix().lower(),
+    )
+    for statement in statements:
         if statement.stem.lower().startswith("sol_"):
             continue
         parsed = parse_statement_filename(statement)
@@ -147,10 +151,13 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
         index, fallback_code = parsed
         title_code = parse_statement_title_code(statement)
         code = title_code[1] if title_code else fallback_code
-        generator = find_named_file(source_dir, ["gentest"], index, code, ".py")
-        solution = find_named_file(source_dir, ["sol"], index, code, ".py")
-        solution_cpp = find_named_file(source_dir, ["sol"], index, code, ".cpp")
-        test_zip = find_existing_test_zip(source_dir, index, code)
+        search_dirs = [statement.parent]
+        if statement.parent != source_dir:
+            search_dirs.append(source_dir)
+        generator = find_named_file(search_dirs, ["gentest"], index, code, ".py")
+        solution = find_named_file(search_dirs, ["sol"], index, code, ".py")
+        solution_cpp = find_named_file(search_dirs, ["sol"], index, code, ".cpp")
+        test_zip = find_existing_test_zip(search_dirs, index, code)
         require(
             generator is not None or test_zip is not None,
             f"Missing test source for {code}: expected gentest_{code}.py or an existing .zip test archive",
@@ -168,15 +175,27 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
                 solution_cpp,
             )
         )
-    require(bundles, f"No problem bundles found in {source_dir}")
+    if not bundles:
+        sample_files = [
+            path.relative_to(source_dir).as_posix()
+            for path in sorted(source_dir.rglob("*"), key=lambda item: item.as_posix().lower())
+            if path.is_file()
+        ][:20]
+        hint = (
+            "Không tìm thấy file đề bài .md trong zip. "
+            "Mỗi bài cần có file <ma_bai>.md hoặc <stt>_<ma_bai>.md, có thể nằm trong thư mục con."
+        )
+        if sample_files:
+            hint += " Một số file đã giải nén: " + ", ".join(sample_files)
+        raise UploadError(hint)
     return bundles
 
 
 def parse_statement_filename(statement: Path) -> tuple[int, str] | None:
-    match = re.fullmatch(r"(\d+)_(.+)\.md", statement.name)
+    match = re.fullmatch(r"(\d+)_(.+)\.md", statement.name, flags=re.I)
     if match:
         return int(match.group(1)), match.group(2)
-    match = re.fullmatch(r"(.+)\.md", statement.name)
+    match = re.fullmatch(r"(.+)\.md", statement.name, flags=re.I)
     if match:
         return 0, match.group(1)
     return None
@@ -198,13 +217,19 @@ def parse_statement_title_code(statement: Path) -> tuple[str, str] | None:
     return None
 
 
-def find_named_file(source_dir: Path, prefixes: list[str], index: int, code: str, suffix: str) -> Path | None:
+def find_named_file(source_dir: Path | list[Path], prefixes: list[str], index: int, code: str, suffix: str) -> Path | None:
     names: list[str] = []
     for prefix in prefixes:
         if index:
             names.append(f"{prefix}_{index}_{code}{suffix}")
         names.append(f"{prefix}_{code}{suffix}")
-    lower_to_path = {path.name.lower(): path for path in source_dir.glob(f"*{suffix}")}
+    search_dirs = source_dir if isinstance(source_dir, list) else [source_dir]
+    lower_to_path: dict[str, Path] = {}
+    for directory in search_dirs:
+        iterator = directory.rglob("*") if directory == search_dirs[-1] else directory.glob("*")
+        for path in iterator:
+            if path.is_file() and path.suffix.lower() == suffix.lower():
+                lower_to_path.setdefault(path.name.lower(), path)
     for name in names:
         found = lower_to_path.get(name.lower())
         if found:
@@ -237,7 +262,7 @@ def problem_name_from_code(code: str) -> str:
     return short.replace("_", " ").strip() or code
 
 
-def find_existing_test_zip(source_dir: Path, index: int, code: str) -> Path | None:
+def find_existing_test_zip(source_dir: Path | list[Path], index: int, code: str) -> Path | None:
     short = re.sub(r"^tht\d+_", "", code)
     candidates = [
         f"{index}_{code}.zip",
@@ -248,12 +273,17 @@ def find_existing_test_zip(source_dir: Path, index: int, code: str) -> Path | No
         f"{code}_tests.zip",
         f"{short}_tests.zip",
     ]
-    lower_to_path = {path.name.lower(): path for path in source_dir.glob("*.zip")}
+    search_dirs = source_dir if isinstance(source_dir, list) else [source_dir]
+    zip_paths: list[Path] = []
+    for directory in search_dirs:
+        iterator = directory.rglob("*") if directory == search_dirs[-1] else directory.glob("*")
+        zip_paths.extend(path for path in iterator if path.is_file() and path.suffix.lower() == ".zip")
+    lower_to_path = {path.name.lower(): path for path in zip_paths}
     for candidate in candidates:
         path = lower_to_path.get(candidate.lower())
         if path:
             return path
-    matching = [path for path in source_dir.glob("*.zip") if short.lower() in path.stem.lower()]
+    matching = [path for path in zip_paths if short.lower() in path.stem.lower()]
     return sorted(matching, key=lambda path: (len(path.name), path.name.lower()))[0] if matching else None
 
 
