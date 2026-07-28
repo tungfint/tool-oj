@@ -58,6 +58,7 @@ from upload_tinhoctre_batch import (
 
 ROOT = Path(__file__).resolve().parent
 RUNTIME = ROOT / ".runtime"
+SAMPLE_TONGHAISO_ZIP = ROOT / "samples" / "bo_mau_1_bai_tonghaiso.zip"
 DEFAULT_ZIP = r"E:\Google Drive\Google Drive\1-School\4-KiThi\THT\2026\5Tinh\04-06\tht26_5_bai_files.zip"
 QUIZ_BASE_URL = "https://oj.hncode.edu.vn"
 
@@ -1478,6 +1479,7 @@ PAGE = r"""
             <div class="row">
               <div class="grow"><input id="uploadZip" type="text" value="{{ default_zip }}"></div>
               <button class="action" type="button" id="chooseZip">Chọn file</button>
+              <button class="action" type="button" id="useBatchSample">Dùng mẫu Tổng hai số</button>
               <input id="zipFileInput" class="hidden" type="file" accept=".zip,.md,application/zip,text/markdown,text/plain">
             </div>
           </div>
@@ -1486,6 +1488,8 @@ PAGE = r"""
           <b>Cấu trúc file zip bộ bài:</b><br>
           Mỗi bài nên có đủ file <code>&lt;ma_bai&gt;.md</code>, <code>gentest_&lt;ma_bai&gt;.py</code> hoặc <code>&lt;ma_bai&gt;.zip</code>, <code>sol_&lt;ma_bai&gt;.md</code> và nếu cần nộp thử thì có <code>sol_&lt;ma_bai&gt;.cpp</code>, <code>sol_&lt;ma_bai&gt;.py</code>.<br>
           File Markdown nên có dòng đầu <code>Tên bài | Mã bài | Điểm | Các Tags</code>. File sinh test sẽ tạo thư mục test và nén thành <code>&lt;ma_bai&gt;.zip</code>; nếu zip test có sẵn thì tool dùng trực tiếp. Thông tin nào thiếu sẽ để trống hoặc dùng mặc định.
+          <br><b>Ràng buộc gentest:</b> nên là Python, tên <code>gentest_&lt;ma_bai&gt;.py</code>, tự tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất có đủ cặp <code>.inp/.out</code>; không cần input tương tác; chạy trong 120 giây; nếu dùng C++ trong gentest thì máy/VPS cần có <code>g++</code>.
+          <br><a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso.zip" target="_blank" rel="noopener">Tải mẫu bo_mau_1_bai_tonghaiso.zip</a>
         </div>
         <div class="grid-2">
           <div><label>Giới hạn thời gian</label><input id="timeLimit" type="text" value="1.0"></div>
@@ -1568,7 +1572,7 @@ PAGE = r"""
             <input id="singleStatementFile" class="hidden" type="file" accept=".md,text/markdown,text/plain">
           </div>
           <div id="singleStatementBox">
-            <textarea id="singleStatement" placeholder="Dòng đầu có thể là: Tên bài | ma_bai&#10;&#10;Sau đó là nội dung đề bài."></textarea>
+            <textarea id="singleStatement" placeholder="Dòng đầu có thể là: Tên bài | ma_bai | Điểm | Tags&#10;&#10;Sau đó là nội dung đề bài."></textarea>
             <label class="check" style="margin-top:8px"><input type="checkbox" id="singleSkipStatementTitle" checked> Bỏ dòng đầu tiên trong file đề bài</label>
           </div>
         </div>
@@ -1579,13 +1583,15 @@ PAGE = r"""
             <button class="action" type="button" id="toggleSingleGenerator">Thu gọn sinh test</button>
             <button class="action" type="button" id="chooseSingleGenerator">Chọn code Python / C++</button>
             <button class="action" type="button" id="chooseSingleTestZip">Chọn zip test có sẵn</button>
+            <button class="action" type="button" id="useSingleSample">Dùng mẫu Tổng hai số</button>
             <input id="singleGeneratorFile" class="hidden" type="file" accept=".py,.cpp,text/plain">
             <input id="singleTestZipFile" class="hidden" type="file" accept=".zip,application/zip">
           </div>
           <div id="singleGeneratorBox">
             <input id="singleGeneratorName" type="text" placeholder="Chưa chọn file sinh test" readonly>
             <input id="singleTestZipName" type="text" placeholder="Chưa chọn zip test có sẵn" readonly>
-            <textarea id="singleGenerator" placeholder="Dán code gentest Python vào đây. Nếu dùng C++ generator, tool sẽ lưu lại nhưng chưa chạy tự động; nên dùng Python gentest hoặc zip test có sẵn."></textarea>
+            <textarea id="singleGenerator" placeholder="Dán code gentest Python vào đây. Gentest cần tự sinh zip test, không chờ nhập bàn phím, chạy trong 120 giây; nếu gọi g++ thì máy/VPS phải có g++."></textarea>
+            <div class="note"><b>Ràng buộc gentest:</b> nên đặt tên <code>gentest_&lt;ma_bai&gt;.py</code>; tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất; trong zip có đủ cặp <code>.inp/.out</code>. Nếu chọn zip test có sẵn thì tool ưu tiên zip đó.</div>
           </div>
         </div>
 
@@ -1960,6 +1966,13 @@ document.getElementById("zipFileInput").onchange = event => {
   selectedZipFile = event.target.files[0] || null;
   if (selectedZipFile) document.getElementById("uploadZip").value = selectedZipFile.name;
 };
+document.getElementById("useBatchSample").onclick = async () => {
+  selectedZipFile = null;
+  document.getElementById("zipFileInput").value = "";
+  const data = await postJson("/api/sample/tonghaiso", {});
+  document.getElementById("uploadZip").value = data.zip_path;
+  append("Đã điền file mẫu Tổng hai số cho Up nhiều bài.");
+};
 function toggleBox(buttonId, boxId, openText, closedText) {
   const box = document.getElementById(boxId);
   box.classList.toggle("hidden");
@@ -1972,6 +1985,24 @@ document.getElementById("chooseSingleStatement").onclick = () => document.getEle
 document.getElementById("chooseSingleGenerator").onclick = () => document.getElementById("singleGeneratorFile").click();
 document.getElementById("chooseSingleTestZip").onclick = () => document.getElementById("singleTestZipFile").click();
 document.getElementById("chooseSingleSolution").onclick = () => document.getElementById("singleSolutionFile").click();
+document.getElementById("useSingleSample").onclick = async () => {
+  const data = await postJson("/api/sample/tonghaiso", {});
+  document.getElementById("singleCode").value = data.code;
+  document.getElementById("singleName").value = data.name;
+  document.getElementById("singlePoints").value = data.points || "100";
+  document.getElementById("singleTags").value = data.tags || "";
+  document.getElementById("singleTimeLimit").value = "1.0";
+  document.getElementById("singleMemoryLimit").value = "1024M";
+  document.getElementById("singlePartial").checked = true;
+  document.getElementById("singleStatement").value = data.statement || "";
+  document.getElementById("singleGenerator").value = data.generator || "";
+  document.getElementById("singleGeneratorName").value = "gentest_" + data.code + ".py";
+  document.getElementById("singleSolution").value = data.solution_md || "";
+  selectedSingleTestZipFile = null;
+  document.getElementById("singleTestZipFile").value = "";
+  document.getElementById("singleTestZipName").value = "Có zip test trong mẫu; Up 1 bài sẽ sinh từ gentest";
+  append("Đã nạp mẫu Tổng hai số vào Up 1 bài. Bấm Chuẩn bị dữ liệu để kiểm tra.");
+};
 document.getElementById("singleStatementFile").addEventListener("change", async event => {
   const file = event.target.files && event.target.files[0];
   if (file) document.getElementById("singleStatement").value = await file.text();
@@ -2931,6 +2962,51 @@ def index():
         quiz_format_guide_json=json.dumps(QUIZ_FORMAT_GUIDE, ensure_ascii=False),
         targets_json=json.dumps(TARGETS, ensure_ascii=False),
     )
+
+
+@app.get("/samples/bo_mau_1_bai_tonghaiso.zip")
+def sample_tonghaiso_zip():
+    if not SAMPLE_TONGHAISO_ZIP.exists():
+        return jsonify({"error": "Không tìm thấy file mẫu."}), 404
+    return send_file(SAMPLE_TONGHAISO_ZIP, as_attachment=True, download_name=SAMPLE_TONGHAISO_ZIP.name)
+
+
+@app.post("/api/sample/tonghaiso")
+def api_sample_tonghaiso():
+    try:
+        if not SAMPLE_TONGHAISO_ZIP.exists():
+            raise FileNotFoundError(f"Không tìm thấy file mẫu: {SAMPLE_TONGHAISO_ZIP}")
+        with zipfile.ZipFile(SAMPLE_TONGHAISO_ZIP) as archive:
+            statement = read_zip_member_text(archive, "tonghaiso.md")
+            generator = read_zip_member_text(archive, "gentest_tonghaiso.py")
+            solution_md = read_zip_member_text(archive, "sol_tonghaiso.md")
+        parts = first_markdown_header_parts(statement)
+        return jsonify(
+            {
+                "zip_path": str(SAMPLE_TONGHAISO_ZIP),
+                "code": parts[1] if len(parts) > 1 else "tonghaiso",
+                "name": parts[0] if parts else "Tổng hai số",
+                "points": parts[2] if len(parts) > 2 else "800",
+                "tags": parts[3] if len(parts) > 3 else "implementation, math",
+                "statement": statement,
+                "generator": generator,
+                "solution_md": solution_md,
+            }
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+def read_zip_member_text(archive: zipfile.ZipFile, name: str) -> str:
+    return archive.read(name).decode("utf-8", errors="replace")
+
+
+def first_markdown_header_parts(text: str) -> list[str]:
+    for line in text.splitlines():
+        stripped = line.strip().strip("#* ")
+        if stripped:
+            return [part.strip() for part in stripped.split("|")]
+    return []
 
 
 @app.post("/api/check-login")
