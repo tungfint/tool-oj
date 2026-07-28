@@ -359,8 +359,16 @@ def zip_case_files(zip_path: Path) -> tuple[list[str], list[str]]:
     with zipfile.ZipFile(zip_path) as archive:
         names = sorted(name for name in archive.namelist() if not name.endswith("/"))
     input_files = [name for name in names if name.lower().endswith(".inp")]
-    output_files = [re.sub(r"\.inp$", ".out", name, flags=re.I) for name in input_files]
-    missing = [name for name in output_files if name not in names]
+    lower_to_real_name = {name.lower(): name for name in names}
+    output_files = []
+    missing = []
+    for input_name in input_files:
+        expected_output = re.sub(r"\.inp$", ".out", input_name, flags=re.I)
+        real_output = lower_to_real_name.get(expected_output.lower())
+        if real_output:
+            output_files.append(real_output)
+        else:
+            missing.append(expected_output)
     require(not missing, f"Generated zip is missing output files: {missing}")
     return input_files, output_files
 
