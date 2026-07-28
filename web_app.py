@@ -4395,12 +4395,15 @@ def submit_if_requested(session, base_url: str, bundle: ProblemBundle, settings:
                     ["PyPy 3", "Pypy 3", "Python 3", "Python3", "Python"],
                 )
                 log_lines.append(f"{bundle.code}: đã nộp thử Python {submission}.")
-            except Exception:
-                try:
-                    submission = submit_solution(session, base_url, bundle, language_id="17", poll_seconds=0)
-                    log_lines.append(f"{bundle.code}: đã nộp thử Python {submission}.")
-                except Exception as exc:
-                    log_lines.append(f"{bundle.code}: không nộp thử Python được: {exc}")
+            except Exception as first_exc:
+                if "hncode.edu.vn" in base_url:
+                    log_lines.append(f"{bundle.code}: không nộp thử Python được: {first_exc}")
+                else:
+                    try:
+                        submission = submit_solution(session, base_url, bundle, language_id="17", poll_seconds=0)
+                        log_lines.append(f"{bundle.code}: đã nộp thử Python {submission}.")
+                    except Exception as exc:
+                        log_lines.append(f"{bundle.code}: không nộp thử Python được: {first_exc}; fallback cũng lỗi: {exc}")
         else:
             log_lines.append(f"{bundle.code}: không có sol Python, bỏ qua nộp thử Python.")
 
@@ -4427,6 +4430,11 @@ def submit_solution_file(session, base_url: str, code: str, source_path: Path, p
     )
     if not result.ok:
         raise RuntimeError(f"Submit failed: HTTP {result.status_code}")
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if errors:
+        raise RuntimeError("Submit form báo lỗi: " + "; ".join(errors))
+    if "/submission/" not in result.url:
+        raise RuntimeError(f"Submit chưa tạo submission; URL sau POST: {result.url}")
     return result.url
 
 
