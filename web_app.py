@@ -3199,8 +3199,8 @@ def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, prog
         try:
             bundle = replace(state["bundles"][row["original_code"]], code=row["code"], name=row["name"])
             tests = state["tests"].get(row["original_code"])
-            upload_one_problem(session, target, target_info, bundle, tests, row, settings, selected_language_ids, log_lines)
-            row["status"] = "✓ Thành công"
+            action_status = upload_one_problem(session, target, target_info, bundle, tests, row, settings, selected_language_ids, log_lines)
+            row["status"] = action_status or "✓ Thành công"
             row["link"] = problem_url(target_info["base_url"], bundle.code)
         except ProblemAlreadyExists as exc:
             row["status"] = "✗ Bài đã tồn tại"
@@ -3306,19 +3306,34 @@ def update_existing_problem_statement(
             "code": bundle.code,
             "name": bundle.name,
             "description": description,
-            "time_limit": settings.get("time_limit") or "1.0",
-            "memory_limit": settings.get("memory_limit") or "1048576",
         },
     )
-    data.append(("_continue", "Save and continue editing"))
     result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=30)
     if not result.ok:
         raise RuntimeError(f"Ghi đè đề bài lỗi HTTP {result.status_code}")
-    errors = form_errors(result.text)
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
         raise RuntimeError("Form ghi đè đề bài báo lỗi:\n" + "\n".join(errors))
     if "/accounts/login" in result.url or "/admin/login" in result.url:
         raise RuntimeError(f"Ghi đè đề bài bị chuyển về trang đăng nhập: {result.url}")
+    verify = session.get(edit_url, timeout=30)
+    if not verify.ok:
+        raise RuntimeError(f"Không kiểm tra lại được đề bài sau khi ghi đè: HTTP {verify.status_code}")
+    saved_description = textarea_value(verify.text, "description")
+    saved_name = input_value_from_page(verify.text, "name", "")
+    if saved_description.strip() != description.strip():
+        debug_dir = RUNTIME / "debug_overwrite_statement"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        (debug_dir / f"{bundle.code}_expected.md").write_text(description, encoding="utf-8", errors="replace")
+        (debug_dir / f"{bundle.code}_saved.md").write_text(saved_description, encoding="utf-8", errors="replace")
+        (debug_dir / f"{bundle.code}_post.html").write_text(result.text, encoding="utf-8", errors="replace")
+        (debug_dir / f"{bundle.code}_verify.html").write_text(verify.text, encoding="utf-8", errors="replace")
+        raise RuntimeError(
+            f"HNCode nhận POST nhưng đề bài {bundle.code} chưa khớp nội dung mới. "
+            f"Đã lưu debug tại {debug_dir}."
+        )
+    if saved_name and saved_name != bundle.name:
+        raise RuntimeError(f"HNCode nhận POST nhưng tên bài {bundle.code} chưa đổi: {saved_name!r}")
     return result.url
 
 
@@ -3332,7 +3347,7 @@ def upload_one_problem(
     settings: dict,
     language_ids: list[str],
     log_lines: list[str],
-) -> None:
+) -> str:
     base_url = target_info["base_url"]
     exists = problem_exists_for_target(session, target, base_url, bundle.code)
     if exists:
@@ -3341,10 +3356,12 @@ def upload_one_problem(
         if not (overwrite_statement or overwrite_tests):
             raise ProblemAlreadyExists(f"Mã bài {bundle.code} đã tồn tại tại {problem_url(base_url, bundle.code)}")
         log_lines.append(f"{bundle.code}: bài đã tồn tại, chuyển sang chế độ ghi đè phần được chọn.")
+        actions: list[str] = []
         if row.get("upload_statement"):
             if overwrite_statement:
                 change_url = update_existing_problem_statement(session, target, base_url, bundle, settings)
                 log_lines.append(f"{bundle.code}: đã ghi đè đề bài ({change_url}).")
+                actions.append("đề bài")
             else:
                 log_lines.append(f"{bundle.code}: không ghi đè đề bài vì chưa tích Ghi đè đề bài.")
         if row.get("upload_tests"):
@@ -3353,10 +3370,12 @@ def upload_one_problem(
                     raise RuntimeError("Bài này không có bộ test trong dữ liệu chuẩn bị. Hãy bỏ tích Up test hoặc dùng file zip/gentest.")
                 upload_tests_for_target(session, target, base_url, bundle.code, tests)
                 log_lines.append(f"{bundle.code}: đã ghi đè {len(tests.input_files)} test.")
+                actions.append("test")
             else:
                 log_lines.append(f"{bundle.code}: không ghi đè test vì chưa tích Ghi đè test.")
         submit_if_requested(session, base_url, bundle, settings, log_lines)
-        return
+        return "✓ Ghi đè " + " và ".join(actions) if actions else "✓ Không có phần ghi đè"
+    actions: list[str] = []
     if row.get("upload_statement"):
         info = ProblemInfo(
             code=bundle.code,
@@ -3392,6 +3411,7 @@ def upload_one_problem(
             allowed_language_ids=language_ids,
         )
         log_lines.append(f"{bundle.code}: đã tạo đề qua admin form ({change_url}).")
+        actions.append("tạo đề")
     else:
         log_lines.append(f"{bundle.code}: không upload đề.")
 
@@ -3400,10 +3420,12 @@ def upload_one_problem(
             raise RuntimeError("Bài này không có bộ test trong dữ liệu chuẩn bị. Hãy bỏ tích Up test hoặc dùng file zip/gentest.")
         upload_tests_for_target(session, target, base_url, bundle.code, tests)
         log_lines.append(f"{bundle.code}: đã upload {len(tests.input_files)} test.")
+        actions.append("upload test")
     else:
         log_lines.append(f"{bundle.code}: không upload test.")
 
     submit_if_requested(session, base_url, bundle, settings, log_lines)
+    return "✓ " + " và ".join(actions) if actions else "✓ Thành công"
 
 
 def problem_exists_for_target(session, target: str, base_url: str, code: str) -> bool:
