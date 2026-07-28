@@ -139,6 +139,8 @@ def login(base_url: str, username: str, password: str, next_path: str) -> reques
 def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
     bundles: list[ProblemBundle] = []
     for statement in sorted(source_dir.glob("*.md")):
+        if statement.stem.lower().startswith("sol_"):
+            continue
         parsed = parse_statement_filename(statement)
         if not parsed:
             continue
@@ -187,7 +189,9 @@ def parse_statement_title_code(statement: Path) -> tuple[str, str] | None:
             continue
         if "|" not in text:
             return None
-        title, code = [part.strip() for part in text.split("|", 1)]
+        parts = [part.strip() for part in text.split("|")]
+        title = parts[0] if parts else ""
+        code = parts[1] if len(parts) > 1 else ""
         if title and code:
             return title[:100], code
         return None
@@ -283,11 +287,16 @@ def generate_tests(bundle: ProblemBundle, build_root: Path) -> GeneratedTests:
         return GeneratedTests(zip_path, input_files, output_files)
 
     shutil.copy2(bundle.generator, build_dir / bundle.generator.name)
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
     result = subprocess.run(
         [sys.executable, bundle.generator.name],
         cwd=build_dir,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
+        env=env,
         timeout=120,
     )
     require(

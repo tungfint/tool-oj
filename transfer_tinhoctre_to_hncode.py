@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import time
 import uuid
 import zipfile
 from dataclasses import dataclass
@@ -365,8 +366,35 @@ def normalize_hncode_test_zip(zip_path: Path, cases: Iterable[TestCase]) -> tupl
 
 
 def destination_problem_exists(dest: requests.Session, base_url: str, code: str) -> bool:
-    page = dest.get(urljoin(base_url, f"/problem/{code}"))
+    page = request_with_retry(dest, "GET", urljoin(base_url, f"/problem/{code}"), action=f"kiểm tra bài {code}")
     return page.status_code == 200 and code in page.text
+
+
+def request_with_retry(
+    session: requests.Session,
+    method: str,
+    url: str,
+    *,
+    action: str,
+    attempts: int = 3,
+    retry_statuses: set[int] | None = None,
+    **kwargs,
+) -> requests.Response:
+    retry_statuses = retry_statuses or {408, 429, 500, 502, 503, 504}
+    last_error: Exception | None = None
+    timeout = kwargs.pop("timeout", 30)
+    for attempt in range(1, attempts + 1):
+        try:
+            response = session.request(method, url, timeout=timeout, **kwargs)
+            if response.status_code not in retry_statuses or attempt == attempts:
+                return response
+            last_error = TransferError(f"HTTP {response.status_code}")
+        except (requests.RequestException, OSError, ConnectionError) as exc:
+            last_error = exc
+            if attempt == attempts:
+                break
+        time.sleep(min(2 * attempt, 6))
+    raise TransferError(f"HNCode request bị ngắt khi {action} sau {attempts} lần thử: {last_error}")
 
 
 def create_hncode_problem(
@@ -382,7 +410,7 @@ def create_hncode_problem(
     allowed_language_ids: Iterable[str] | None = None,
 ) -> str:
     add_url = urljoin(base_url, "/admin/judge/problem/add/")
-    page = dest.get(add_url)
+    page = request_with_retry(dest, "GET", add_url, action="mở form tạo bài HNCode")
     require(page.ok, f"HNCode add page failed: HTTP {page.status_code}")
 
     langs = all_input_values(page.text, "allowed_languages")
@@ -438,7 +466,15 @@ def create_hncode_problem(
         data.append(("allowed_languages_all", "on"))
         data.extend(("allowed_languages", value) for value in langs)
 
-    result = dest.post(add_url, data=data, headers={"Referer": add_url}, allow_redirects=True)
+    result = request_with_retry(
+        dest,
+        "POST",
+        add_url,
+        action=f"tạo bài {dest_code}",
+        data=data,
+        headers={"Referer": add_url},
+        allow_redirects=True,
+    )
     require(result.ok, f"HNCode create problem failed: HTTP {result.status_code}")
     errors = form_errors(result.text)
     require(not errors, "HNCode create problem form errors:\n" + "\n".join(errors))
@@ -456,6 +492,134 @@ def form_errors(page: str) -> list[str]:
     return errors
 
 
+def case_form_indices(page: str) -> list[int]:
+    ids = {int(x) for x in re.findall(r'name=[\"\']cases-(\d+)-id[\"\']', page)}
+    ids.update(int(x) for x in re.findall(r'name=[\"\']cases-(\d+)-input_file[\"\']', page))
+    return sorted(ids)
+
+
+def signature_grader_form_indices(page: str) -> list[int]:
+    ids = {int(x) for x in re.findall(r'name=[\"\']signature-graders-(\d+)-id[\"\']', page)}
+    ids.update(int(x) for x in re.findall(r'name=[\"\']signature-graders-(\d+)-language[\"\']', page))
+    return sorted(ids)
+
+
+def test_data_base_fields(page: str, token: str, *, cases_total: int, cases_initial: str = "0") -> list[tuple[str, str]]:
+    data: list[tuple[str, str]] = [
+        ("csrfmiddlewaretoken", token),
+        ("cases-TOTAL_FORMS", str(cases_total)),
+        ("cases-INITIAL_FORMS", cases_initial),
+        ("cases-MIN_NUM_FORMS", input_value(page, "cases-MIN_NUM_FORMS", "0")),
+        ("cases-MAX_NUM_FORMS", input_value(page, "cases-MAX_NUM_FORMS", "1")),
+        ("problem-data-checker", selected_option(page, "problem-data-checker", "standard") or "standard"),
+        ("problem-data-fileio_input", input_value(page, "problem-data-fileio_input", "")),
+        ("problem-data-fileio_output", input_value(page, "problem-data-fileio_output", "")),
+        ("problem-data-output_zip_size_mb", input_value(page, "problem-data-output_zip_size_mb", "")),
+        ("problem-data-communication_num_processes", input_value(page, "problem-data-communication_num_processes", "")),
+        ("problem-data-generator_script", input_value(page, "problem-data-generator_script", "")),
+        ("problem-data-checker_args", input_value(page, "problem-data-checker_args", "")),
+    ]
+    grader_indices = signature_grader_form_indices(page)
+    total_graders = input_value(page, "signature-graders-TOTAL_FORMS", str(max(3, len(grader_indices))))
+    initial_graders = input_value(page, "signature-graders-INITIAL_FORMS", "0")
+    data.extend(
+        [
+            ("signature-graders-TOTAL_FORMS", total_graders),
+            ("signature-graders-INITIAL_FORMS", initial_graders),
+            ("signature-graders-MIN_NUM_FORMS", input_value(page, "signature-graders-MIN_NUM_FORMS", "0")),
+            ("signature-graders-MAX_NUM_FORMS", input_value(page, "signature-graders-MAX_NUM_FORMS", "3")),
+        ]
+    )
+    count = max(int(total_graders or "0"), len(grader_indices), 3)
+    for idx in range(count):
+        data.extend(
+            [
+                (f"signature-graders-{idx}-id", input_value(page, f"signature-graders-{idx}-id", "")),
+                (f"signature-graders-{idx}-language", selected_option(page, f"signature-graders-{idx}-language", "")),
+            ]
+        )
+    return data
+
+
+def clear_hncode_existing_tests(dest: requests.Session, test_url: str, page_text: str) -> str:
+    indices = case_form_indices(page_text)
+    if not indices:
+        return page_text
+    token = csrf_token(page_text)
+    initial = input_value(page_text, "cases-INITIAL_FORMS", str(len(indices)))
+    data = test_data_base_fields(page_text, token, cases_total=len(indices), cases_initial=initial)
+    for idx in indices:
+        data.extend(
+            [
+                (f"cases-{idx}-id", input_value(page_text, f"cases-{idx}-id", "")),
+                (f"cases-{idx}-order", input_value(page_text, f"cases-{idx}-order", str(idx))),
+                (f"cases-{idx}-type", selected_option(page_text, f"cases-{idx}-type", "C") or "C"),
+                (f"cases-{idx}-input_file", selected_option(page_text, f"cases-{idx}-input_file", "")),
+                (f"cases-{idx}-output_file", selected_option(page_text, f"cases-{idx}-output_file", "")),
+                (f"cases-{idx}-points", input_value(page_text, f"cases-{idx}-points", "1")),
+                (f"cases-{idx}-batch_scoring", selected_option(page_text, f"cases-{idx}-batch_scoring", "sum") or "sum"),
+                (f"cases-{idx}-generator_args", input_value(page_text, f"cases-{idx}-generator_args", "")),
+                (f"cases-{idx}-DELETE", "on"),
+            ]
+        )
+        if checkbox_checked(page_text, f"cases-{idx}-is_pretest"):
+            data.append((f"cases-{idx}-is_pretest", "on"))
+    result = request_with_retry(
+        dest,
+        "POST",
+        test_url,
+        action="xóa test cũ HNCode",
+        data=data,
+        headers={"Referer": test_url},
+        allow_redirects=True,
+        timeout=30,
+    )
+    require(result.ok, f"HNCode clear old tests failed: HTTP {result.status_code}")
+    errors = form_errors(result.text)
+    require(not errors, "HNCode clear old tests form errors: " + "; ".join(errors))
+    refreshed = request_with_retry(dest, "GET", test_url, action="tải lại form test_data sau khi xóa", timeout=30)
+    require(refreshed.ok, f"HNCode test_data reload after clear failed: HTTP {refreshed.status_code}")
+    return refreshed.text
+
+
+def upload_hncode_zip_with_retry(
+    dest: requests.Session,
+    endpoint: str,
+    test_url: str,
+    token: str,
+    zip_path: Path,
+    problem_code: str,
+    attempts: int = 3,
+) -> requests.Response:
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with zip_path.open("rb") as fh:
+                response = dest.post(
+                    endpoint,
+                    data={
+                        "csrfmiddlewaretoken": token,
+                        "qquuid": str(uuid.uuid4()),
+                        "qqfilename": zip_path.name,
+                        "qqtotalfilesize": str(zip_path.stat().st_size),
+                        "qqtotalparts": "1",
+                        "qqpartindex": "0",
+                    },
+                    files={"qqfile": (zip_path.name, fh, "application/zip")},
+                    headers={"Referer": test_url},
+                    timeout=60,
+                )
+            if response.ok or response.status_code not in {408, 429, 500, 502, 503, 504} or attempt == attempts:
+                return response
+            last_error = TransferError(f"HTTP {response.status_code}")
+        except (requests.RequestException, OSError, ConnectionError) as exc:
+            last_error = exc
+            if attempt == attempts:
+                break
+        time.sleep(min(2 * attempt, 6))
+    raise TransferError(f"HNCode upload zip test cho {problem_code} bị ngắt sau {attempts} lần thử: {last_error}")
+
+
 def upload_hncode_tests(
     dest: requests.Session,
     base_url: str,
@@ -465,25 +629,13 @@ def upload_hncode_tests(
 ) -> str:
     zip_path, cases = normalize_hncode_test_zip(zip_path, cases)
     test_url = urljoin(base_url, f"/problem/{problem_code}/test_data")
-    page = dest.get(test_url)
+    page = request_with_retry(dest, "GET", test_url, action=f"mở test_data {problem_code}")
     require(page.ok, f"HNCode test_data page failed: HTTP {page.status_code}")
-    token = csrf_token(page.text)
+    page_text = clear_hncode_existing_tests(dest, test_url, page.text)
+    token = csrf_token(page_text)
 
     endpoint = urljoin(base_url, f"/problem/{problem_code}/test_data/upload")
-    with zip_path.open("rb") as fh:
-        upload = dest.post(
-            endpoint,
-            data={
-                "csrfmiddlewaretoken": token,
-                "qquuid": str(uuid.uuid4()),
-                "qqfilename": zip_path.name,
-                "qqtotalfilesize": str(zip_path.stat().st_size),
-                "qqtotalparts": "1",
-                "qqpartindex": "0",
-            },
-            files={"qqfile": (zip_path.name, fh, "application/zip")},
-            headers={"Referer": test_url},
-        )
+    upload = upload_hncode_zip_with_retry(dest, endpoint, test_url, token, zip_path, problem_code)
     require(upload.ok, f"HNCode test zip upload failed: HTTP {upload.status_code}")
     try:
         upload_json = upload.json()
@@ -500,34 +652,10 @@ def upload_hncode_tests(
             )
         raise TransferError(f"HNCode upload failed: {upload_json}")
 
-    page = dest.get(test_url)
+    page = request_with_retry(dest, "GET", test_url, action="mở lại form test_data sau khi upload zip")
     token = csrf_token(page.text)
     cases = list(cases)
-    data: list[tuple[str, str]] = [
-        ("csrfmiddlewaretoken", token),
-        ("cases-TOTAL_FORMS", str(len(cases))),
-        ("cases-INITIAL_FORMS", "0"),
-        ("cases-MIN_NUM_FORMS", "0"),
-        ("cases-MAX_NUM_FORMS", "1"),
-        ("problem-data-checker", "standard"),
-        ("problem-data-fileio_input", ""),
-        ("problem-data-fileio_output", ""),
-        ("problem-data-output_zip_size_mb", ""),
-        ("problem-data-communication_num_processes", ""),
-        ("problem-data-generator_script", ""),
-        ("problem-data-checker_args", ""),
-        ("signature-graders-TOTAL_FORMS", "3"),
-        ("signature-graders-INITIAL_FORMS", "0"),
-        ("signature-graders-MIN_NUM_FORMS", "0"),
-        ("signature-graders-MAX_NUM_FORMS", "3"),
-    ]
-    for idx in range(3):
-        data.extend(
-            [
-                (f"signature-graders-{idx}-id", ""),
-                (f"signature-graders-{idx}-language", ""),
-            ]
-        )
+    data = test_data_base_fields(page.text, token, cases_total=len(cases), cases_initial="0")
     for idx, case in enumerate(cases):
         data.extend(
             [
@@ -544,13 +672,21 @@ def upload_hncode_tests(
         if case.is_pretest:
             data.append((f"cases-{idx}-is_pretest", "on"))
 
-    result = dest.post(test_url, data=data, headers={"Referer": test_url}, allow_redirects=True)
+    result = request_with_retry(
+        dest,
+        "POST",
+        test_url,
+        action="lưu metadata test_data HNCode",
+        data=data,
+        headers={"Referer": test_url},
+        allow_redirects=True,
+    )
     require(result.ok, f"HNCode test_data apply failed: HTTP {result.status_code}")
     errors = form_errors(result.text)
     require(not errors, "HNCode test_data form errors: " + "; ".join(errors))
 
     yaml_url = urljoin(base_url, f"/problem/{problem_code}/test_data/init")
-    yaml_page = dest.get(yaml_url)
+    yaml_page = request_with_retry(dest, "GET", yaml_url, action="kiểm tra init.yml HNCode")
     require(yaml_page.ok, f"HNCode YAML verification failed: HTTP {yaml_page.status_code}")
     for case in cases:
         require(case.input_file in yaml_page.text, f"YAML missing input file {case.input_file}")

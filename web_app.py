@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 import zipfile
@@ -43,6 +44,7 @@ from upload_tinhoctre_batch import (
     discover_bundles,
     extract_zip,
     form_errors,
+    find_named_file,
     generate_tests,
     login as login_tinhoctre_public,
     problem_exists as tinhoctre_problem_exists,
@@ -50,6 +52,7 @@ from upload_tinhoctre_batch import (
     statement_body_text,
     submit_solution,
     upload_tests as upload_tinhoctre_tests,
+    zip_case_files,
 )
 
 
@@ -225,6 +228,7 @@ Ghi chú:
 app = Flask(__name__)
 PROGRESS_DIR = RUNTIME / "progress"
 prepared_uploads: dict[str, dict] = {}
+prepared_single_uploads: dict[str, dict] = {}
 prepared_transfers: dict[str, dict] = {}
 prepared_contest_transfers: dict[str, dict] = {}
 prepared_quizzes: dict[str, dict] = {}
@@ -1351,8 +1355,9 @@ PAGE = r"""
     .nav button.active, button.primary { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 2px 6px rgba(15,118,110,.24); }
     button.primary:hover { background:#0b665f; border-color:#0b665f; }
     button:disabled { opacity:.5; cursor:not-allowed; }
-    main { max-width:1320px; margin:0 auto; padding:20px; display:grid; grid-template-columns:minmax(520px, 1.1fr) minmax(360px, .9fr); gap:18px; }
+    main { max-width:1480px; margin:0 auto; padding:20px; display:flex; align-items:flex-start; gap:18px; }
     section { background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+    main > section:first-child { flex:1 1 auto; min-width:0; }
     .panel { display:none; padding:18px; }
     .panel.active { display:block; }
     label { display:block; margin:12px 0 6px; color:#344054; font-weight:650; }
@@ -1373,7 +1378,7 @@ PAGE = r"""
     .tool-title::before { content:""; width:6px; height:24px; border-radius:999px; background:var(--accent); display:inline-block; }
     .tool-subtitle { margin-bottom:14px; }
     .sample, pre#log { background:var(--code); color:#f2f4f7; border-radius:6px; padding:12px; white-space:pre-wrap; overflow:auto; font-family:Consolas, "Cascadia Mono", monospace; font-size:12px; line-height:1.45; }
-    .log-panel { display:grid; grid-template-rows:auto minmax(560px, 1fr); min-height:700px; }
+    .log-panel { flex:0 0 auto; width:min(380px, 34vw); min-width:280px; max-width:680px; display:grid; grid-template-rows:auto minmax(360px, 1fr); min-height:520px; resize:horizontal; overflow:auto; }
     .log-head { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:12px; align-items:center; }
     pre#log { margin:0; border-radius:0 0 8px 8px; }
     .status { border-radius:999px; padding:4px 10px; background:var(--soft); color:var(--muted); font-weight:650; font-size:12px; }
@@ -1401,7 +1406,7 @@ PAGE = r"""
     .lang-list { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; margin-top:8px; }
     .check { display:flex; align-items:center; gap:7px; }
     .hidden { display:none; }
-    @media (max-width:980px) { main { grid-template-columns:1fr; padding:14px; } .grid-2,.grid-3,.lang-list { grid-template-columns:1fr; } }
+    @media (max-width:980px) { main { display:block; padding:14px; } .log-panel { width:100%; max-width:none; margin-top:14px; resize:vertical; } .grid-2,.grid-3,.lang-list { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -1409,7 +1414,8 @@ PAGE = r"""
     <h1>Tool HNCode</h1>
     <div class="nav">
       <button type="button" class="active" data-panel="accounts">Tài khoản & Hướng dẫn</button>
-      <button type="button" data-panel="upload">Up bài</button>
+      <button type="button" data-panel="upload">Up nhiều bài</button>
+      <button type="button" data-panel="single-upload">Up 1 bài</button>
       <button type="button" data-panel="transfer">Chuyển bài</button>
       <button type="button" data-panel="contest-transfer">Chuyển contest</button>
       <button type="button" data-panel="contest-create">Tạo contest</button>
@@ -1456,7 +1462,7 @@ PAGE = r"""
       </div>
 
       <div class="panel" id="panel-upload">
-        <h2>Up bài</h2>
+        <h2>Up nhiều bài</h2>
         <p>Chọn web đích, chọn zip bộ bài, bấm Chuẩn bị dữ liệu để xem bảng bài trước khi up thật.</p>
         <div class="grid-2">
           <div>
@@ -1478,8 +1484,8 @@ PAGE = r"""
         </div>
         <div class="note" style="margin-top:12px">
           <b>Cấu trúc file zip bộ bài:</b><br>
-          Mỗi bài nên có đủ file <code>&lt;ma_bai&gt;.md</code>, <code>gentest_&lt;ma_bai&gt;.py</code> hoặc <code>&lt;ma_bai&gt;.zip</code>, và nếu cần nộp thử thì có <code>sol_&lt;ma_bai&gt;.cpp</code>, <code>sol_&lt;ma_bai&gt;.py</code>.<br>
-          File Markdown nên có dòng đầu <code>Tên bài | Mã bài</code>. File sinh test sẽ tạo thư mục test và nén thành <code>&lt;ma_bai&gt;.zip</code>; nếu zip test có sẵn thì tool dùng trực tiếp.
+          Mỗi bài nên có đủ file <code>&lt;ma_bai&gt;.md</code>, <code>gentest_&lt;ma_bai&gt;.py</code> hoặc <code>&lt;ma_bai&gt;.zip</code>, <code>sol_&lt;ma_bai&gt;.md</code> và nếu cần nộp thử thì có <code>sol_&lt;ma_bai&gt;.cpp</code>, <code>sol_&lt;ma_bai&gt;.py</code>.<br>
+          File Markdown nên có dòng đầu <code>Tên bài | Mã bài | Điểm | Các Tags</code>. File sinh test sẽ tạo thư mục test và nén thành <code>&lt;ma_bai&gt;.zip</code>; nếu zip test có sẵn thì tool dùng trực tiếp. Thông tin nào thiếu sẽ để trống hoặc dùng mặc định.
         </div>
         <div class="grid-2">
           <div><label>Giới hạn thời gian</label><input id="timeLimit" type="text" value="1.0"></div>
@@ -1494,6 +1500,15 @@ PAGE = r"""
         <div id="advancedUpload" class="hidden">
           <div class="grid-3">
             <div><label>Người tạo (Creators)</label><input id="creator" type="text" value="mrtee"></div>
+            <div><label>Điểm mặc định</label><input id="uploadPoints" type="text" value="100"></div>
+            <div><label>Dạng bài tập / Tags mặc định</label><input id="uploadTags" type="text" placeholder="Chưa phân loại, implementation, math, hoặc Type ID"></div>
+          </div>
+          <div class="grid-3">
+            <label class="check"><input type="checkbox" id="uploadPartial" checked> Cho phép điểm thành phần</label>
+            <label class="check"><input type="checkbox" id="overwriteStatement"> Ghi đè đề bài nếu mã bài đã có</label>
+            <label class="check"><input type="checkbox" id="overwriteTests"> Ghi đè test nếu mã bài đã có</label>
+          </div>
+          <div class="grid-3">
             <div><label>Dạng đề (Problem types)</label><input id="typeLabel" type="text" value="Chưa phân loại" disabled></div>
             <div><label>Nhóm bài (Problem group)</label><input id="groupLabel" type="text" value="Chưa phân loại" disabled></div>
           </div>
@@ -1505,15 +1520,92 @@ PAGE = r"""
           <label class="check"><input type="checkbox" id="noSubmit"> Không nộp bài chấm thử</label>
         </div>
         <label class="check" style="margin-top:12px"><input type="checkbox" id="skipStatementTitle" checked> Bỏ dòng đầu tiên trong file đề bài</label>
-        <div class="grid-2" style="margin-top:8px">
-          <label class="check"><input type="checkbox" id="overwriteStatement"> Ghi đè đề bài nếu mã bài đã có</label>
-          <label class="check"><input type="checkbox" id="overwriteTests"> Ghi đè test nếu mã bài đã có</label>
-        </div>
         <div class="actions">
           <button class="action primary" type="button" id="prepareUpload">Chuẩn bị dữ liệu</button>
-          <button class="action primary" type="button" id="confirmUpload" disabled>Xác nhận Up bài</button>
+          <button class="action primary" type="button" id="confirmUpload" disabled>Xác nhận Up nhiều bài</button>
         </div>
         <div id="uploadTable"></div>
+      </div>
+
+      <div class="panel" id="panel-single-upload">
+        <h2>Up 1 bài</h2>
+        <p>Nhập trực tiếp một bài, kiểm tra dữ liệu trước, rồi xác nhận up. Thiếu phần nào thì tool bỏ qua phần đó.</p>
+        <div class="grid-2">
+          <div>
+            <label>Web đích</label>
+            <select id="singleUploadTarget">
+              <option value="hnoj">HNOJ</option>
+              <option value="hncode">HNCode</option>
+              <option value="tinhoctre">TinHocTre</option>
+            </select><span id="singleUploadLogin" class="login-badge">Chưa kiểm tra</span>
+          </div>
+          <div>
+            <label>Mã bài</label>
+            <input id="singleCode" type="text" placeholder="tht26_tongbi">
+          </div>
+        </div>
+        <div><label>Tên bài toán</label><input id="singleName" type="text" placeholder="Tổng bi"></div>
+        <div class="grid-2">
+          <div><label>Giới hạn thời gian</label><input id="singleTimeLimit" type="text" value="1.0"></div>
+          <div><label>Giới hạn bộ nhớ</label><input id="singleMemoryLimit" type="text" value="1024M"></div>
+        </div>
+        <div class="grid-3">
+          <div><label>Điểm</label><input id="singlePoints" type="text" value="100"></div>
+          <div><label>Dạng bài tập / Tags</label><input id="singleTags" type="text" placeholder="Có thể để trống; nếu nhập số ID thì dùng làm Type ID"></div>
+          <label class="check"><input type="checkbox" id="singlePartial" checked> Cho phép điểm thành phần</label>
+        </div>
+        <div class="grid-2" style="margin-top:12px">
+          <label class="check"><input type="checkbox" id="singleOverwrite"> Ghi đè nếu mã bài đã có</label>
+        </div>
+        <h3>Ngôn ngữ cho phép</h3>
+        <div id="singleLanguages" class="lang-list"></div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Đề bài</h3>
+          <div class="actions">
+            <button class="action" type="button" id="toggleSingleStatement">Thu gọn đề bài</button>
+            <button class="action" type="button" id="chooseSingleStatement">Chọn file .md</button>
+            <input id="singleStatementFile" class="hidden" type="file" accept=".md,text/markdown,text/plain">
+          </div>
+          <div id="singleStatementBox">
+            <textarea id="singleStatement" placeholder="Dòng đầu có thể là: Tên bài | ma_bai&#10;&#10;Sau đó là nội dung đề bài."></textarea>
+            <label class="check" style="margin-top:8px"><input type="checkbox" id="singleSkipStatementTitle" checked> Bỏ dòng đầu tiên trong file đề bài</label>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Code sinh test</h3>
+          <div class="actions">
+            <button class="action" type="button" id="toggleSingleGenerator">Thu gọn sinh test</button>
+            <button class="action" type="button" id="chooseSingleGenerator">Chọn code Python / C++</button>
+            <button class="action" type="button" id="chooseSingleTestZip">Chọn zip test có sẵn</button>
+            <input id="singleGeneratorFile" class="hidden" type="file" accept=".py,.cpp,text/plain">
+            <input id="singleTestZipFile" class="hidden" type="file" accept=".zip,application/zip">
+          </div>
+          <div id="singleGeneratorBox">
+            <input id="singleGeneratorName" type="text" placeholder="Chưa chọn file sinh test" readonly>
+            <input id="singleTestZipName" type="text" placeholder="Chưa chọn zip test có sẵn" readonly>
+            <textarea id="singleGenerator" placeholder="Dán code gentest Python vào đây. Nếu dùng C++ generator, tool sẽ lưu lại nhưng chưa chạy tự động; nên dùng Python gentest hoặc zip test có sẵn."></textarea>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Lời giải / hướng dẫn</h3>
+          <div class="actions">
+            <button class="action" type="button" id="toggleSingleSolution">Thu gọn lời giải</button>
+            <button class="action" type="button" id="chooseSingleSolution">Chọn file .md</button>
+            <input id="singleSolutionFile" class="hidden" type="file" accept=".md,text/markdown,text/plain">
+          </div>
+          <div id="singleSolutionBox">
+            <textarea id="singleSolution" placeholder="Dán lời giải/hướng dẫn Markdown nếu muốn up kèm."></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareSingleUpload">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmSingleUpload" disabled>Xác nhận Up 1 bài</button>
+        </div>
+        <div id="singleUploadTable"></div>
       </div>
 
       <div class="panel" id="panel-transfer">
@@ -1701,11 +1793,13 @@ PAGE = r"""
 <script>
 const TARGETS = {{ targets_json | safe }};
 let preparedUpload = null;
+let preparedSingleUpload = null;
 let preparedTransfer = null;
 let preparedContestTransfer = null;
 let preparedQuiz = null;
 let preparedContestLessonCopy = null;
 let selectedZipFile = null;
+let selectedSingleTestZipFile = null;
 const QUIZ_FORMAT_GUIDE = {{ quiz_format_guide_json | safe }};
 
 const logEl = document.getElementById("log");
@@ -1866,6 +1960,35 @@ document.getElementById("zipFileInput").onchange = event => {
   selectedZipFile = event.target.files[0] || null;
   if (selectedZipFile) document.getElementById("uploadZip").value = selectedZipFile.name;
 };
+function toggleBox(buttonId, boxId, openText, closedText) {
+  const box = document.getElementById(boxId);
+  box.classList.toggle("hidden");
+  document.getElementById(buttonId).textContent = box.classList.contains("hidden") ? openText : closedText;
+}
+document.getElementById("toggleSingleStatement").onclick = () => toggleBox("toggleSingleStatement", "singleStatementBox", "Mở đề bài", "Thu gọn đề bài");
+document.getElementById("toggleSingleGenerator").onclick = () => toggleBox("toggleSingleGenerator", "singleGeneratorBox", "Mở sinh test", "Thu gọn sinh test");
+document.getElementById("toggleSingleSolution").onclick = () => toggleBox("toggleSingleSolution", "singleSolutionBox", "Mở lời giải", "Thu gọn lời giải");
+document.getElementById("chooseSingleStatement").onclick = () => document.getElementById("singleStatementFile").click();
+document.getElementById("chooseSingleGenerator").onclick = () => document.getElementById("singleGeneratorFile").click();
+document.getElementById("chooseSingleTestZip").onclick = () => document.getElementById("singleTestZipFile").click();
+document.getElementById("chooseSingleSolution").onclick = () => document.getElementById("singleSolutionFile").click();
+document.getElementById("singleStatementFile").addEventListener("change", async event => {
+  const file = event.target.files && event.target.files[0];
+  if (file) document.getElementById("singleStatement").value = await file.text();
+});
+document.getElementById("singleGeneratorFile").addEventListener("change", async event => {
+  const file = event.target.files && event.target.files[0];
+  document.getElementById("singleGeneratorName").value = file ? file.name : "";
+  if (file) document.getElementById("singleGenerator").value = await file.text();
+});
+document.getElementById("singleTestZipFile").addEventListener("change", event => {
+  selectedSingleTestZipFile = event.target.files && event.target.files[0] || null;
+  document.getElementById("singleTestZipName").value = selectedSingleTestZipFile ? selectedSingleTestZipFile.name : "";
+});
+document.getElementById("singleSolutionFile").addEventListener("change", async event => {
+  const file = event.target.files && event.target.files[0];
+  if (file) document.getElementById("singleSolution").value = await file.text();
+});
 
 function renderLanguages() {
   const target = document.getElementById("uploadTarget").value;
@@ -1881,9 +2004,18 @@ function renderTransferLanguages() {
     `<label class="check"><input type="checkbox" value="${name}" checked> ${name}</label>`
   ).join("");
 }
+function renderSingleLanguages() {
+  const target = document.getElementById("singleUploadTarget").value;
+  const langs = TARGETS[target].languages;
+  document.getElementById("singleLanguages").innerHTML = Object.keys(langs).map(name =>
+    `<label class="check"><input type="checkbox" value="${name}" checked> ${name}</label>`
+  ).join("");
+}
 document.getElementById("uploadTarget").addEventListener("change", renderLanguages);
+document.getElementById("singleUploadTarget").addEventListener("change", renderSingleLanguages);
 document.getElementById("transferDest").addEventListener("change", renderTransferLanguages);
 document.getElementById("uploadTarget").addEventListener("change", checkUploadLogin);
+document.getElementById("singleUploadTarget").addEventListener("change", checkSingleUploadLogin);
 document.getElementById("transferSource").addEventListener("change", checkTransferLogins);
 document.getElementById("transferDest").addEventListener("change", checkTransferLogins);
 document.getElementById("transferCodes").addEventListener("blur", checkTransferLogins);
@@ -1892,11 +2024,15 @@ document.getElementById("contestDest").addEventListener("change", checkContestLo
 document.getElementById("contestCodes").addEventListener("blur", checkContestLogins);
 document.getElementById("createContestTarget").addEventListener("change", checkCreateContestLogin);
 renderLanguages();
+renderSingleLanguages();
 renderTransferLanguages();
-setTimeout(() => { checkUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); checkLessonCopyLogin(); }, 300);
+setTimeout(() => { checkUploadLogin(); checkSingleUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); checkLessonCopyLogin(); }, 300);
 
 function selectedLanguages() {
   return [...document.querySelectorAll("#languages input:checked")].map(item => item.value);
+}
+function selectedSingleLanguages() {
+  return [...document.querySelectorAll("#singleLanguages input:checked")].map(item => item.value);
 }
 function selectedTransferLanguages() {
   return [...document.querySelectorAll("#transferLanguages input:checked")].map(item => item.value);
@@ -1952,6 +2088,9 @@ async function checkAllAccounts() {
 function checkUploadLogin() {
   checkLogin(document.getElementById("uploadTarget").value, "uploadTargetLogin");
 }
+function checkSingleUploadLogin() {
+  checkLogin(document.getElementById("singleUploadTarget").value, "singleUploadLogin");
+}
 function checkTransferLogins() {
   const probe = firstToken(document.getElementById("transferCodes").value);
   checkLogin(document.getElementById("transferSource").value, "transferSourceLogin", probe);
@@ -1978,6 +2117,9 @@ function uploadSettings() {
     target,
     zip_path: selectedZipFile ? "" : document.getElementById("uploadZip").value,
     creator: document.getElementById("creator").value,
+    points: document.getElementById("uploadPoints").value.trim() || "100",
+    tags: document.getElementById("uploadTags").value.trim(),
+    partial: document.getElementById("uploadPartial").checked,
     time_limit: document.getElementById("timeLimit").value,
     memory_limit: document.getElementById("memoryLimit").value,
     languages: selectedLanguages(),
@@ -1987,6 +2129,30 @@ function uploadSettings() {
     skip_statement_title: document.getElementById("skipStatementTitle").checked,
     overwrite_statement: document.getElementById("overwriteStatement").checked,
     overwrite_tests: document.getElementById("overwriteTests").checked,
+    ...accountPayload(target),
+  };
+}
+function singleUploadSettings() {
+  const target = document.getElementById("singleUploadTarget").value;
+  return {
+    target,
+    code: document.getElementById("singleCode").value.trim(),
+    name: document.getElementById("singleName").value.trim(),
+    points: document.getElementById("singlePoints").value.trim() || "100",
+    tags: document.getElementById("singleTags").value.trim(),
+    time_limit: document.getElementById("singleTimeLimit").value.trim() || "1.0",
+    memory_limit: document.getElementById("singleMemoryLimit").value.trim() || "1024M",
+    partial: document.getElementById("singlePartial").checked,
+    overwrite_statement: document.getElementById("singleOverwrite").checked,
+    overwrite_tests: document.getElementById("singleOverwrite").checked,
+    languages: selectedSingleLanguages(),
+    skip_statement_title: document.getElementById("singleSkipStatementTitle").checked,
+    statement_text: document.getElementById("singleStatement").value,
+    generator_text: document.getElementById("singleGenerator").value,
+    generator_filename: document.getElementById("singleGeneratorName").value,
+    solution_text: document.getElementById("singleSolution").value,
+    upload_solution: Boolean(document.getElementById("singleSolution").value.trim()),
+    no_submit: true,
     ...accountPayload(target),
   };
 }
@@ -2021,6 +2187,15 @@ async function prepareUploadRequest(settings) {
   form.append("zip_file", selectedZipFile);
   form.append("payload", JSON.stringify(settings));
   const res = await fetch("/api/prepare-upload", {method:"POST", body:form});
+  const data = await parseJsonResponse(res);
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+async function prepareSingleUploadRequest(settings) {
+  const form = new FormData();
+  if (selectedSingleTestZipFile) form.append("test_zip", selectedSingleTestZipFile);
+  form.append("payload", JSON.stringify(settings));
+  const res = await fetch("/api/prepare-single-upload", {method:"POST", body:form});
   const data = await parseJsonResponse(res);
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
@@ -2100,13 +2275,19 @@ function renderUploadTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#uploadTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#uploadTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Up đề</th><th>Up test</th><th>File test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>File test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}" data-source-time="${escapeHtml(row.source_time_limit || row.time_limit || "1.0")}" data-source-memory="${escapeHtml(row.source_memory_limit || row.memory_limit || "1048576")}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
       <td><input type="text" class="row-name" value="${escapeHtml(row.name)}"></td>
+      <td><input type="text" class="row-points" value="${escapeHtml(row.points || "100")}"></td>
+      <td><input type="text" class="row-tags" value="${escapeHtml(row.tags || "")}"></td>
+      <td><input type="text" class="row-time" value="${escapeHtml(row.time_limit || "1.0")}"></td>
+      <td><input type="text" class="row-memory" value="${escapeHtml(row.memory_limit || "1048576")}"></td>
+      <td><input type="checkbox" class="row-partial" ${row.partial === false ? "" : "checked"}></td>
       <td><input type="checkbox" class="row-statement" checked></td>
       <td><input type="checkbox" class="row-tests" ${row.upload_tests_default === false ? "" : "checked"}></td>
+      <td><input type="checkbox" class="row-solution" ${row.upload_solution_default ? "checked" : ""}></td>
       <td><div class="test-meta">${escapeHtml(row.test_file)}</div></td>
       <td>${row.test_count}</td>
       <td class="row-status">Chưa up</td>
@@ -2118,8 +2299,14 @@ function collectUploadRows() {
     selected: tr.querySelector(".row-selected").checked,
     code: tr.querySelector(".row-code").value.trim(),
     name: tr.querySelector(".row-name").value.trim(),
+    points: tr.querySelector(".row-points").value.trim(),
+    tags: tr.querySelector(".row-tags").value.trim(),
+    time_limit: tr.querySelector(".row-time").value.trim(),
+    memory_limit: tr.querySelector(".row-memory").value.trim(),
+    partial: tr.querySelector(".row-partial").checked,
     upload_statement: tr.querySelector(".row-statement").checked,
     upload_tests: tr.querySelector(".row-tests").checked,
+    upload_solution: tr.querySelector(".row-solution").checked,
   }));
 }
 document.getElementById("confirmUpload").onclick = async () => {
@@ -2134,6 +2321,86 @@ document.getElementById("confirmUpload").onclick = async () => {
     const data = await postJson("/api/confirm-upload", {prepare_id: preparedUpload, settings, rows: collectUploadRows(), progress_id: progressId});
     stopProgressPolling(progressId);
     applyStatuses(data.rows, "#uploadTable");
+    log(data.log);
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    stopProgressPolling(progressId);
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+document.getElementById("prepareSingleUpload").onclick = async () => {
+  const progressId = newProgressId();
+  try {
+    status("running");
+    log("Đang chuẩn bị dữ liệu 1 bài...");
+    const settings = singleUploadSettings();
+    settings.progress_id = progressId;
+    const data = await prepareSingleUploadRequest(settings);
+    preparedSingleUpload = data.prepare_id;
+    renderSingleUploadTable(data.rows || []);
+    document.getElementById("confirmSingleUpload").disabled = false;
+    log(data.log);
+    status("ready", "ok");
+  } catch (err) {
+    preparedSingleUpload = null;
+    document.getElementById("confirmSingleUpload").disabled = true;
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+function renderSingleUploadTable(rows) {
+  document.getElementById("singleUploadTable").innerHTML = `<table>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>Test</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}">
+      <td><input type="checkbox" class="row-selected" checked></td>
+      <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
+      <td><input type="text" class="row-name" value="${escapeHtml(row.name)}"></td>
+      <td><input type="text" class="row-points" value="${escapeHtml(row.points || "100")}"></td>
+      <td><input type="text" class="row-tags" value="${escapeHtml(row.tags || "")}"></td>
+      <td><input type="text" class="row-time" value="${escapeHtml(row.time_limit || "1.0")}"></td>
+      <td><input type="text" class="row-memory" value="${escapeHtml(row.memory_limit || "1024M")}"></td>
+      <td><input type="checkbox" class="row-partial" ${row.partial === false ? "" : "checked"}></td>
+      <td><input type="checkbox" class="row-statement" ${row.upload_statement_default ? "checked" : ""}></td>
+      <td><input type="checkbox" class="row-tests" ${row.upload_tests_default ? "checked" : ""}></td>
+      <td><input type="checkbox" class="row-solution" ${row.upload_solution_default ? "checked" : ""}></td>
+      <td><div class="test-meta">${escapeHtml(row.test_file || "Không có test")}<br>${escapeHtml(row.test_count || 0)} test</div></td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "Đã chuẩn bị")}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function collectSingleUploadRows() {
+  return [...document.querySelectorAll("#singleUploadTable tbody tr")].map(tr => ({
+    original_code: tr.dataset.original,
+    selected: tr.querySelector(".row-selected").checked,
+    code: tr.querySelector(".row-code").value.trim(),
+    name: tr.querySelector(".row-name").value.trim(),
+    points: tr.querySelector(".row-points").value.trim(),
+    tags: tr.querySelector(".row-tags").value.trim(),
+    time_limit: tr.querySelector(".row-time").value.trim(),
+    memory_limit: tr.querySelector(".row-memory").value.trim(),
+    partial: tr.querySelector(".row-partial").checked,
+    upload_statement: tr.querySelector(".row-statement").checked,
+    upload_tests: tr.querySelector(".row-tests").checked,
+    upload_solution: tr.querySelector(".row-solution").checked,
+  }));
+}
+
+document.getElementById("confirmSingleUpload").onclick = async () => {
+  const progressId = newProgressId();
+  try {
+    if (!preparedSingleUpload) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi xác nhận up.");
+    status("running");
+    log("Đang up 1 bài...");
+    markRowsProcessing("#singleUploadTable", "Đang up...");
+    startProgressPolling(progressId, "#singleUploadTable");
+    const settings = singleUploadSettings();
+    settings.progress_id = progressId;
+    const data = await postJson("/api/confirm-single-upload", {prepare_id: preparedSingleUpload, settings, rows: collectSingleUploadRows(), progress_id: progressId});
+    stopProgressPolling(progressId);
+    applyStatuses(data.rows || [], "#singleUploadTable");
     log(data.log);
     status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
   } catch (err) {
@@ -3078,6 +3345,8 @@ def api_prepare_upload():
             log_lines = [f"Đã đọc {len(bundles)} bài từ {source_name}."]
         rows = []
         progress_update(progress_id, phase="prepare-upload", done=0, total=len(bundles), rows=rows, message="Bắt đầu chuẩn bị dữ liệu")
+        solutions_md: dict[str, Path | None] = {}
+        metadata: dict[str, dict] = {}
         for index, bundle in enumerate(bundles, 1):
             generated = tests.get(bundle.code)
             source = "Markdown tổng hợp"
@@ -3085,20 +3354,31 @@ def api_prepare_upload():
                 generated = generate_tests(bundle, build_root)
                 tests[bundle.code] = generated
                 source = "gentest" if bundle.generator else "zip có sẵn"
+            meta = metadata_from_statement(bundle.statement, payload)
+            metadata[bundle.code] = meta
+            solution_md = find_named_file(source_dir, ["sol"], bundle.index, bundle.code, ".md") if source_path.suffix.lower() != ".md" else None
+            solutions_md[bundle.code] = solution_md
             rows.append(
                 {
                     "original_code": bundle.code,
                     "code": bundle.code,
                     "name": bundle.name,
+                    "points": meta["points"],
+                    "tags": meta["tags"],
+                    "time_limit": payload.get("time_limit") or "1.0",
+                    "memory_limit": payload.get("memory_limit") or "1048576",
+                    "partial": meta["partial"],
                     "test_file": generated.zip_path.name if generated else "Không có test",
                     "test_count": len(generated.input_files) if generated else 0,
                     "upload_tests_default": bool(generated),
+                    "upload_solution_default": bool(solution_md),
                 }
             )
             test_text = f"{len(generated.input_files)} test" if generated else "không có test"
-            log_lines.append(f"- {bundle.code}: {bundle.name}, {test_text}, nguồn {source}.")
+            solution_text = ", có lời giải Markdown" if solution_md else ""
+            log_lines.append(f"- {bundle.code}: {bundle.name}, điểm {meta['points']}, tags {meta['tags'] or 'trống'}, {test_text}, nguồn {source}{solution_text}.")
             progress_update(progress_id, phase="prepare-upload", done=index, total=len(bundles), rows=rows, message=f"{bundle.code}: đã chuẩn bị {test_text}")
-        prepared_uploads[prepare_id] = {"root": root, "bundles": {b.code: b for b in bundles}, "tests": tests}
+        prepared_uploads[prepare_id] = {"root": root, "bundles": {b.code: b for b in bundles}, "tests": tests, "solutions": solutions_md, "metadata": metadata}
         progress_finish(progress_id, True, f"Đã chuẩn bị {len(bundles)}/{len(bundles)} bài")
         return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
@@ -3131,9 +3411,9 @@ def receive_upload_source_file(root: Path, payload: dict) -> Path:
 
 def split_combined_markdown_bundles(markdown_path: Path, source_dir: Path) -> list[ProblemBundle]:
     text = markdown_path.read_text(encoding="utf-8")
-    matches = list(re.finditer(r"(?m)^#\s*(?:Bài\s+(\d+)\.\s*)?(.+?)\s*\|\s*([A-Za-z0-9_-]+)\s*$", text))
+    matches = list(re.finditer(r"(?m)^#\s*(?:Bài\s+(\d+)\.\s*)?(.+?)\s*\|\s*([A-Za-z0-9_-]+)(?:\s*\|.*)?\s*$", text))
     if not matches:
-        raise RuntimeError("Không tìm thấy bài nào. Mỗi bài cần bắt đầu dạng: # Bài 1. Tên bài | ma_bai")
+        raise RuntimeError("Không tìm thấy bài nào. Mỗi bài cần bắt đầu dạng: # Bài 1. Tên bài | ma_bai | điểm | tags")
     bundles: list[ProblemBundle] = []
     seen: set[str] = set()
     for idx, match in enumerate(matches):
@@ -3152,6 +3432,287 @@ def split_combined_markdown_bundles(markdown_path: Path, source_dir: Path) -> li
     return bundles
 
 
+def statement_header_parts(statement_path: Path) -> list[str]:
+    for line in statement_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        text = line.strip().strip("#* ")
+        if not text:
+            continue
+        return [part.strip() for part in text.split("|")]
+    return []
+
+
+def metadata_from_statement(statement_path: Path, defaults: dict) -> dict:
+    parts = statement_header_parts(statement_path)
+    points = parts[2] if len(parts) > 2 and parts[2] else str(defaults.get("points") or "100")
+    tags = parts[3] if len(parts) > 3 and parts[3] else str(defaults.get("tags") or "")
+    return {
+        "points": points,
+        "tags": tags,
+        "partial": bool(defaults.get("partial", True)),
+    }
+
+
+@app.post("/api/prepare-single-upload")
+def api_prepare_single_upload():
+    progress_id = None
+    try:
+        payload = upload_payload()
+        progress_id = payload.get("progress_id")
+        target = payload.get("target") or "hncode"
+        raw_code = (payload.get("code") or "").strip()
+        statement_text = (payload.get("statement_text") or "").strip()
+        inferred_name, inferred_code = infer_statement_title(statement_text)
+        code = (raw_code or inferred_code).strip().lower()
+        name = (payload.get("name") or inferred_name or code).strip()
+        if not code:
+            raise RuntimeError("Hãy nhập mã bài hoặc dùng dòng đầu đề bài dạng: Tên bài | ma_bai.")
+        if not name:
+            raise RuntimeError("Hãy nhập tên bài toán.")
+        prepare_note = ""
+        if target == "hncode" and not re.fullmatch(r"[a-z0-9]+", code):
+            normalized = normalize_problem_code_for_target(code, target)
+            prepare_note = (
+                f"Mã {code} có ký tự ngoài chuẩn tạo mới của HNCode. Khi xác nhận, nếu bài này đã tồn tại thì tool dùng đúng mã này; "
+                f"nếu tạo mới thì đổi thành {normalized}."
+            )
+
+        prepare_id = uuid.uuid4().hex
+        root = RUNTIME / prepare_id
+        source_dir = root / "single"
+        build_root = root / "generated"
+        source_dir.mkdir(parents=True, exist_ok=True)
+        build_root.mkdir(parents=True, exist_ok=True)
+
+        statement_path = source_dir / f"{code}.md"
+        if statement_text:
+            statement_path.write_text(statement_text.strip() + "\n", encoding="utf-8")
+        else:
+            statement_path.write_text(f"{name} | {code}\n", encoding="utf-8")
+
+        generator_path: Path | None = None
+        generator_text = (payload.get("generator_text") or "").strip()
+        generator_filename = Path(payload.get("generator_filename") or "").name
+        if generator_text:
+            suffix = Path(generator_filename).suffix.lower() if generator_filename else ".py"
+            if suffix not in {".py", ".cpp"}:
+                suffix = ".py"
+            generator_path = source_dir / f"gentest_{code}{suffix}"
+            generator_path.write_text(repair_python_main_guard(generator_text) + "\n", encoding="utf-8")
+
+        test_zip_path: Path | None = None
+        uploaded_test_zip = request.files.get("test_zip")
+        if uploaded_test_zip and uploaded_test_zip.filename:
+            test_zip_path = source_dir / f"{code}.zip"
+            uploaded_test_zip.save(test_zip_path)
+
+        bundle = ProblemBundle(1, code, name, statement_path, generator_path if generator_path and generator_path.suffix.lower() == ".py" else None, test_zip_path, None, None)
+        tests: GeneratedTests | None = None
+        test_source = "Không có test"
+        log_lines = [f"Đã chuẩn bị bài {code}: {name}."]
+        if prepare_note:
+            log_lines.append(f"- {prepare_note}")
+        if test_zip_path:
+            input_files, output_files = zip_case_files(test_zip_path)
+            tests = GeneratedTests(test_zip_path, input_files, output_files)
+            test_source = test_zip_path.name
+            log_lines.append(f"- Dùng zip test có sẵn: {test_zip_path.name}, {len(input_files)} test.")
+        elif bundle.generator:
+            tests = generate_tests(bundle, build_root)
+            test_source = tests.zip_path.name
+            log_lines.append(f"- Đã chạy gentest Python và sinh {len(tests.input_files)} test: {tests.zip_path.name}.")
+        elif generator_path and generator_path.suffix.lower() == ".cpp":
+            tests = generate_tests_from_cpp_generator(generator_path, build_root, code)
+            test_source = tests.zip_path.name
+            log_lines.append(f"- Đã compile/chạy C++ generator và sinh {len(tests.input_files)} test: {tests.zip_path.name}.")
+
+        solution_path: Path | None = None
+        solution_text = (payload.get("solution_text") or "").strip()
+        if solution_text:
+            solution_path = source_dir / f"solution_{code}.md"
+            solution_path.write_text(solution_text + "\n", encoding="utf-8")
+            log_lines.append("- Có lời giải/hướng dẫn Markdown.")
+
+        rows = [
+            {
+                "original_code": code,
+                "code": code,
+                "name": name,
+                "points": payload.get("points") or "100",
+                "tags": payload.get("tags") or "",
+                "time_limit": payload.get("time_limit") or "1.0",
+                "memory_limit": payload.get("memory_limit") or "1024M",
+                "partial": bool(payload.get("partial", True)),
+                "test_file": test_source,
+                "test_count": len(tests.input_files) if tests else 0,
+                "upload_statement_default": bool(statement_text),
+                "upload_tests_default": bool(tests),
+                "upload_solution_default": bool(solution_path),
+                "status": "Đã chuẩn bị" if bool(statement_text) or bool(tests) or bool(solution_path) else "Chưa có phần nào để up",
+                "note": prepare_note,
+            }
+        ]
+        prepared_single_uploads[prepare_id] = {
+            "root": root,
+            "bundles": {code: bundle},
+            "tests": {code: tests},
+            "solutions": {code: solution_path},
+        }
+        progress_finish(progress_id, True, "Đã chuẩn bị 1/1 bài")
+        return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
+    except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
+        return jsonify({"error": str(exc)}), 400
+
+
+def infer_statement_title(statement: str) -> tuple[str, str]:
+    for line in statement.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [part.strip() for part in line.split("|")]
+        if len(parts) >= 2 and parts[0] and re.fullmatch(r"[A-Za-z0-9_-]+", parts[1]):
+            return parts[0], parts[1]
+        break
+    return "", ""
+
+
+def repair_python_main_guard(text: str) -> str:
+    return text.replace("if **name** == \"**main**\":", "if __name__ == \"__main__\":")
+
+
+def generate_tests_from_cpp_generator(generator_path: Path, build_root: Path, code: str) -> GeneratedTests:
+    build_dir = build_root / code
+    build_dir.mkdir(parents=True, exist_ok=True)
+    local_source = build_dir / generator_path.name
+    shutil.copy2(generator_path, local_source)
+    exe_name = "generator.exe" if sys.platform == "win32" else "generator"
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    compile_result = subprocess.run(
+        ["g++", "-O2", local_source.name, "-o", exe_name],
+        cwd=build_dir,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        env=env,
+        timeout=120,
+    )
+    if compile_result.returncode != 0:
+        raise RuntimeError(f"C++ generator compile failed for {code}\nSTDOUT:\n{compile_result.stdout}\nSTDERR:\n{compile_result.stderr}")
+    run_cmd = [str(build_dir / exe_name)] if sys.platform == "win32" else [f"./{exe_name}"]
+    run_result = subprocess.run(
+        run_cmd,
+        cwd=build_dir,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        env=env,
+        timeout=120,
+    )
+    if run_result.returncode != 0:
+        raise RuntimeError(f"C++ generator failed for {code}\nSTDOUT:\n{run_result.stdout}\nSTDERR:\n{run_result.stderr}")
+    dummy_bundle = ProblemBundle(1, code, code, generator_path, None, None, None, None)
+    zip_path = find_generated_zip_for_single(build_dir, dummy_bundle)
+    if zip_path is None:
+        zip_path = zip_generated_case_files(build_dir, code)
+    input_files, output_files = zip_case_files(zip_path)
+    if not input_files:
+        raise RuntimeError(f"C++ generator không tạo file .inp nào cho {code}.")
+    return GeneratedTests(zip_path, input_files, output_files)
+
+
+def find_generated_zip_for_single(build_dir: Path, bundle: ProblemBundle) -> Path | None:
+    from upload_tinhoctre_batch import find_generated_zip
+
+    return find_generated_zip(build_dir, bundle)
+
+
+def zip_generated_case_files(build_dir: Path, code: str) -> Path:
+    candidates = sorted(
+        path
+        for path in build_dir.rglob("*.inp")
+        if path.is_file() and "__pycache__" not in path.parts
+    )
+    if not candidates:
+        raise RuntimeError("Generator đã chạy xong nhưng không tạo zip test hoặc file .inp/.out.")
+    zip_path = build_dir / f"{code}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for inp in candidates:
+            rel = inp.relative_to(build_dir).as_posix()
+            out = inp.with_suffix(".out")
+            if not out.exists():
+                raise RuntimeError(f"Thiếu file output tương ứng: {out.name}")
+            archive.write(inp, rel)
+            archive.write(out, out.relative_to(build_dir).as_posix())
+    return zip_path
+
+
+@app.post("/api/confirm-single-upload")
+def api_confirm_single_upload():
+    payload = request.get_json(force=True)
+    progress_id = payload.get("progress_id") or payload.get("settings", {}).get("progress_id")
+    try:
+        prepare_id = payload.get("prepare_id")
+        if not prepare_id or prepare_id not in prepared_single_uploads:
+            return jsonify({"ok": False, "error": "Dữ liệu Up 1 bài đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+        settings = dict(payload.get("settings") or {})
+        rows = payload.get("rows") or []
+        target = settings.get("target") or "hncode"
+        state = prepared_single_uploads[prepare_id]
+        result_rows, log_lines = upload_rows(target, settings, rows, state, progress_id)
+        append_single_solution_uploads(target, settings, result_rows, state, log_lines)
+        ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
+        progress_finish(progress_id, ok, "Đã hoàn tất Up 1 bài")
+        return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
+    except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+def append_single_solution_uploads(target: str, settings: dict, rows: list[dict], state: dict, log_lines: list[str]) -> None:
+    if not any(row.get("selected") and row.get("upload_solution") for row in rows):
+        return
+    target_info = TARGETS[target]
+    session = login_upload_target(target, target_info, settings)
+    for row in rows:
+        if not row.get("selected") or not row.get("upload_solution") or not row.get("status", "").startswith("✓"):
+            continue
+        code = row.get("code") or row.get("original_code")
+        solution_path = state.get("solutions", {}).get(row.get("original_code")) or state.get("solutions", {}).get(code)
+        if not solution_path:
+            continue
+        try:
+            update_problem_solution_markdown(session, target_info["base_url"], code, solution_path.read_text(encoding="utf-8", errors="replace"))
+            row["status"] += " và lời giải"
+            log_lines.append(f"{code}: đã up lời giải/hướng dẫn Markdown.")
+        except Exception as exc:
+            row["status"] = "✗ Lỗi"
+            row["error"] = str(exc)
+            log_lines.append(f"✗ {code}: không up lời giải được: {exc}")
+
+
+def update_problem_solution_markdown(session, base_url: str, code: str, content: str) -> str:
+    solution_url = urljoin(base_url, f"/problem/{code}/edit/solutions")
+    page = session.get(solution_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được trang lời giải {code}: HTTP {page.status_code}")
+    parser = FormDataParser()
+    parser.feed(page.text)
+    form = next((form for form in parser.forms if any(name == "content" for name, _value in form)), None)
+    if not form:
+        raise RuntimeError("Không tìm thấy form lời giải có trường content.")
+    data = set_single_form_fields(form, {"content": content})
+    result = session.post(solution_url, data=data, headers={"Referer": solution_url}, allow_redirects=True, timeout=30)
+    if not result.ok:
+        raise RuntimeError(f"Up lời giải lỗi HTTP {result.status_code}")
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if errors:
+        raise RuntimeError("Form lời giải báo lỗi:\n" + "\n".join(errors))
+    return result.url
+
+
 @app.post("/api/confirm-upload")
 def api_confirm_upload():
     payload = request.get_json(force=True)
@@ -3168,6 +3729,7 @@ def api_confirm_upload():
         state = prepared_uploads[prepare_id]
         target = payload["settings"]["target"]
         result_rows, log_lines = upload_rows(target, payload["settings"], payload["rows"], state, progress_id)
+        append_single_solution_uploads(target, payload["settings"], result_rows, state, log_lines)
         ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
         progress_finish(progress_id, ok, "Đã hoàn tất up bài")
         return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
@@ -3197,7 +3759,12 @@ def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, prog
             result_rows.append(row)
             continue
         try:
-            bundle = replace(state["bundles"][row["original_code"]], code=row["code"], name=row["name"])
+            raw_code = row["code"] or row["original_code"]
+            dest_code, code_note = resolve_problem_code_for_upload(session, target, target_info["base_url"], raw_code)
+            if dest_code != raw_code:
+                row["code"] = dest_code
+                log_lines.append(code_note or f"{raw_code}: mã đích {TARGETS[target]['label']} được đổi thành {dest_code}")
+            bundle = replace(state["bundles"][row["original_code"]], code=dest_code, name=row["name"])
             tests = state["tests"].get(row["original_code"])
             action_status = upload_one_problem(session, target, target_info, bundle, tests, row, settings, selected_language_ids, log_lines)
             row["status"] = action_status or "✓ Thành công"
@@ -3385,18 +3952,19 @@ def upload_one_problem(
                 bundle.statement.read_text(encoding="utf-8", errors="replace"),
                 skip_title_line=bool(settings.get("skip_statement_title", True)),
             ),
-            points="100",
-            partial=True,
-            time_limit=settings.get("time_limit") or "1.0",
-            memory_limit=settings.get("memory_limit") or "1048576",
+            points=str(row.get("points") or settings.get("points") or "100"),
+            partial=bool(row.get("partial", settings.get("partial", True))),
+            time_limit=row.get("time_limit") or settings.get("time_limit") or "1.0",
+            memory_limit=memory_limit_to_kb(row.get("memory_limit") or settings.get("memory_limit") or "1048576"),
             memory_unit="KB",
         )
+        type_id = type_id_from_tags(row.get("tags") or settings.get("tags")) or target_info["type_id"]
         change_url = create_hncode_problem(
             session,
             base_url,
             info,
             dest_code=bundle.code,
-            type_id=target_info["type_id"],
+            type_id=type_id,
             group_id=target_info["group_id"],
             public=False,
             allow_all_languages=False,
@@ -3406,7 +3974,7 @@ def upload_one_problem(
             base_url,
             info,
             dest_code=bundle.code,
-            type_id=target_info["type_id"],
+            type_id=type_id,
             group_id=target_info["group_id"],
             allowed_language_ids=language_ids,
         )
@@ -3431,7 +3999,27 @@ def upload_one_problem(
 def problem_exists_for_target(session, target: str, base_url: str, code: str) -> bool:
     if target == "tinhoctre":
         return tinhoctre_problem_exists(session, base_url, code)
+    for path in (f"/problem/{code}/edit", f"/problem/{code}/test_data"):
+        try:
+            page = session.get(urljoin(base_url, path), timeout=30, allow_redirects=True)
+        except Exception:
+            continue
+        if page.status_code == 200 and "/accounts/login" not in page.url and "/admin/login" not in page.url:
+            return True
     return destination_problem_exists(session, base_url, code)
+
+
+def resolve_problem_code_for_upload(session, target: str, base_url: str, raw_code: str) -> tuple[str, str]:
+    code = (raw_code or "").strip().lower()
+    if target != "hncode":
+        return code, ""
+    normalized = normalize_problem_code_for_target(code, target)
+    if code and code != normalized and problem_exists_for_target(session, target, base_url, code):
+        return code, ""
+    validate_problem_code_for_target(normalized, target)
+    if code != normalized:
+        return normalized, f"{code}: mã HNCode dùng để tạo mới được đổi thành {normalized}"
+    return code, ""
 
 
 def statement_for_target(target: str, statement: str, *, skip_title_line: bool = False) -> str:
@@ -3666,6 +4254,27 @@ def normalize_language_label(label: str) -> str:
 def language_ids_for_target(target: str, names: list[str]) -> list[str]:
     mapping = TARGETS[target]["languages"]
     return [mapping[name] for name in names if mapping.get(name)]
+
+
+def memory_limit_to_kb(value: object) -> str:
+    text = str(value or "").strip().lower().replace(" ", "")
+    if not text:
+        return "1048576"
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)(kb|k|mb|m|gb|g)?", text)
+    if not match:
+        return str(value)
+    amount = float(match.group(1))
+    unit = match.group(2) or "kb"
+    if unit in {"gb", "g"}:
+        amount *= 1024 * 1024
+    elif unit in {"mb", "m"}:
+        amount *= 1024
+    return str(int(round(amount)))
+
+
+def type_id_from_tags(value: object) -> str:
+    match = re.search(r"\b\d+\b", str(value or ""))
+    return match.group(0) if match else ""
 
 
 def problem_url(base_url: str, code: str) -> str:

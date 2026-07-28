@@ -72,13 +72,17 @@ Với mỗi bài trong danh sách dưới đây, hãy tạo đủ 4 file:
    - Tên file: sol_<ma_bai>.cpp
    - Ví dụ: sol_tht26_tongbi.cpp
 
-4. File đề bài Markdown:
+4. File lời giải / hướng dẫn Markdown:
+   - Tên file: sol_<ma_bai>.md
+   - Ví dụ: sol_tht26_tongbi.md
+
+5. File đề bài Markdown:
    - Tên file: <ma_bai>.md
    - Ví dụ: tht26_tongbi.md
    - Dòng đầu tiên của file phải có đúng cấu trúc:
-     Tên bài | Mã bài
+     Tên bài | Mã bài | Điểm | Các Tags
    - Ví dụ:
-     Tổng bi | tht26_tongbi
+     Tổng bi | tht26_tongbi | 100 | implementation, math
    - Sau dòng đầu tiên là toàn bộ nội dung đề bài.
 
 Yêu cầu đối với file sinh test:
@@ -110,19 +114,20 @@ Ví dụ với bài:
 
 Tổng bi | tht26_tongbi
 
-Cần tạo 4 file:
+Cần tạo 5 file:
 
 - gentest_tht26_tongbi.py
 - sol_tht26_tongbi.py
 - sol_tht26_tongbi.cpp
+- sol_tht26_tongbi.md
 - tht26_tongbi.md
 
 Hãy thực hiện cho toàn bộ các bài được cung cấp bên dưới.
 ```
 
-## II. Tab Up bài
+## II. Tab Up nhiều bài
 
-Tạo tab `Up bài`.
+Tạo tab `Up nhiều bài`.
 
 Tab này dùng để up bài mới lên một trong ba hệ thống:
 
@@ -224,12 +229,17 @@ Yêu cầu:
 - Nếu không có file lời giải tương ứng thì bỏ qua lượt nộp thử đó và ghi log.
 - Nếu tích `Không nộp bài chấm thử` thì bỏ qua toàn bộ bước nộp thử.
 
-### 7. Các thông tin mặc định, không cần hiển thị trên giao diện
+### 7. Điểm, dạng bài tập, điểm thành phần và ghi đè
 
 ```text
-Điểm: 100
-Cho phép nhận điểm với từng test đúng: bật
+Điểm
+Dạng bài tập / Tags
+Cho phép điểm thành phần
+Ghi đè đề bài
+Ghi đè test
 ```
+
+Nếu file Markdown có dòng đầu `Tên bài | Mã bài | Điểm | Các Tags` thì ưu tiên lấy điểm/tags từ dòng đầu. Nếu thiếu thì dùng mặc định trên giao diện.
 
 ### 8. Bỏ dòng đầu tiên trong file đề bài
 
@@ -242,7 +252,7 @@ Bỏ dòng đầu tiên trong file đề bài
 Yêu cầu:
 
 - Mặc định tích.
-- Khi tích, nếu dòng đầu tiên có dạng `Tên bài | Mã bài` thì không đưa dòng này vào nội dung đề bài khi upload.
+- Khi tích, nếu dòng đầu tiên có dạng `Tên bài | Mã bài | Điểm | Các Tags` thì không đưa dòng này vào nội dung đề bài khi upload.
 - Vẫn dùng dòng đầu tiên để nhận diện tên bài và mã bài trong bước chuẩn bị dữ liệu.
 
 ### Chuẩn bị dữ liệu
@@ -260,7 +270,7 @@ Khi bấm nút này:
 - Đọc mã bài và tên bài từ dòng đầu tiên của file `.md` theo dạng:
 
 ```text
-Tên bài | Mã bài
+Tên bài | Mã bài | Điểm | Các Tags
 ```
 
 - Với mỗi bài, xác định bộ test bằng một trong hai cách:
@@ -297,8 +307,14 @@ Sau khi xử lý xong, hiển thị bảng chuẩn bị dữ liệu gồm:
 Chọn bài cần up
 Mã bài
 Tên bài toán
+Điểm
+Dạng bài tập / Tags
+Time
+Memory
+Cho phép điểm thành phần
 Up đề bài
 Up test
+Up lời giải
 File test
 Số lượng test
 Trạng thái
@@ -312,7 +328,113 @@ Yêu cầu thêm:
 - Bảng có nút `Bỏ chọn tất cả`.
 - Nếu mã bài đã tồn tại trên web đích thì thông báo rõ `Bài đã tồn tại`, bỏ qua bài đó hoàn toàn và tiếp tục up các bài khác.
 
-## III. Tab Chuyển bài
+## III. Tab Up 1 bài
+
+Tạo tab `Up 1 bài`.
+
+Tab này dùng để nhập trực tiếp một bài, không cần zip bộ bài.
+
+### 1. Thông tin chính
+
+Hiển thị các trường:
+
+```text
+Web đích: HNOJ / HNCode / TinHocTre
+Mã bài
+Tên bài toán
+Điểm
+Tag
+Giới hạn thời gian: mặc định 1.0
+Giới hạn bộ nhớ: mặc định 1024M
+Ngôn ngữ cho phép: theo từng web, mặc định tích hết
+```
+
+Mặc định tích:
+
+```text
+Cho phép điểm thành phần
+```
+
+Có nút tích:
+
+```text
+Ghi đè nếu mã bài đã có
+```
+
+Với HNCode, mã bài cần được chuẩn hóa về chữ thường và số. Ví dụ:
+
+```text
+nc1_calfunc1 -> nc1calfunc1
+```
+
+### 2. Các phần nhập liệu có thể thu gọn
+
+```text
+Đề bài
+- Có ô paste Markdown.
+- Có nút chọn file .md.
+- Nếu thiếu thì không upload đề.
+
+Code sinh test
+- Có ô paste code sinh test.
+- Có nút chọn file Python / C++.
+- Có nút chọn zip test có sẵn.
+- Nếu là Python gentest thì tool chạy để sinh zip test.
+- Nếu là C++ generator thì tool compile bằng `g++`, chạy file sinh test, rồi dùng zip do generator tạo hoặc tự nén các cặp `.inp/.out`.
+- Nếu có zip test có sẵn thì dùng zip đó.
+- Nếu thiếu thì không upload test.
+
+Lời giải / hướng dẫn
+- Có ô paste Markdown.
+- Có nút chọn file .md.
+- Nếu thiếu thì không upload lời giải.
+```
+
+Nếu nội dung gentest bị Markdown đổi:
+
+```python
+if **name** == "**main**":
+```
+
+thì tool tự sửa thành:
+
+```python
+if __name__ == "__main__":
+```
+
+Khi chạy gentest trên Windows, cần ép stdout/stderr UTF-8 để không lỗi nếu file in tiếng Việt hoặc emoji.
+
+### 3. Chuẩn bị dữ liệu
+
+Khi bấm `Chuẩn bị dữ liệu`, hiển thị bảng:
+
+```text
+Chọn
+Mã bài
+Tên bài toán
+Điểm
+Time
+Memory
+Up đề
+Up test
+Up lời giải
+File test / số test
+Trạng thái
+```
+
+Có thể sửa mã bài, tên, điểm, time, memory trên bảng trước khi bấm xác nhận.
+
+### 4. Xác nhận up
+
+Khi bấm `Xác nhận Up 1 bài`:
+
+- Chỉ up những phần được tích.
+- Thiếu phần nào thì bỏ qua phần đó.
+- Nếu mã bài đã tồn tại và tích ghi đè thì cập nhật phần được chọn.
+- Nếu mã bài đã tồn tại và không tích ghi đè thì báo rõ lỗi.
+- Khi thành công, hiển thị `Link` để mở bài.
+
+## IV. Tab Chuyển bài
 
 Tạo tab `Chuyển bài`.
 
@@ -332,7 +454,7 @@ HNOJ / HNCode / TinHocTre
 HNOJ / HNCode / TinHocTre
 ```
 
-### 3. Hiển thị và cho sửa thông số như tab Up bài
+### 3. Hiển thị và cho sửa thông số như tab Up nhiều bài
 
 Các thông số cần hiển thị:
 

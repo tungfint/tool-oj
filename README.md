@@ -22,6 +22,8 @@ storage phía HNCode; tool đã gửi đúng endpoint nhưng backend HNCode chư
 Trước khi upload lên HNCode, tool tự chuẩn hoá zip test về dạng phẳng
 `01.inp/01.out`, `02.inp/02.out`, ... để tránh lỗi do thư mục con hoặc tên file
 test không đồng nhất.
+Khi upload lại test HNCode, tool tự xoá toàn bộ test cũ trước rồi mới upload bộ
+test mới, nên có thể thay bộ nhiều test bằng bộ ít test hơn.
 
 Với chức năng tạo/chuyển contest: nếu mã contest đã tồn tại ở đích, tool không
 báo lỗi mà mở form sửa contest và thêm các bài chưa có vào cuối danh sách theo
@@ -78,16 +80,16 @@ Hướng dẫn prompt yêu cầu mỗi bài có đủ:
 Dòng đầu file Markdown nên có dạng:
 
 ```text
-Tên bài | Mã bài
+Tên bài | Mã bài | Điểm | Các Tags
 ```
 
-## Tab Up bài
+## Tab Up nhiều bài
 
 Luồng sử dụng:
 
 1. Chọn web đích: `HNOJ`, `HNCode` hoặc `TinHocTre`.
 2. Chọn file zip bộ bài hoặc file Markdown tổng hợp bằng cách dán đường dẫn hoặc bấm `Chọn file`.
-   - File zip dùng cấu trúc cũ: mỗi bài có file đề, test zip hoặc `gentest`.
+   - File zip dùng cấu trúc: mỗi bài có file đề, test zip hoặc `gentest`, lời giải Markdown nếu có.
    - File Markdown tổng hợp dùng để up đề bài, mỗi bài bắt đầu bằng dòng `# Bài 1. Tên bài | ma_bai`.
 3. Kiểm tra `Giới hạn thời gian`, `Giới hạn bộ nhớ`, `Ngôn ngữ cho phép`.
 4. Bấm `Mở rộng thông tin khác` nếu cần xem/sửa nhóm thông tin phụ:
@@ -98,16 +100,51 @@ Luồng sử dụng:
    - `Nộp bài chấm thử C++`: dùng `sol_<ma_bai>.cpp`.
    - `Nộp bài chấm thử Python`: dùng `sol_<ma_bai>.py`.
    - `Không nộp bài chấm thử`: bỏ qua toàn bộ bước nộp thử.
-6. Tích `Bỏ dòng đầu tiên trong file đề bài` nếu file Markdown có dòng đầu dạng `Tên bài | Mã bài` và không muốn đưa dòng này vào đề bài.
+6. Tích `Bỏ dòng đầu tiên trong file đề bài` nếu file Markdown có dòng đầu dạng `Tên bài | Mã bài | Điểm | Các Tags` và không muốn đưa dòng này vào đề bài.
 7. Nếu mã bài đã có trên web đích và muốn cập nhật lại, tích:
-   - `Ghi đè đề bài nếu mã bài đã có`: cập nhật lại tên, nội dung đề, time limit và memory limit.
+   - `Ghi đè đề bài nếu mã bài đã có`: cập nhật lại tên và nội dung đề.
    - `Ghi đè test nếu mã bài đã có`: upload lại bộ test mới cho bài đã tồn tại.
 8. Bấm `Chuẩn bị dữ liệu`.
 9. Kiểm tra bảng bài, sửa mã/tên nếu cần. Có nút `Chọn tất cả` và `Bỏ chọn tất cả` cho bảng.
-10. Bấm `Xác nhận Up bài`.
+10. Bấm `Xác nhận Up nhiều bài`.
 
 Khi upload thành công, cột trạng thái có chữ `Link`. Bấm vào chữ này để mở trang bài vừa tạo.
 Nếu mã bài đã tồn tại trên web đích và không tích ghi đè, dòng đó sẽ báo `Bài đã tồn tại`, bị bỏ qua hoàn toàn và các bài khác vẫn tiếp tục được xử lý.
+
+## Tab Up 1 bài
+
+Tab này dùng khi chỉ cần tạo hoặc cập nhật một bài, không cần đóng gói cả bộ zip.
+
+Luồng sử dụng:
+
+1. Chọn `Web đích`.
+2. Nhập `Mã bài`, `Tên bài toán`, `Điểm`, `Tag` nếu cần.
+   - Với HNCode, mã bài được chuẩn hóa về chữ thường và số, ví dụ `nc1_calfunc1` thành `nc1calfunc1`.
+   - Ô `Tag` có thể để trống. Nếu nhập số ID, tool dùng số đầu tiên làm `Problem types`.
+3. Chỉnh `Giới hạn thời gian` và `Giới hạn bộ nhớ`.
+   - Mặc định time là `1.0`.
+   - Mặc định memory là `1024M`, khi gửi form sẽ đổi về `1048576` KB.
+4. Mặc định bật `Cho phép điểm thành phần`.
+5. Nếu bài đã có và muốn cập nhật lại đề/test, tích `Ghi đè nếu mã bài đã có`.
+6. Mở từng phần cần dùng:
+   - `Đề bài`: dán Markdown hoặc chọn file `.md`.
+   - `Code sinh test`: dán `gentest` Python hoặc chọn file `.py`; cũng có thể chọn zip test có sẵn.
+   - `Lời giải / hướng dẫn`: dán Markdown hoặc chọn file `.md`.
+7. Bấm `Chuẩn bị dữ liệu` để tool kiểm tra:
+   - Có đề hay không.
+   - Có sinh được test hay không.
+   - Số test trong zip.
+   - Có lời giải Markdown hay không.
+8. Kiểm tra bảng, có thể sửa mã, tên, điểm, time, memory, rồi bấm `Xác nhận Up 1 bài`.
+
+Thiếu phần nào thì tool không up phần đó. Ví dụ chỉ có đề thì chỉ tạo/cập nhật đề; có đề và test thì tạo/cập nhật cả hai.
+
+Ghi chú về code sinh test:
+
+- Tool chạy tự động file Python `gentest`.
+- Với C++ generator, tool compile bằng `g++`, chạy file sinh test, rồi dùng zip do generator tạo hoặc tự nén các cặp `.inp/.out`.
+- Nếu nội dung bị Markdown đổi `__name__` thành `**name**`, tool tự sửa lại thành `if __name__ == "__main__":`.
+- Nếu gentest in tiếng Việt hoặc emoji trên Windows, tool ép stdout/stderr UTF-8 để tránh lỗi encoding.
 
 ## Ngôn ngữ mặc định
 
@@ -125,6 +162,8 @@ HNCode:
 - `Pascal`
 - `Python 3`
 - `PyPy 3`
+
+Ghi chú mã bài HNCode: khi tạo bài mới, HNCode mới yêu cầu mã dạng chữ thường và số. Tuy nhiên một số bài cũ có thể vẫn có dấu gạch dưới. Nếu mã có gạch dưới đã tồn tại, tool giữ đúng mã cũ để ghi đè đề/test; nếu tạo bài mới thì tool mới tự đổi sang dạng hợp lệ.
 
 TinHocTre:
 
@@ -160,10 +199,17 @@ bo_bai.zip
 
 Trong đó:
 
-- `<ma_bai>.md`: file đề bài, dòng đầu nên là `Tên bài | Mã bài`.
+- `<ma_bai>.md`: file đề bài, dòng đầu nên là `Tên bài | Mã bài | Điểm | Các Tags`.
 - `gentest_<ma_bai>.py`: file sinh test. Nếu có file này, tool ưu tiên chạy để tạo `<ma_bai>.zip`.
 - `<ma_bai>.zip`: bộ test có sẵn, dùng khi không có file `gentest`.
+- `sol_<ma_bai>.md`: lời giải/hướng dẫn Markdown để up vào trang lời giải nếu bật trong bảng.
 - `sol_<ma_bai>.cpp`, `sol_<ma_bai>.py`: lời giải để nộp thử nếu bật tùy chọn nộp thử.
+
+File mẫu 1 bài đơn giản nằm ở:
+
+```text
+samples/bo_mau_1_bai_tonghaiso.zip
+```
 
 Ví dụ bài `Tổng bi`, mã `tongbi` hoặc `tht26_tongbi`, tool thử tìm:
 
@@ -177,7 +223,7 @@ Nếu không có file lời giải tương ứng, tool vẫn tạo bài và uplo
 
 ## File Markdown tổng hợp nhiều đề
 
-Tab `Up bài` cũng hỗ trợ file `.md` tổng hợp nhiều đề bài trong cùng một file. Cấu trúc mỗi bài:
+Tab `Up nhiều bài` cũng hỗ trợ file `.md` tổng hợp nhiều đề bài trong cùng một file. Cấu trúc mỗi bài:
 
 ```markdown
 # Bài 1. Xếp mâm cơm | tht26kv_xepmamcom
