@@ -3545,7 +3545,7 @@ def api_prepare_single_upload():
         if not name:
             raise RuntimeError("Hãy nhập tên bài toán.")
         prepare_note = ""
-        if target == "hncode" and not re.fullmatch(r"[a-z0-9]+", code):
+        if target == "hncode" and not re.fullmatch(r"[a-z0-9_]+", code):
             normalized = normalize_problem_code_for_target(code, target)
             prepare_note = (
                 f"Mã {code} có ký tự ngoài chuẩn tạo mới của HNCode. Khi xác nhận, nếu bài này đã tồn tại thì tool dùng đúng mã này; "
@@ -4360,15 +4360,15 @@ def problem_url(base_url: str, code: str) -> str:
 def normalize_problem_code_for_target(code: str, target: str) -> str:
     code = (code or "").strip().lower()
     if target == "hncode":
-        code = re.sub(r"[^a-z0-9]+", "", code)
+        code = re.sub(r"[^a-z0-9_]+", "", code)
     return code
 
 
 def validate_problem_code_for_target(code: str, target: str) -> None:
-    if target == "hncode" and not re.fullmatch(r"[a-z0-9]+", code or ""):
+    if target == "hncode" and not re.fullmatch(r"[a-z0-9_]+", code or ""):
         normalized = normalize_problem_code_for_target(code, target)
         hint = f" Gợi ý mã hợp lệ: {normalized}" if normalized else ""
-        raise RuntimeError(f"HNCode chỉ cho phép mã bài gồm chữ thường và số (^[a-z0-9]+$).{hint}")
+        raise RuntimeError(f"HNCode cho phép mã bài gồm chữ thường, số và dấu gạch dưới (^[a-z0-9_]+$).{hint}")
 
 
 def test_data_url(base_url: str, code: str) -> str:
