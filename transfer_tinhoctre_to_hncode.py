@@ -426,7 +426,6 @@ def create_hncode_problem(
         ("submission_source_visibility_mode", selected_option(page.text, "submission_source_visibility_mode", "F") or "F"),
         ("testcase_visibility_mode", selected_option(page.text, "testcase_visibility_mode", "C") or "C"),
         ("testcase_result_visibility_mode", selected_option(page.text, "testcase_result_visibility_mode", "V") or "V"),
-        ("types", type_id),
         ("group", group_id),
         ("points", info.points),
         ("time_limit", info.time_limit),
@@ -455,6 +454,8 @@ def create_hncode_problem(
         ("translations-MAX_NUM_FORMS", "1"),
         ("_continue", "Save and continue editing"),
     ]
+    type_ids = [value.strip() for value in str(type_id or "").split(",") if value.strip()]
+    data.extend(("types", value) for value in type_ids)
     if public:
         data.append(("is_public", "on"))
     if info.partial:

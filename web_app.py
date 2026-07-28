@@ -263,6 +263,33 @@ QUESTION_TYPE_ALIASES = {
     "đúng / sai": "TF",
 }
 
+HNCODE_TYPE_ALIASES = {
+    "binary search": "198",
+    "binary-search": "198",
+    "binary_search": "198",
+    "sortings": "188",
+    "sorting": "188",
+    "sort": "188",
+    "dp": "172",
+    "dynamic programming": "172",
+    "quy hoach dong": "172",
+    "quy hoạch động": "172",
+    "two pointers": "196",
+    "two-pointers": "196",
+    "two_pointers": "196",
+    "2 pointers": "196",
+    "implementation": "340",
+    "cai dat": "340",
+    "cài đặt": "340",
+    "math": "175",
+    "toan": "175",
+    "toán": "175",
+    "strings": "176",
+    "string": "176",
+    "chuoi": "176",
+    "chuỗi": "176",
+}
+
 QUIZ_FIELD_ALIASES = {
     "loại": "type",
     "loai": "type",
@@ -3924,6 +3951,29 @@ def set_single_form_fields(data: list[tuple[str, str]], updates: dict[str, str])
     return out
 
 
+def set_form_fields(
+    data: list[tuple[str, str]],
+    updates: dict[str, str],
+    *,
+    multi_updates: dict[str, list[str]] | None = None,
+    checkbox_updates: dict[str, bool] | None = None,
+) -> list[tuple[str, str]]:
+    multi_updates = multi_updates or {}
+    checkbox_updates = checkbox_updates or {}
+    skip_names = set(updates) | set(multi_updates) | set(checkbox_updates)
+    out: list[tuple[str, str]] = []
+    for name, value in data:
+        if name not in skip_names:
+            out.append((name, value))
+    out.extend(updates.items())
+    for name, values in multi_updates.items():
+        out.extend((name, value) for value in values if value)
+    for name, checked in checkbox_updates.items():
+        if checked:
+            out.append((name, "on"))
+    return out
+
+
 def update_existing_problem_statement(
     session,
     target: str,
@@ -3980,6 +4030,51 @@ def update_existing_problem_statement(
     return result.url
 
 
+def update_hncode_problem_metadata(
+    session,
+    base_url: str,
+    code: str,
+    *,
+    name: str,
+    points: str,
+    partial: bool,
+    time_limit: str,
+    memory_limit: str,
+    type_ids: list[str],
+    group_id: str,
+) -> str:
+    edit_url = urljoin(base_url, f"/problem/{code}/edit")
+    page = session.get(edit_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được form metadata HNCode {code}: HTTP {page.status_code}")
+    data = collect_problem_edit_form_data(page.text)
+    if not data:
+        raise RuntimeError(f"Không tìm thấy form metadata HNCode cho {code}.")
+    data = set_form_fields(
+        data,
+        {
+            "code": code,
+            "name": name,
+            "points": str(points or "100"),
+            "time_limit": str(time_limit or "1.0"),
+            "memory_limit": memory_limit_to_kb(memory_limit or "1048576"),
+            "memory_unit": "KB",
+            "group": group_id,
+        },
+        multi_updates={"types": type_ids or [TARGETS["hncode"]["type_id"]]},
+        checkbox_updates={"partial": bool(partial)},
+    )
+    result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=30)
+    if not result.ok:
+        raise RuntimeError(f"Cập nhật metadata HNCode {code} lỗi HTTP {result.status_code}")
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if errors:
+        raise RuntimeError(f"Form metadata HNCode {code} báo lỗi:\n" + "\n".join(errors))
+    if "/accounts/login" in result.url or "/admin/login" in result.url:
+        raise RuntimeError(f"Cập nhật metadata HNCode {code} bị chuyển về trang đăng nhập: {result.url}")
+    return result.url
+
+
 def upload_one_problem(
     session,
     target: str,
@@ -4016,10 +4111,26 @@ def upload_one_problem(
                 actions.append("test")
             else:
                 log_lines.append(f"{bundle.code}: không ghi đè test vì chưa tích Ghi đè test.")
+        if target == "hncode" and row.get("upload_statement") and overwrite_statement:
+            type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
+            update_hncode_problem_metadata(
+                session,
+                base_url,
+                bundle.code,
+                name=row.get("name") or bundle.name,
+                points=str(row.get("points") or settings.get("points") or "100"),
+                partial=bool(row.get("partial", settings.get("partial", True))),
+                time_limit=row.get("time_limit") or settings.get("time_limit") or "1.0",
+                memory_limit=row.get("memory_limit") or settings.get("memory_limit") or "1048576",
+                type_ids=type_ids,
+                group_id=target_info["group_id"],
+            )
+            log_lines.append(f"{bundle.code}: đã cập nhật lại điểm và dạng bài tập HNCode.")
         submit_if_requested(session, base_url, bundle, settings, log_lines)
         return "✓ Ghi đè " + " và ".join(actions) if actions else "✓ Không có phần ghi đè"
     actions: list[str] = []
     if row.get("upload_statement"):
+        type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
         info = ProblemInfo(
             code=bundle.code,
             name=bundle.name,
@@ -4034,13 +4145,12 @@ def upload_one_problem(
             memory_limit=memory_limit_to_kb(row.get("memory_limit") or settings.get("memory_limit") or "1048576"),
             memory_unit="KB",
         )
-        type_id = type_id_from_tags(row.get("tags") or settings.get("tags")) or target_info["type_id"]
         change_url = create_hncode_problem(
             session,
             base_url,
             info,
             dest_code=bundle.code,
-            type_id=type_id,
+            type_id=",".join(type_ids),
             group_id=target_info["group_id"],
             public=False,
             allow_all_languages=False,
@@ -4067,6 +4177,22 @@ def upload_one_problem(
         actions.append("upload test")
     else:
         log_lines.append(f"{bundle.code}: không upload test.")
+
+    if target == "hncode" and row.get("upload_statement"):
+        type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
+        update_hncode_problem_metadata(
+            session,
+            base_url,
+            bundle.code,
+            name=bundle.name,
+            points=str(row.get("points") or settings.get("points") or "100"),
+            partial=bool(row.get("partial", settings.get("partial", True))),
+            time_limit=row.get("time_limit") or settings.get("time_limit") or "1.0",
+            memory_limit=row.get("memory_limit") or settings.get("memory_limit") or "1048576",
+            type_ids=type_ids,
+            group_id=target_info["group_id"],
+        )
+        log_lines.append(f"{bundle.code}: đã cập nhật lại điểm và dạng bài tập HNCode.")
 
     submit_if_requested(session, base_url, bundle, settings, log_lines)
     return "✓ " + " và ".join(actions) if actions else "✓ Thành công"
@@ -4351,6 +4477,26 @@ def memory_limit_to_kb(value: object) -> str:
 def type_id_from_tags(value: object) -> str:
     match = re.search(r"\b\d+\b", str(value or ""))
     return match.group(0) if match else ""
+
+
+def type_ids_from_tags(value: object, target: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    numeric_ids = re.findall(r"\b\d+\b", text)
+    if numeric_ids:
+        return list(dict.fromkeys(numeric_ids))
+    if target != "hncode":
+        return []
+    ids: list[str] = []
+    for raw_tag in re.split(r"[,;|]+", text):
+        tag = re.sub(r"\s+", " ", raw_tag.strip().lower())
+        if not tag:
+            continue
+        type_id = HNCODE_TYPE_ALIASES.get(tag)
+        if type_id and type_id not in ids:
+            ids.append(type_id)
+    return ids
 
 
 def problem_url(base_url: str, code: str) -> str:
