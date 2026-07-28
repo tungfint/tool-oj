@@ -99,12 +99,15 @@ Luồng sử dụng:
    - `Nộp bài chấm thử Python`: dùng `sol_<ma_bai>.py`.
    - `Không nộp bài chấm thử`: bỏ qua toàn bộ bước nộp thử.
 6. Tích `Bỏ dòng đầu tiên trong file đề bài` nếu file Markdown có dòng đầu dạng `Tên bài | Mã bài` và không muốn đưa dòng này vào đề bài.
-7. Bấm `Chuẩn bị dữ liệu`.
-8. Kiểm tra bảng bài, sửa mã/tên nếu cần. Có nút `Chọn tất cả` và `Bỏ chọn tất cả` cho bảng.
-9. Bấm `Xác nhận Up bài`.
+7. Nếu mã bài đã có trên web đích và muốn cập nhật lại, tích:
+   - `Ghi đè đề bài nếu mã bài đã có`: cập nhật lại tên, nội dung đề, time limit và memory limit.
+   - `Ghi đè test nếu mã bài đã có`: upload lại bộ test mới cho bài đã tồn tại.
+8. Bấm `Chuẩn bị dữ liệu`.
+9. Kiểm tra bảng bài, sửa mã/tên nếu cần. Có nút `Chọn tất cả` và `Bỏ chọn tất cả` cho bảng.
+10. Bấm `Xác nhận Up bài`.
 
 Khi upload thành công, cột trạng thái có chữ `Link`. Bấm vào chữ này để mở trang bài vừa tạo.
-Nếu mã bài đã tồn tại trên web đích, dòng đó sẽ báo `Bài đã tồn tại`, bị bỏ qua hoàn toàn và các bài khác vẫn tiếp tục được xử lý.
+Nếu mã bài đã tồn tại trên web đích và không tích ghi đè, dòng đó sẽ báo `Bài đã tồn tại`, bị bỏ qua hoàn toàn và các bài khác vẫn tiếp tục được xử lý.
 
 ## Ngôn ngữ mặc định
 
@@ -140,6 +143,27 @@ Tool dùng một trong hai cách:
 
 - Có `gentest_<ma_bai>.py`: chạy file này để sinh zip test.
 - Không có gentest nhưng có sẵn zip test: dùng trực tiếp zip tìm được.
+
+Cấu trúc zip bộ bài nên dùng:
+
+```text
+bo_bai.zip
+├─ tht26_tongbi.md
+├─ gentest_tht26_tongbi.py
+├─ sol_tht26_tongbi.py
+├─ sol_tht26_tongbi.cpp
+├─ tht26_quatang.md
+├─ tht26_quatang.zip
+├─ sol_tht26_quatang.py
+└─ sol_tht26_quatang.cpp
+```
+
+Trong đó:
+
+- `<ma_bai>.md`: file đề bài, dòng đầu nên là `Tên bài | Mã bài`.
+- `gentest_<ma_bai>.py`: file sinh test. Nếu có file này, tool ưu tiên chạy để tạo `<ma_bai>.zip`.
+- `<ma_bai>.zip`: bộ test có sẵn, dùng khi không có file `gentest`.
+- `sol_<ma_bai>.cpp`, `sol_<ma_bai>.py`: lời giải để nộp thử nếu bật tùy chọn nộp thử.
 
 Ví dụ bài `Tổng bi`, mã `tongbi` hoặc `tht26_tongbi`, tool thử tìm:
 
@@ -250,6 +274,21 @@ Nhập:
 - Danh sách mã bài.
 
 Sau khi tạo xong, người dùng có thể vào admin của web đích để chỉnh setup chi tiết hơn.
+
+## Tab Contest → Lesson
+
+Tab này sao chép danh sách bài từ một contest HNCode trên `https://oj.hncode.edu.vn` vào một lesson HNCode.
+
+Luồng sử dụng:
+
+1. Nhập URL contest nguồn, ví dụ `https://oj.hncode.edu.vn/contest/dpmarathon`.
+2. Nhập URL lesson đích, ví dụ `https://oj.hncode.edu.vn/course/dutuyenams26/lesson/2947`.
+3. Bấm `Chuẩn bị dữ liệu`.
+4. Bảng sẽ hiển thị từng bài theo đúng thứ tự trong contest, gồm STT, mã bài, tên bài, điểm lesson và trạng thái.
+5. Chọn/bỏ chọn từng bài, chỉnh điểm lesson nếu cần. Có thể nhập `Điểm chung` rồi bấm `Áp dụng điểm cho tất cả bài`.
+6. Bấm `Sao chép bài`.
+
+Tool mở form sửa lesson `edit_lessons_new/<lesson_id>`, giữ nguyên nội dung lesson và quiz hiện có, chỉ thêm các problem còn thiếu vào cuối danh sách. Nếu bài đã có trong lesson, dòng đó báo `Đã có trong lesson` và bị bỏ qua để tránh trùng.
 
 ## Tab Up Quiz
 
