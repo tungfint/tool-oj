@@ -158,6 +158,8 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
         solution = find_named_file(search_dirs, ["sol"], index, code, ".py")
         solution_cpp = find_named_file(search_dirs, ["sol"], index, code, ".cpp")
         test_zip = find_existing_test_zip(search_dirs, index, code)
+        if generator is None and test_zip is None and title_code is None:
+            continue
         require(
             generator is not None or test_zip is not None,
             f"Missing test source for {code}: expected gentest_{code}.py or an existing .zip test archive",
