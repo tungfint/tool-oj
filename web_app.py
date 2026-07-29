@@ -1536,6 +1536,7 @@ PAGE = r"""
           </div>
           <div class="grid-3">
             <label class="check"><input type="checkbox" id="uploadPartial" checked> Cho phép điểm thành phần</label>
+            <label class="check"><input type="checkbox" id="overwriteExisting"> Ghi đè bài đã có</label>
             <label class="check"><input type="checkbox" id="overwriteStatement"> Ghi đè đề bài nếu mã bài đã có</label>
             <label class="check"><input type="checkbox" id="overwriteTests"> Ghi đè test nếu mã bài đã có</label>
           </div>
@@ -2185,6 +2186,7 @@ function uploadSettings() {
     submit_cpp: document.getElementById("submitCpp").checked,
     submit_python: document.getElementById("submitPython").checked,
     skip_statement_title: document.getElementById("skipStatementTitle").checked,
+    overwrite_existing: document.getElementById("overwriteExisting").checked,
     overwrite_statement: document.getElementById("overwriteStatement").checked,
     overwrite_tests: document.getElementById("overwriteTests").checked,
     ...accountPayload(target),
@@ -2329,11 +2331,12 @@ document.getElementById("prepareUpload").onclick = async () => {
 };
 
 function renderUploadTable(rows) {
+  const overwriteDefault = document.getElementById("overwriteExisting").checked;
   document.getElementById("uploadTable").innerHTML = `<div class="table-tools">
     <button class="action" type="button" onclick="setRowSelection('#uploadTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#uploadTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>File test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Ghi đè</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>File test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}" data-source-time="${escapeHtml(row.source_time_limit || row.time_limit || "1.0")}" data-source-memory="${escapeHtml(row.source_memory_limit || row.memory_limit || "1048576")}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
@@ -2343,6 +2346,7 @@ function renderUploadTable(rows) {
       <td><input type="text" class="row-time" value="${escapeHtml(row.time_limit || "1.0")}"></td>
       <td><input type="text" class="row-memory" value="${escapeHtml(row.memory_limit || "1048576")}"></td>
       <td><input type="checkbox" class="row-partial" ${row.partial === false ? "" : "checked"}></td>
+      <td><input type="checkbox" class="row-overwrite" ${row.overwrite_default === true || overwriteDefault ? "checked" : ""}></td>
       <td><input type="checkbox" class="row-statement" checked></td>
       <td><input type="checkbox" class="row-tests" ${row.upload_tests_default === false ? "" : "checked"}></td>
       <td><input type="checkbox" class="row-solution" ${row.upload_solution_default ? "checked" : ""}></td>
@@ -2362,6 +2366,7 @@ function collectUploadRows() {
     time_limit: tr.querySelector(".row-time").value.trim(),
     memory_limit: tr.querySelector(".row-memory").value.trim(),
     partial: tr.querySelector(".row-partial").checked,
+    overwrite: tr.querySelector(".row-overwrite").checked,
     upload_statement: tr.querySelector(".row-statement").checked,
     upload_tests: tr.querySelector(".row-tests").checked,
     upload_solution: tr.querySelector(".row-solution").checked,
@@ -4089,8 +4094,9 @@ def upload_one_problem(
     base_url = target_info["base_url"]
     exists = problem_exists_for_target(session, target, base_url, bundle.code)
     if exists:
-        overwrite_statement = bool(settings.get("overwrite_statement")) and bool(row.get("upload_statement"))
-        overwrite_tests = bool(settings.get("overwrite_tests")) and bool(row.get("upload_tests"))
+        overwrite_row = bool(row.get("overwrite") or settings.get("overwrite_existing"))
+        overwrite_statement = bool(settings.get("overwrite_statement") or overwrite_row) and bool(row.get("upload_statement"))
+        overwrite_tests = bool(settings.get("overwrite_tests") or overwrite_row) and bool(row.get("upload_tests"))
         if not (overwrite_statement or overwrite_tests):
             raise ProblemAlreadyExists(f"Mã bài {bundle.code} đã tồn tại tại {problem_url(base_url, bundle.code)}")
         log_lines.append(f"{bundle.code}: bài đã tồn tại, chuyển sang chế độ ghi đè phần được chọn.")
