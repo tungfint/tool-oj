@@ -4185,7 +4185,59 @@ def update_hncode_problem_metadata(
             f"HNCode nhận POST nhưng Problem Types của {code} vẫn là {saved_type_ids}, "
             f"chưa có {missing_type_ids}. Đã lưu debug tại {debug_dir}."
         )
+    saved_description = textarea_value(verify.text, "description")
+    ensure_hncode_vi_translation(session, base_url, code, name, saved_description)
     return result.url
+
+
+def find_hncode_admin_problem_change_url(session, base_url: str, code: str) -> str:
+    search_url = urljoin(base_url, f"/admin/judge/problem/?q={quote(code)}")
+    page = session.get(search_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được trang admin tìm bài {code}: HTTP {page.status_code}")
+    match = re.search(r"/admin/judge/problem/(\d+)/change/", page.text)
+    if not match:
+        raise RuntimeError(f"Không tìm thấy admin change URL cho bài {code}.")
+    return urljoin(base_url, f"/admin/judge/problem/{match.group(1)}/change/")
+
+
+def ensure_hncode_vi_translation(session, base_url: str, code: str, name: str, description: str) -> None:
+    change_url = find_hncode_admin_problem_change_url(session, base_url, code)
+    page = session.get(change_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được admin form bài {code}: HTTP {page.status_code}")
+    data = collect_problem_edit_form_data(page.text)
+    if not data:
+        raise RuntimeError(f"Không đọc được admin form để cập nhật bản dịch tiếng Việt cho {code}.")
+    object_id = re.search(r"/admin/judge/problem/(\d+)/change/", change_url)
+    problem_id = object_id.group(1) if object_id else ""
+    data = [(key, value) for key, value in data if "__prefix__" not in key]
+    values = dict(data)
+    total = int(values.get("translations-TOTAL_FORMS") or "0")
+    target_index: int | None = None
+    for index in range(total):
+        if values.get(f"translations-{index}-language") == "vi":
+            target_index = index
+            break
+    if target_index is None:
+        target_index = total
+        total += 1
+    updates = {
+        "translations-TOTAL_FORMS": str(total),
+        f"translations-{target_index}-language": "vi",
+        f"translations-{target_index}-name": name,
+        f"translations-{target_index}-description": description,
+        f"translations-{target_index}-id": values.get(f"translations-{target_index}-id", ""),
+        f"translations-{target_index}-problem": values.get(f"translations-{target_index}-problem", problem_id),
+    }
+    data = set_single_form_fields(data, updates)
+    data.append(("_save", "Lưu"))
+    result = session.post(change_url, data=data, headers={"Referer": change_url}, allow_redirects=True, timeout=30)
+    if not result.ok:
+        raise RuntimeError(f"Cập nhật bản dịch tiếng Việt cho {code} lỗi HTTP {result.status_code}")
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if errors:
+        raise RuntimeError(f"Form bản dịch tiếng Việt HNCode {code} báo lỗi:\n" + "\n".join(errors))
 
 
 def same_numeric_value(left: str, right: str) -> bool:
