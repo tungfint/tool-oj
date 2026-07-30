@@ -88,6 +88,16 @@ def csrf_token(page: str) -> str:
     raise UploadError("Could not find csrfmiddlewaretoken")
 
 
+def read_text_smart(path: Path) -> str:
+    raw = path.read_bytes()
+    for encoding in ("utf-8-sig", "utf-8", "cp1258", "cp1252", "latin-1"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
 def input_value(page: str, name: str, default: str = "") -> str:
     pattern = r"<input\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>"
     match = re.search(pattern, page, re.S)
@@ -204,7 +214,7 @@ def parse_statement_filename(statement: Path) -> tuple[int, str] | None:
 
 
 def parse_statement_title_code(statement: Path) -> tuple[str, str] | None:
-    for line in statement.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in read_text_smart(statement).splitlines():
         text = line.strip().strip("#* ")
         if not text:
             continue
@@ -242,7 +252,7 @@ def find_named_file(source_dir: Path | list[Path], prefixes: list[str], index: i
 def extract_problem_name(generator: Path | None, statement: Path, index: int, code: str) -> str:
     if generator is None:
         return extract_name_from_statement(statement) or problem_name_from_code(code)
-    text = generator.read_text(encoding="utf-8")
+    text = read_text_smart(generator)
     pattern = rf"Sinh test cho Bài\s+{index}\.\s*(.*?)\s*\|\s*{re.escape(code)}"
     match = re.search(pattern, text)
     if match:
@@ -251,7 +261,7 @@ def extract_problem_name(generator: Path | None, statement: Path, index: int, co
 
 
 def extract_name_from_statement(statement: Path) -> str:
-    for line in statement.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in read_text_smart(statement).splitlines():
         text = line.strip().strip("#* ")
         if text:
             return text[:100]
@@ -394,7 +404,7 @@ def create_problem(
     create_url = urljoin(base_url, "/problems/create")
     page = s.get(create_url, timeout=30)
     require(page.ok, f"Create page failed: HTTP {page.status_code}")
-    statement = statement_body_text(bundle.statement.read_text(encoding="utf-8"), skip_title_line=True).replace("$", "~")
+    statement = statement_body_text(read_text_smart(bundle.statement), skip_title_line=True).replace("$", "~")
     data: list[tuple[str, str]] = [
         ("csrfmiddlewaretoken", csrf_token(page.text)),
         ("code", bundle.code),

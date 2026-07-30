@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+import unicodedata
 import uuid
 import zipfile
 from collections import Counter, defaultdict
@@ -48,6 +49,7 @@ from upload_tinhoctre_batch import (
     generate_tests,
     login as login_tinhoctre_public,
     problem_exists as tinhoctre_problem_exists,
+    read_text_smart,
     session as tinhoctre_session,
     statement_body_text,
     submit_solution,
@@ -3032,7 +3034,13 @@ def api_sample_tonghaiso():
 
 
 def read_zip_member_text(archive: zipfile.ZipFile, name: str) -> str:
-    return archive.read(name).decode("utf-8", errors="replace")
+    raw = archive.read(name)
+    for encoding in ("utf-8-sig", "utf-8", "cp1258", "cp1252", "latin-1"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
 
 
 def first_markdown_header_parts(text: str) -> list[str]:
@@ -3520,7 +3528,7 @@ def receive_upload_source_file(root: Path, payload: dict) -> Path:
 
 
 def split_combined_markdown_bundles(markdown_path: Path, source_dir: Path) -> list[ProblemBundle]:
-    text = markdown_path.read_text(encoding="utf-8")
+    text = read_text_smart(markdown_path)
     matches = list(re.finditer(r"(?m)^#\s*(?:Bài\s+(\d+)\.\s*)?(.+?)\s*\|\s*([A-Za-z0-9_-]+)(?:\s*\|.*)?\s*$", text))
     if not matches:
         raise RuntimeError("Không tìm thấy bài nào. Mỗi bài cần bắt đầu dạng: # Bài 1. Tên bài | ma_bai | điểm | tags")
@@ -3543,7 +3551,7 @@ def split_combined_markdown_bundles(markdown_path: Path, source_dir: Path) -> li
 
 
 def statement_header_parts(statement_path: Path) -> list[str]:
-    for line in statement_path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in read_text_smart(statement_path).splitlines():
         text = line.strip().strip("#* ")
         if not text:
             continue
@@ -3794,7 +3802,7 @@ def append_single_solution_uploads(target: str, settings: dict, rows: list[dict]
         if not solution_path:
             continue
         try:
-            update_problem_solution_markdown(session, target_info["base_url"], code, solution_path.read_text(encoding="utf-8", errors="replace"))
+            update_problem_solution_markdown(session, target_info["base_url"], code, read_text_smart(solution_path))
             row["status"] += " và lời giải"
             log_lines.append(f"{code}: đã up lời giải/hướng dẫn Markdown.")
         except Exception as exc:
@@ -3981,6 +3989,78 @@ def set_form_fields(
     return out
 
 
+def normalized_lookup_text(value: str) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9_]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def select_options_with_text(page: str, name: str) -> list[dict[str, str | bool]]:
+    match = re.search(r"<select\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>(.*?)</select>", page, re.S)
+    if not match:
+        return []
+    options: list[dict[str, str | bool]] = []
+    for option in re.finditer(r"<option\b([^>]*)>(.*?)</option>", match.group(1), re.S):
+        attrs = option.group(1)
+        value = re.search(r"value=[\"']([^\"']*)", attrs)
+        label = html.unescape(re.sub(r"<.*?>", " ", option.group(2))).strip()
+        label = re.sub(r"\s+", " ", label)
+        options.append(
+            {
+                "value": html.unescape(value.group(1)) if value else "",
+                "text": label,
+                "selected": "selected" in attrs,
+            }
+        )
+    return options
+
+
+def resolve_hncode_type_ids(page: str, tags_text: object, fallback_ids: list[str]) -> list[str]:
+    options = select_options_with_text(page, "types")
+    valid_values = {str(option["value"]) for option in options if option.get("value")}
+    ids: list[str] = []
+
+    def add(value: str) -> None:
+        if value and value in valid_values and value not in ids:
+            ids.append(value)
+
+    lookup: dict[str, str] = {}
+    for option in options:
+        value = str(option.get("value") or "")
+        text = str(option.get("text") or "")
+        if not value:
+            continue
+        labels = [text]
+        if " - " in text:
+            labels.extend(part.strip() for part in text.split(" - ", 1))
+        if "-" in text:
+            labels.extend(part.strip() for part in text.split("-", 1))
+        for label in labels:
+            key = normalized_lookup_text(label)
+            if key:
+                lookup.setdefault(key, value)
+
+    for raw_tag in re.split(r"[,;|]+", str(tags_text or "")):
+        tag = raw_tag.strip()
+        if not tag:
+            continue
+        if tag in valid_values:
+            add(tag)
+            continue
+        alias_id = HNCODE_TYPE_ALIASES.get(tag.lower()) or HNCODE_TYPE_ALIASES.get(normalized_lookup_text(tag))
+        if alias_id:
+            add(alias_id)
+            continue
+        add(lookup.get(normalized_lookup_text(tag), ""))
+
+    if not ids:
+        for value in fallback_ids or []:
+            add(str(value))
+    return ids or [TARGETS["hncode"]["type_id"]]
+
+
 def update_existing_problem_statement(
     session,
     target: str,
@@ -3997,7 +4077,7 @@ def update_existing_problem_statement(
         raise RuntimeError(f"Không tìm thấy form sửa đề bài cho {bundle.code}. Tài khoản có thể chưa có quyền sửa bài này.")
     description = statement_for_target(
         target,
-        bundle.statement.read_text(encoding="utf-8", errors="replace"),
+        read_text_smart(bundle.statement),
         skip_title_line=bool(settings.get("skip_statement_title", True)),
     )
     data = set_single_form_fields(
@@ -4049,6 +4129,7 @@ def update_hncode_problem_metadata(
     memory_limit: str,
     type_ids: list[str],
     group_id: str,
+    tags_text: object = "",
 ) -> str:
     edit_url = urljoin(base_url, f"/problem/{code}/edit")
     page = session.get(edit_url, timeout=30)
@@ -4057,6 +4138,7 @@ def update_hncode_problem_metadata(
     data = collect_problem_edit_form_data(page.text)
     if not data:
         raise RuntimeError(f"Không tìm thấy form metadata HNCode cho {code}.")
+    resolved_type_ids = resolve_hncode_type_ids(page.text, tags_text, type_ids or [TARGETS["hncode"]["type_id"]])
     data = set_form_fields(
         data,
         {
@@ -4068,7 +4150,7 @@ def update_hncode_problem_metadata(
             "memory_unit": "KB",
             "group": group_id,
         },
-        multi_updates={"types": type_ids or [TARGETS["hncode"]["type_id"]]},
+        multi_updates={"types": resolved_type_ids},
         checkbox_updates={"partial": bool(partial)},
     )
     result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=30)
@@ -4083,6 +4165,7 @@ def update_hncode_problem_metadata(
     if not verify.ok:
         raise RuntimeError(f"Không kiểm tra lại metadata HNCode {code}: HTTP {verify.status_code}")
     saved_points = input_value_from_page(verify.text, "points", "")
+    saved_type_ids = selected_values(verify.text, "types")
     if not same_numeric_value(saved_points, str(points or "100")):
         debug_dir = RUNTIME / "debug_hncode_metadata"
         debug_dir.mkdir(parents=True, exist_ok=True)
@@ -4091,6 +4174,16 @@ def update_hncode_problem_metadata(
         raise RuntimeError(
             f"HNCode nhận POST nhưng Points của {code} vẫn là {saved_points!r}, "
             f"không phải {points!r}. Đã lưu debug tại {debug_dir}."
+        )
+    missing_type_ids = [value for value in resolved_type_ids if value not in saved_type_ids]
+    if missing_type_ids:
+        debug_dir = RUNTIME / "debug_hncode_metadata"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        (debug_dir / f"{code}_post.html").write_text(result.text, encoding="utf-8", errors="replace")
+        (debug_dir / f"{code}_verify.html").write_text(verify.text, encoding="utf-8", errors="replace")
+        raise RuntimeError(
+            f"HNCode nhận POST nhưng Problem Types của {code} vẫn là {saved_type_ids}, "
+            f"chưa có {missing_type_ids}. Đã lưu debug tại {debug_dir}."
         )
     return result.url
 
@@ -4118,7 +4211,8 @@ def upload_one_problem(
     def refresh_hncode_metadata() -> None:
         if target != "hncode":
             return
-        type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
+        tags_text = row.get("tags") or settings.get("tags")
+        type_ids = type_ids_from_tags(tags_text, target) or [target_info["type_id"]]
         update_hncode_problem_metadata(
             session,
             base_url,
@@ -4130,6 +4224,7 @@ def upload_one_problem(
             memory_limit=row.get("memory_limit") or settings.get("memory_limit") or "1048576",
             type_ids=type_ids,
             group_id=target_info["group_id"],
+            tags_text=tags_text,
         )
         log_lines.append(f"{bundle.code}: đã cập nhật lại điểm và dạng bài tập HNCode.")
 
@@ -4171,7 +4266,7 @@ def upload_one_problem(
             name=bundle.name,
             description=statement_for_target(
                 target,
-                bundle.statement.read_text(encoding="utf-8", errors="replace"),
+                read_text_smart(bundle.statement),
                 skip_title_line=bool(settings.get("skip_statement_title", True)),
             ),
             points=str(row.get("points") or settings.get("points") or "100"),
