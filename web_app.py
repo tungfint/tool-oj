@@ -284,6 +284,8 @@ HNCODE_TYPE_ALIASES = {
     "math": "175",
     "toan": "175",
     "toán": "175",
+    "greedy": "171",
+    "tham lam": "171",
     "strings": "176",
     "string": "176",
     "chuoi": "176",
@@ -4077,7 +4079,27 @@ def update_hncode_problem_metadata(
         raise RuntimeError(f"Form metadata HNCode {code} báo lỗi:\n" + "\n".join(errors))
     if "/accounts/login" in result.url or "/admin/login" in result.url:
         raise RuntimeError(f"Cập nhật metadata HNCode {code} bị chuyển về trang đăng nhập: {result.url}")
+    verify = session.get(edit_url, timeout=30)
+    if not verify.ok:
+        raise RuntimeError(f"Không kiểm tra lại metadata HNCode {code}: HTTP {verify.status_code}")
+    saved_points = input_value_from_page(verify.text, "points", "")
+    if not same_numeric_value(saved_points, str(points or "100")):
+        debug_dir = RUNTIME / "debug_hncode_metadata"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        (debug_dir / f"{code}_post.html").write_text(result.text, encoding="utf-8", errors="replace")
+        (debug_dir / f"{code}_verify.html").write_text(verify.text, encoding="utf-8", errors="replace")
+        raise RuntimeError(
+            f"HNCode nhận POST nhưng Points của {code} vẫn là {saved_points!r}, "
+            f"không phải {points!r}. Đã lưu debug tại {debug_dir}."
+        )
     return result.url
+
+
+def same_numeric_value(left: str, right: str) -> bool:
+    try:
+        return abs(float(str(left).strip()) - float(str(right).strip())) < 1e-9
+    except (TypeError, ValueError):
+        return str(left).strip() == str(right).strip()
 
 
 def upload_one_problem(
@@ -4117,7 +4139,7 @@ def upload_one_problem(
                 actions.append("test")
             else:
                 log_lines.append(f"{bundle.code}: không ghi đè test vì chưa tích Ghi đè test.")
-        if target == "hncode" and row.get("upload_statement") and overwrite_statement:
+        if target == "hncode" and (overwrite_statement or overwrite_tests or overwrite_row):
             type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
             update_hncode_problem_metadata(
                 session,
@@ -4137,6 +4159,7 @@ def upload_one_problem(
     actions: list[str] = []
     if row.get("upload_statement"):
         type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
+        type_id = type_ids[0] if type_ids else target_info["type_id"]
         info = ProblemInfo(
             code=bundle.code,
             name=bundle.name,
