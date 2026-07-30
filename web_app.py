@@ -3997,6 +3997,14 @@ def normalized_lookup_text(value: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def ascii_fallback_name(value: str) -> str:
+    text = str(value or "").replace("đ", "d").replace("Đ", "D")
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.encode("ascii", errors="ignore").decode("ascii")
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def select_options_with_text(page: str, name: str) -> list[dict[str, str | bool]]:
     match = re.search(r"<select\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>(.*?)</select>", page, re.S)
     if not match:
@@ -4165,6 +4173,7 @@ def update_hncode_problem_metadata(
     if not verify.ok:
         raise RuntimeError(f"Không kiểm tra lại metadata HNCode {code}: HTTP {verify.status_code}")
     saved_points = input_value_from_page(verify.text, "points", "")
+    saved_name = input_value_from_page(verify.text, "name", "")
     saved_type_ids = selected_values(verify.text, "types")
     if not same_numeric_value(saved_points, str(points or "100")):
         debug_dir = RUNTIME / "debug_hncode_metadata"
@@ -4185,8 +4194,20 @@ def update_hncode_problem_metadata(
             f"HNCode nhận POST nhưng Problem Types của {code} vẫn là {saved_type_ids}, "
             f"chưa có {missing_type_ids}. Đã lưu debug tại {debug_dir}."
         )
+    effective_name = name
+    fallback_name = ascii_fallback_name(name)
+    if saved_name and "?" in saved_name and fallback_name and fallback_name != name:
+        retry_data = collect_problem_edit_form_data(verify.text)
+        retry_data = set_single_form_fields(retry_data, {"name": fallback_name})
+        retry = session.post(edit_url, data=retry_data, headers={"Referer": edit_url}, allow_redirects=True, timeout=30)
+        if not retry.ok:
+            raise RuntimeError(f"Cập nhật tên không dấu HNCode {code} lỗi HTTP {retry.status_code}")
+        retry_errors = form_errors(retry.text) + compact_form_red_errors(retry.text)
+        if retry_errors:
+            raise RuntimeError(f"Form tên không dấu HNCode {code} báo lỗi:\n" + "\n".join(retry_errors))
+        effective_name = fallback_name
     saved_description = textarea_value(verify.text, "description")
-    ensure_hncode_vi_translation(session, base_url, code, name, saved_description)
+    ensure_hncode_vi_translation(session, base_url, code, effective_name, saved_description)
     return result.url
 
 
