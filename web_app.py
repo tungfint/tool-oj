@@ -4114,6 +4114,25 @@ def upload_one_problem(
     log_lines: list[str],
 ) -> str:
     base_url = target_info["base_url"]
+
+    def refresh_hncode_metadata() -> None:
+        if target != "hncode":
+            return
+        type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
+        update_hncode_problem_metadata(
+            session,
+            base_url,
+            bundle.code,
+            name=row.get("name") or bundle.name,
+            points=str(row.get("points") or settings.get("points") or "100"),
+            partial=bool(row.get("partial", settings.get("partial", True))),
+            time_limit=row.get("time_limit") or settings.get("time_limit") or "1.0",
+            memory_limit=row.get("memory_limit") or settings.get("memory_limit") or "1048576",
+            type_ids=type_ids,
+            group_id=target_info["group_id"],
+        )
+        log_lines.append(f"{bundle.code}: đã cập nhật lại điểm và dạng bài tập HNCode.")
+
     exists = problem_exists_for_target(session, target, base_url, bundle.code)
     if exists:
         overwrite_row = bool(row.get("overwrite") or settings.get("overwrite_existing"))
@@ -4139,22 +4158,9 @@ def upload_one_problem(
                 actions.append("test")
             else:
                 log_lines.append(f"{bundle.code}: không ghi đè test vì chưa tích Ghi đè test.")
-        if target == "hncode" and (overwrite_statement or overwrite_tests or overwrite_row):
-            type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
-            update_hncode_problem_metadata(
-                session,
-                base_url,
-                bundle.code,
-                name=row.get("name") or bundle.name,
-                points=str(row.get("points") or settings.get("points") or "100"),
-                partial=bool(row.get("partial", settings.get("partial", True))),
-                time_limit=row.get("time_limit") or settings.get("time_limit") or "1.0",
-                memory_limit=row.get("memory_limit") or settings.get("memory_limit") or "1048576",
-                type_ids=type_ids,
-                group_id=target_info["group_id"],
-            )
-            log_lines.append(f"{bundle.code}: đã cập nhật lại điểm và dạng bài tập HNCode.")
         submit_if_requested(session, base_url, bundle, settings, log_lines)
+        if overwrite_statement or overwrite_tests or overwrite_row:
+            refresh_hncode_metadata()
         return "✓ Ghi đè " + " và ".join(actions) if actions else "✓ Không có phần ghi đè"
     actions: list[str] = []
     if row.get("upload_statement"):
@@ -4207,23 +4213,9 @@ def upload_one_problem(
     else:
         log_lines.append(f"{bundle.code}: không upload test.")
 
-    if target == "hncode" and row.get("upload_statement"):
-        type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
-        update_hncode_problem_metadata(
-            session,
-            base_url,
-            bundle.code,
-            name=bundle.name,
-            points=str(row.get("points") or settings.get("points") or "100"),
-            partial=bool(row.get("partial", settings.get("partial", True))),
-            time_limit=row.get("time_limit") or settings.get("time_limit") or "1.0",
-            memory_limit=row.get("memory_limit") or settings.get("memory_limit") or "1048576",
-            type_ids=type_ids,
-            group_id=target_info["group_id"],
-        )
-        log_lines.append(f"{bundle.code}: đã cập nhật lại điểm và dạng bài tập HNCode.")
-
     submit_if_requested(session, base_url, bundle, settings, log_lines)
+    if target == "hncode" and row.get("upload_statement"):
+        refresh_hncode_metadata()
     return "✓ " + " và ".join(actions) if actions else "✓ Thành công"
 
 
