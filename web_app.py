@@ -1826,12 +1826,13 @@ PAGE = r"""
             <div><label>Mật khẩu contest nếu có</label><input id="gradingContestPassword" type="password" value="amsvodich*8*^^"></div>
           </div>
           <div class="grid-2">
-            <div><label>Thời gian chờ mỗi submission (giây)</label><input id="gradingPollSeconds" type="text" value="90"></div>
+            <div><label>Thời gian chờ mỗi submission</label><input id="gradingPollSeconds" type="text" value="Đến khi chấm xong" readonly></div>
             <div><label>Quy đổi điểm</label><input type="text" value="% chấm x điểm contest" readonly></div>
           </div>
           <div class="actions">
             <button class="action primary" type="button" id="prepareGrading">Chuẩn bị dữ liệu</button>
             <button class="action primary" type="button" id="confirmGrading" disabled>Xác nhận nộp và chấm</button>
+            <a class="action primary hidden" id="downloadGradingResult" href="#" download="bang_diem_hncode.xlsx">Tải bảng điểm Excel</a>
           </div>
           <div id="gradingSummary"></div>
         </div>
@@ -2939,6 +2940,7 @@ document.getElementById("prepareGrading").onclick = async () => {
     if (!selectedGradingCsvFile) throw new Error("Hãy chọn file CSV tài khoản.");
     status("running");
     log("Đang chuẩn bị dữ liệu chấm HNCode...");
+    document.getElementById("downloadGradingResult").classList.add("hidden");
     startProgressPolling(progressId, "#gradingSummary", "grading");
     const form = new FormData();
     form.append("zip_file", selectedGradingZipFile);
@@ -2972,7 +2974,6 @@ document.getElementById("confirmGrading").onclick = async () => {
       prepare_id: preparedGrading,
       rows: collectGradingRows(),
       contest_password: document.getElementById("gradingContestPassword").value,
-      poll_seconds: document.getElementById("gradingPollSeconds").value.trim() || "90",
       progress_id: progressId,
     });
     stopProgressPolling(progressId);
@@ -2980,12 +2981,9 @@ document.getElementById("confirmGrading").onclick = async () => {
     const link = data.download_url ? `\nTải bảng điểm: ${location.origin}${data.download_url}` : "";
     log((data.log || "Đã chấm xong.") + link);
     if (data.download_url) {
-      const a = document.createElement("a");
+      const a = document.getElementById("downloadGradingResult");
       a.href = data.download_url;
-      a.download = "bang_diem_hncode.xlsx";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      a.classList.remove("hidden");
     }
     status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
   } catch (err) {
@@ -3485,6 +3483,24 @@ def parse_hncode_contest_problems(session: requests.Session, contest_key: str) -
         seen.add(code)
     if not rows:
         raise RuntimeError(f"Không tìm thấy bài nào trong contest {contest_key}.")
+    change_url = admin_contest_change_url(session, TARGETS["hncode"]["base_url"], contest_key)
+    if change_url:
+        admin_page = session.get(change_url, timeout=30)
+        if admin_page.ok:
+            total = int(input_value(admin_page.text, "contest_problems-TOTAL_FORMS", "0") or "0")
+            point_rows = []
+            for idx in range(total):
+                points = input_value(admin_page.text, f"contest_problems-{idx}-points", "")
+                order = input_value(admin_page.text, f"contest_problems-{idx}-order", str(idx + 1)) or str(idx + 1)
+                if points:
+                    try:
+                        point_rows.append((int(float(order)), float(str(points).replace(",", "."))))
+                    except ValueError:
+                        pass
+            point_rows.sort(key=lambda item: item[0])
+            if len(point_rows) >= len(rows):
+                for row, (_order, points) in zip(rows, point_rows):
+                    row["points"] = points
     return rows
 
 
@@ -3646,13 +3662,14 @@ def parse_hncode_submission_result(page: str) -> dict:
         got = float(score_match.group(1).replace(",", "."))
         total = float(score_match.group(2).replace(",", "."))
         return {"done": True, "percent": 100.0 * got / total if total else 0.0, "verdict": verdict or "Done"}
+    if verdict and verdict in {"Compilation Error", "Runtime Error", "Wrong Answer", "Time Limit Exceeded", "Memory Limit Exceeded", "Output Limit Exceeded"}:
+        return {"done": True, "percent": 0.0, "verdict": verdict}
     pending = any(word.lower() in plain.lower() for word in ["Queued", "Đang chấm", "Processing", "grading", "Chờ chấm"])
     return {"done": not pending, "percent": None, "verdict": verdict or "Đang chấm"}
 
 
-def poll_hncode_submission(session: requests.Session, submission_url: str, poll_seconds: int = 90) -> dict:
-    deadline = time.time() + max(5, poll_seconds)
-    while time.time() <= deadline:
+def poll_hncode_submission(session: requests.Session, submission_url: str) -> dict:
+    while True:
         page = session.get(submission_url, timeout=30)
         if not page.ok:
             raise RuntimeError(f"Không đọc được submission: HTTP {page.status_code}")
@@ -3660,7 +3677,6 @@ def poll_hncode_submission(session: requests.Session, submission_url: str, poll_
         if result.get("done") and result.get("percent") is not None:
             return result
         time.sleep(2)
-    return {"done": False, "percent": None, "verdict": "Hết thời gian chờ"}
 
 
 def write_hncode_grading_excel(rows: list[dict], contest_problems: list[dict], accounts: list[dict], output_path: Path) -> None:
@@ -3774,7 +3790,6 @@ def api_confirm_hncode_grading():
         if not selected_rows:
             raise RuntimeError("Chưa chọn bài nào để nộp chấm.")
         contest_password = payload.get("contest_password", "")
-        poll_seconds = int(payload.get("poll_seconds") or 90)
         account_by_username = {account["username"]: account for account in state["accounts"]}
         sessions: dict[str, requests.Session] = {}
         done = 0
@@ -3794,7 +3809,7 @@ def api_confirm_hncode_grading():
                 progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row['student']} - {row['problem']}: đang nộp")
                 row["status"] = "Đang nộp"
                 row["submission_url"] = submit_hncode_grading_file(session, row["problem"], Path(row["local_path"]))
-                result = poll_hncode_submission(session, row["submission_url"], poll_seconds=poll_seconds)
+                result = poll_hncode_submission(session, row["submission_url"])
                 percent = result.get("percent")
                 row["percent"] = "" if percent is None else round(float(percent), 2)
                 row["score"] = "" if percent is None else round(float(row.get("contest_points") or 0) * float(percent) / 100.0, 2)
