@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import html
+import csv
 import json
 import math
 import os
 import re
+import requests
 import shutil
 import subprocess
 import sys
@@ -40,6 +42,7 @@ from transfer_tinhoctre_to_hncode import (
 from upload_tinhoctre_batch import (
     GeneratedTests,
     ProblemBundle,
+    USER_AGENT,
     clean_statement,
     csrf_token,
     discover_bundles,
@@ -236,6 +239,7 @@ prepared_transfers: dict[str, dict] = {}
 prepared_contest_transfers: dict[str, dict] = {}
 prepared_quizzes: dict[str, dict] = {}
 prepared_lesson_copies: dict[str, dict] = {}
+prepared_hncode_grading: dict[str, dict] = {}
 
 
 class ProblemAlreadyExists(RuntimeError):
@@ -1803,6 +1807,36 @@ PAGE = r"""
         </div>
 
         <div class="tool-card">
+          <h3 class="tool-title">Chấm bài HNCode</h3>
+          <p class="tool-subtitle">Đọc file zip bài làm theo dạng <code>BaiLam/TenHocSinh/MABAI.cpp</code>, đọc file CSV tài khoản có cột <code>username,password,name</code>, đăng nhập từng tài khoản, tham gia contest và nộp các bài tương ứng. Kết quả xuất ra Excel.</p>
+          <label>File zip bài làm của học sinh</label>
+          <div class="row">
+            <div class="grow"><input id="gradingZipName" type="text" placeholder="Chưa chọn file BaiLam.zip" readonly></div>
+            <button class="action" type="button" id="chooseGradingZip">Chọn file</button>
+            <input id="gradingZipFile" class="hidden" type="file" accept=".zip,application/zip">
+          </div>
+          <label>File CSV tài khoản nộp bài</label>
+          <div class="row">
+            <div class="grow"><input id="gradingCsvName" type="text" placeholder="Chưa chọn file TaiKhoan.csv" readonly></div>
+            <button class="action" type="button" id="chooseGradingCsv">Chọn file</button>
+            <input id="gradingCsvFile" class="hidden" type="file" accept=".csv,text/csv">
+          </div>
+          <div class="grid-2">
+            <div><label>URL contest HNCode</label><input id="gradingContestUrl" type="text" value="https://hncode.edu.vn/contest/_nt26tst"></div>
+            <div><label>Mật khẩu contest nếu có</label><input id="gradingContestPassword" type="password" value="amsvodich*8*^^"></div>
+          </div>
+          <div class="grid-2">
+            <div><label>Thời gian chờ mỗi submission (giây)</label><input id="gradingPollSeconds" type="text" value="90"></div>
+            <div><label>Quy đổi điểm</label><input type="text" value="% chấm x điểm contest" readonly></div>
+          </div>
+          <div class="actions">
+            <button class="action primary" type="button" id="prepareGrading">Chuẩn bị dữ liệu</button>
+            <button class="action primary" type="button" id="confirmGrading" disabled>Xác nhận nộp và chấm</button>
+          </div>
+          <div id="gradingSummary"></div>
+        </div>
+
+        <div class="tool-card">
           <h3 class="tool-title">Cảnh báo sử dụng AI để code</h3>
           <p class="tool-subtitle">Nhận vào một folder chứa nhiều file zip contest hoặc chọn một file zip data contest. Tool phân tích dấu hiệu AI code, đổi phong cách code và nghi vấn chép code nhau, rồi xuất Excel có link mở file code.</p>
           <label>Folder chứa các zip contest</label>
@@ -1836,8 +1870,11 @@ let preparedTransfer = null;
 let preparedContestTransfer = null;
 let preparedQuiz = null;
 let preparedContestLessonCopy = null;
+let preparedGrading = null;
 let selectedZipFile = null;
 let selectedSingleTestZipFile = null;
+let selectedGradingZipFile = null;
+let selectedGradingCsvFile = null;
 const QUIZ_FORMAT_GUIDE = {{ quiz_format_guide_json | safe }};
 
 const logEl = document.getElementById("log");
@@ -2295,6 +2332,7 @@ function startProgressPolling(progressId, tableSelector, mode="problem") {
       const data = await res.json();
       if (data.rows) {
         if (mode === "contest") applyContestStatuses(data.rows);
+        else if (mode === "grading") applyGradingStatuses(data.rows);
         else if (tableSelector) applyStatuses(data.rows, tableSelector);
       }
       if (data.message || data.total) append(progressMessage(data));
@@ -2845,6 +2883,118 @@ document.getElementById("runLastSubmissions").onclick = async () => {
   }
 };
 
+document.getElementById("chooseGradingZip").onclick = () => document.getElementById("gradingZipFile").click();
+document.getElementById("chooseGradingCsv").onclick = () => document.getElementById("gradingCsvFile").click();
+document.getElementById("gradingZipFile").addEventListener("change", event => {
+  selectedGradingZipFile = event.target.files && event.target.files[0] || null;
+  document.getElementById("gradingZipName").value = selectedGradingZipFile ? selectedGradingZipFile.name : "";
+});
+document.getElementById("gradingCsvFile").addEventListener("change", event => {
+  selectedGradingCsvFile = event.target.files && event.target.files[0] || null;
+  document.getElementById("gradingCsvName").value = selectedGradingCsvFile ? selectedGradingCsvFile.name : "";
+});
+function renderGradingTable(rows) {
+  document.getElementById("gradingSummary").innerHTML = `<div class="table-tools">
+    <button class="action" type="button" onclick="setRowSelection('#gradingSummary', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#gradingSummary', false)">Bỏ chọn tất cả</button>
+  </div><table>
+    <thead><tr><th>Chọn</th><th>Học sinh</th><th>Username</th><th>Mã bài</th><th>Tên bài</th><th>Điểm bài</th><th>File</th><th>%</th><th>Điểm</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_key)}">
+      <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""}></td>
+      <td>${escapeHtml(row.student || "")}</td>
+      <td>${escapeHtml(row.username || "")}</td>
+      <td>${escapeHtml(row.problem || "")}</td>
+      <td>${escapeHtml(row.problem_title || "")}</td>
+      <td>${escapeHtml(row.contest_points || "")}</td>
+      <td><div class="test-meta">${escapeHtml(row.relative_path || row.file || "")}</div></td>
+      <td class="row-percent">${escapeHtml(row.percent || "")}</td>
+      <td class="row-score">${escapeHtml(row.score || "")}</td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.submission_url ? ` <a class="problem-link" href="${escapeHtml(row.submission_url)}" target="_blank" rel="noopener">Link</a>` : ""}${row.message ? `<div class="test-meta">${escapeHtml(row.message)}</div>` : ""}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+function collectGradingRows() {
+  return [...document.querySelectorAll("#gradingSummary tbody tr")].map(tr => ({
+    original_key: tr.dataset.original,
+    selected: tr.querySelector(".row-selected").checked,
+  }));
+}
+function applyGradingStatuses(rows) {
+  const byKey = new Map(rows.map(row => [row.original_key, row]));
+  for (const tr of document.querySelectorAll("#gradingSummary tbody tr")) {
+    const row = byKey.get(tr.dataset.original);
+    if (!row) continue;
+    tr.querySelector(".row-percent").textContent = row.percent || "";
+    tr.querySelector(".row-score").textContent = row.score || "";
+    const cell = tr.querySelector(".row-status");
+    cell.className = "row-status " + statusClass(row.status);
+    const linkHtml = row.submission_url ? ` <a class="problem-link" href="${escapeHtml(row.submission_url)}" target="_blank" rel="noopener">Link</a>` : "";
+    const msgHtml = row.message ? `<div class="test-meta">${escapeHtml(row.message)}</div>` : "";
+    cell.innerHTML = `${escapeHtml(row.status || "")}${linkHtml}${msgHtml}`;
+  }
+}
+document.getElementById("prepareGrading").onclick = async () => {
+  const progressId = newProgressId();
+  try {
+    if (!selectedGradingZipFile) throw new Error("Hãy chọn file zip bài làm.");
+    if (!selectedGradingCsvFile) throw new Error("Hãy chọn file CSV tài khoản.");
+    status("running");
+    log("Đang chuẩn bị dữ liệu chấm HNCode...");
+    startProgressPolling(progressId, "#gradingSummary", "grading");
+    const form = new FormData();
+    form.append("zip_file", selectedGradingZipFile);
+    form.append("csv_file", selectedGradingCsvFile);
+    form.append("contest_url", document.getElementById("gradingContestUrl").value.trim());
+    form.append("progress_id", progressId);
+    const res = await fetch("/api/prepare-hncode-grading", {method:"POST", body:form});
+    const data = await parseJsonResponse(res);
+    if (!res.ok) throw new Error(data.error || "Không chuẩn bị được dữ liệu chấm.");
+    stopProgressPolling(progressId);
+    preparedGrading = data.prepare_id;
+    renderGradingTable(data.rows || []);
+    document.getElementById("confirmGrading").disabled = false;
+    log(data.log || "Đã chuẩn bị dữ liệu chấm.");
+    status("ready", "ok");
+  } catch (err) {
+    stopProgressPolling(progressId);
+    log(String(err));
+    status("failed", "err");
+  }
+};
+document.getElementById("confirmGrading").onclick = async () => {
+  const progressId = newProgressId();
+  try {
+    if (!preparedGrading) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước.");
+    status("running");
+    log("Đang đăng nhập học sinh, tham gia contest và nộp bài...");
+    markRowsProcessing("#gradingSummary", "Đang chấm...");
+    startProgressPolling(progressId, "#gradingSummary", "grading");
+    const data = await postJson("/api/confirm-hncode-grading", {
+      prepare_id: preparedGrading,
+      rows: collectGradingRows(),
+      contest_password: document.getElementById("gradingContestPassword").value,
+      poll_seconds: document.getElementById("gradingPollSeconds").value.trim() || "90",
+      progress_id: progressId,
+    });
+    stopProgressPolling(progressId);
+    applyGradingStatuses(data.rows || []);
+    const link = data.download_url ? `\nTải bảng điểm: ${location.origin}${data.download_url}` : "";
+    log((data.log || "Đã chấm xong.") + link);
+    if (data.download_url) {
+      const a = document.createElement("a");
+      a.href = data.download_url;
+      a.download = "bang_diem_hncode.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    stopProgressPolling(progressId);
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
 document.getElementById("chooseAiWarningZip").onclick = () => document.getElementById("aiWarningZipFile").click();
 document.getElementById("aiWarningZipFile").addEventListener("change", event => {
   const file = event.target.files && event.target.files[0];
@@ -3274,6 +3424,410 @@ def api_confirm_contest_to_lesson():
             row["status"] = "✗ Lỗi"
             row["error"] = str(exc)
         return jsonify({"ok": False, "rows": rows, "error": str(exc)}), 400
+
+
+def decode_text_smart(raw: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "cp1258", "cp1252", "latin-1"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def extract_hncode_contest_key_any(value: str) -> str:
+    value = str(value or "").strip()
+    if not value:
+        raise RuntimeError("Chưa nhập URL hoặc mã contest.")
+    match = re.search(r"/contest/([^/?#\s]+)", value)
+    return match.group(1) if match else value.strip().strip("/")
+
+
+def hncode_student_session(username: str, password: str) -> requests.Session:
+    session = requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT})
+    login_url = urljoin(TARGETS["hncode"]["base_url"], "/accounts/login/?next=/")
+    page = session.get(login_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được trang đăng nhập HNCode: HTTP {page.status_code}")
+    result = session.post(
+        login_url,
+        data={"username": username, "password": password, "csrfmiddlewaretoken": csrf_token(page.text), "next": "/"},
+        headers={"Referer": login_url},
+        allow_redirects=True,
+        timeout=30,
+    )
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if not result.ok or errors:
+        raise RuntimeError("Form đăng nhập HNCode báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
+    if "sessionid" not in session.cookies.get_dict() or "/accounts/login" in result.url:
+        raise RuntimeError("HNCode login did not create a session")
+    return session
+
+
+def parse_hncode_contest_problems(session: requests.Session, contest_key: str) -> list[dict]:
+    page = session.get(urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/problems"), timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được danh sách bài contest {contest_key}: HTTP {page.status_code}")
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for row_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", page.text, re.S | re.I):
+        link = re.search(r'href=["\']/problem/([A-Za-z0-9_]+)["\'][^>]*>(.*?)</a>', row_html, re.S | re.I)
+        if not link:
+            continue
+        code = html.unescape(link.group(1)).strip()
+        if code in seen:
+            continue
+        title = html.unescape(re.sub(r"<.*?>", " ", link.group(2))).strip()
+        point_match = re.search(r"<td[^>]*>\s*([0-9]+(?:[.,][0-9]+)?)\s*p\s*</td>", row_html, re.S | re.I)
+        points = float((point_match.group(1) if point_match else "100").replace(",", "."))
+        rows.append({"code": code, "title": re.sub(r"\s+", " ", title), "points": points, "order": len(rows) + 1})
+        seen.add(code)
+    if not rows:
+        raise RuntimeError(f"Không tìm thấy bài nào trong contest {contest_key}.")
+    return rows
+
+
+def read_hncode_grading_accounts(csv_path: Path) -> list[dict]:
+    reader = csv.DictReader(decode_text_smart(csv_path.read_bytes()).splitlines())
+    missing = {"username", "password", "name"} - set(reader.fieldnames or [])
+    if missing:
+        raise RuntimeError("File tài khoản thiếu cột: " + ", ".join(sorted(missing)))
+    accounts = []
+    for index, row in enumerate(reader, 1):
+        username = (row.get("username") or "").strip()
+        password = (row.get("password") or "").strip()
+        name = (row.get("name") or "").strip()
+        if username and password and name:
+            accounts.append({"index": index, "username": username, "password": password, "name": name})
+    if not accounts:
+        raise RuntimeError("Không đọc được tài khoản hợp lệ nào trong file CSV.")
+    return accounts
+
+
+def normalize_grading_key(value: str) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+def grading_source_root(extract_root: Path) -> Path:
+    dirs = [item for item in extract_root.iterdir() if item.is_dir()]
+    return dirs[0] if len(dirs) == 1 and any(path.is_file() for path in dirs[0].rglob("*")) else extract_root
+
+
+def map_grading_problem_code(stem: str, contest_problems: list[dict]) -> str:
+    raw = re.sub(r"[^A-Za-z0-9_]+", "", stem).lower()
+    codes = [problem["code"] for problem in contest_problems]
+    if raw in codes:
+        return raw
+    for code in codes:
+        if code.startswith(raw + "_") or code.split("_", 1)[0] == raw:
+            return code
+    for code in codes:
+        if raw in code.replace("_", "") or code.replace("_", "") in raw:
+            return code
+    return raw
+
+
+def collect_hncode_grading_files(source_root: Path, accounts: list[dict], contest_problems: list[dict]) -> tuple[list[dict], list[str]]:
+    account_by_key = {normalize_grading_key(account["name"]): account for account in accounts}
+    problem_by_code = {problem["code"]: problem for problem in contest_problems}
+    allowed_suffixes = {".cpp", ".cc", ".cxx", ".c", ".py", ".pas"}
+    rows: list[dict] = []
+    warnings: list[str] = []
+    for student_dir in sorted((item for item in source_root.iterdir() if item.is_dir()), key=lambda path: path.name.lower()):
+        account = account_by_key.get(normalize_grading_key(student_dir.name))
+        if not account:
+            warnings.append(f"Không tìm thấy tài khoản CSV cho thư mục {student_dir.name}.")
+            continue
+        files = sorted((path for path in student_dir.rglob("*") if path.is_file() and path.suffix.lower() in allowed_suffixes), key=lambda path: path.name.lower())
+        if not files:
+            warnings.append(f"Thư mục {student_dir.name} không có file code.")
+            continue
+        for path in files:
+            code = map_grading_problem_code(path.stem, contest_problems)
+            problem = problem_by_code.get(code)
+            rows.append({
+                "original_key": f"{account['username']}::{path.relative_to(source_root).as_posix()}",
+                "selected": bool(problem),
+                "student": account["name"],
+                "username": account["username"],
+                "problem": code,
+                "problem_title": problem["title"] if problem else "",
+                "contest_points": problem["points"] if problem else 0,
+                "language": path.suffix.lower().lstrip("."),
+                "file": path.name,
+                "relative_path": path.relative_to(source_root).as_posix(),
+                "local_path": str(path),
+                "status": "Đã chuẩn bị" if problem else "Không khớp bài trong contest",
+                "submission_url": "",
+                "percent": "",
+                "score": "",
+                "message": "",
+            })
+    if not rows:
+        raise RuntimeError("Không tìm thấy file bài làm nào khớp tài khoản trong zip.")
+    return rows, warnings
+
+
+def join_hncode_contest_if_needed(session: requests.Session, contest_key: str, contest_password: str) -> str:
+    join_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/join")
+    page = session.get(join_url, timeout=30, allow_redirects=True)
+    if f"/contest/{contest_key}/problems" in page.url:
+        return "Đã tham gia"
+    parser = FormDataParser()
+    parser.feed(page.text)
+    form = next((item for item in parser.forms if any(name == "access_code" for name, _value in item)), None)
+    if not form:
+        return "Không cần nhập mật khẩu"
+    result = session.post(
+        join_url,
+        data=[(name, contest_password if name == "access_code" else value) for name, value in form],
+        headers={"Referer": join_url},
+        allow_redirects=True,
+        timeout=30,
+    )
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if errors:
+        raise RuntimeError("Join contest báo lỗi: " + "; ".join(errors))
+    return "Đã nhập mật khẩu contest"
+
+
+def preferred_languages_for_source(path: Path) -> list[str]:
+    suffix = path.suffix.lower()
+    if suffix in {".cpp", ".cc", ".cxx"}:
+        return ["C++17", "GNU C++17", "C++20", "GNU C++20", "C++"]
+    if suffix == ".c":
+        return ["C", "C11", "GNU C"]
+    if suffix == ".py":
+        return ["PyPy 3", "Pypy 3", "Python 3", "Python3", "Python"]
+    if suffix == ".pas":
+        return ["Pascal", "FPC"]
+    return ["C++17", "C++"]
+
+
+def submit_hncode_grading_file(session: requests.Session, problem_code: str, source_path: Path) -> str:
+    submit_url = urljoin(TARGETS["hncode"]["base_url"], f"/problem/{problem_code}/submit")
+    page = session.get(submit_url, timeout=30, allow_redirects=True)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được trang nộp bài {problem_code}: HTTP {page.status_code}")
+    language_id = language_id_from_submit_page(page.text, preferred_languages_for_source(source_path))
+    if not language_id:
+        raise RuntimeError(f"Không tìm thấy ngôn ngữ phù hợp cho file {source_path.name}")
+    result = session.post(
+        submit_url,
+        data={"csrfmiddlewaretoken": csrf_token(page.text), "source": read_text_smart(source_path), "language": language_id, "judge": ""},
+        headers={"Referer": submit_url},
+        allow_redirects=True,
+        timeout=30,
+    )
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if not result.ok or errors:
+        raise RuntimeError("Submit form báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
+    if "/submission/" not in result.url:
+        raise RuntimeError(f"Submit chưa tạo submission; URL sau POST: {result.url}")
+    return result.url
+
+
+def parse_hncode_submission_result(page: str) -> dict:
+    plain = html.unescape(re.sub(r"<[^>]+>", " ", page))
+    plain = re.sub(r"\s+", " ", plain)
+    total_match = re.search(r"Tổng cộng:\s*([0-9]+(?:[.,][0-9]+)?)\s*/\s*100", plain, re.I)
+    score_match = re.search(r"Điểm:\s*([0-9]+(?:[.,][0-9]+)?)\s*/\s*([0-9]+(?:[.,][0-9]+)?)", plain, re.I)
+    verdict = ""
+    for candidate in ["Accepted", "Wrong Answer", "Time Limit Exceeded", "Runtime Error", "Compilation Error", "Memory Limit Exceeded", "Output Limit Exceeded"]:
+        if candidate in plain:
+            verdict = candidate
+            break
+    if total_match:
+        return {"done": True, "percent": float(total_match.group(1).replace(",", ".")), "verdict": verdict or "Done"}
+    if score_match:
+        got = float(score_match.group(1).replace(",", "."))
+        total = float(score_match.group(2).replace(",", "."))
+        return {"done": True, "percent": 100.0 * got / total if total else 0.0, "verdict": verdict or "Done"}
+    pending = any(word.lower() in plain.lower() for word in ["Queued", "Đang chấm", "Processing", "grading", "Chờ chấm"])
+    return {"done": not pending, "percent": None, "verdict": verdict or "Đang chấm"}
+
+
+def poll_hncode_submission(session: requests.Session, submission_url: str, poll_seconds: int = 90) -> dict:
+    deadline = time.time() + max(5, poll_seconds)
+    while time.time() <= deadline:
+        page = session.get(submission_url, timeout=30)
+        if not page.ok:
+            raise RuntimeError(f"Không đọc được submission: HTTP {page.status_code}")
+        result = parse_hncode_submission_result(page.text)
+        if result.get("done") and result.get("percent") is not None:
+            return result
+        time.sleep(2)
+    return {"done": False, "percent": None, "verdict": "Hết thời gian chờ"}
+
+
+def write_hncode_grading_excel(rows: list[dict], contest_problems: list[dict], accounts: list[dict], output_path: Path) -> None:
+    from openpyxl import Workbook
+    from copy import copy
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Bang diem"
+    problem_codes = [problem["code"] for problem in contest_problems]
+    ws.append(["STT", "Học sinh", "Username", *problem_codes, "Tổng điểm", "Số bài đã nộp"])
+    by_student_problem: dict[tuple[str, str], dict] = {}
+    for row in rows:
+        key = (row.get("username", ""), row.get("problem", ""))
+        current = by_student_problem.get(key)
+        if current is None or float(row.get("score") or 0) > float(current.get("score") or 0):
+            by_student_problem[key] = row
+    for account in accounts:
+        total = 0.0
+        count = 0
+        values = [account["index"], account["name"], account["username"]]
+        for code in problem_codes:
+            row = by_student_problem.get((account["username"], code))
+            score = float(row.get("score") or 0) if row else 0.0
+            total += score
+            if row and row.get("submission_url"):
+                count += 1
+            values.append(round(score, 2))
+        values.extend([round(total, 2), count])
+        ws.append(values)
+    for cell in ws[1]:
+        cell.font = copy(cell.font)
+        cell.font = cell.font.copy(bold=True)
+    ws.freeze_panes = "D2"
+    autosize_worksheet(ws)
+    ws = wb.create_sheet("Chi tiet nop bai")
+    ws.append(["Học sinh", "Username", "Mã bài", "Tên bài", "Điểm bài", "%", "Điểm quy đổi", "File", "Trạng thái", "Submission", "Thông báo"])
+    for row in rows:
+        ws.append([row.get("student"), row.get("username"), row.get("problem"), row.get("problem_title"), row.get("contest_points"), row.get("percent"), row.get("score"), row.get("relative_path"), row.get("status"), "Mở submission" if row.get("submission_url") else "", row.get("message")])
+        if row.get("submission_url"):
+            ws.cell(ws.max_row, 10).hyperlink = row["submission_url"]
+            ws.cell(ws.max_row, 10).style = "Hyperlink"
+    for cell in ws[1]:
+        cell.font = cell.font.copy(bold=True)
+    ws.freeze_panes = "A2"
+    autosize_worksheet(ws)
+    ws = wb.create_sheet("Danh sach bai")
+    ws.append(["Thứ tự", "Mã bài", "Tên bài", "Điểm contest"])
+    for problem in contest_problems:
+        ws.append([problem["order"], problem["code"], problem["title"], problem["points"]])
+    for cell in ws[1]:
+        cell.font = cell.font.copy(bold=True)
+    autosize_worksheet(ws)
+    wb.save(output_path)
+
+
+@app.post("/api/prepare-hncode-grading")
+def api_prepare_hncode_grading():
+    progress_id = request.form.get("progress_id")
+    try:
+        contest_key = extract_hncode_contest_key_any(request.form.get("contest_url", ""))
+        zip_file = request.files.get("zip_file")
+        csv_file = request.files.get("csv_file")
+        if not zip_file or not zip_file.filename:
+            return jsonify({"error": "Chưa chọn file zip bài làm."}), 400
+        if not csv_file or not csv_file.filename:
+            return jsonify({"error": "Chưa chọn file CSV tài khoản."}), 400
+        prepare_id = uuid.uuid4().hex
+        root = RUNTIME / ("hncode_grading_" + prepare_id)
+        source_zip = root / "bai_lam.zip"
+        account_csv = root / "tai_khoan.csv"
+        extract_root = root / "extract"
+        root.mkdir(parents=True, exist_ok=True)
+        zip_file.save(source_zip)
+        csv_file.save(account_csv)
+        progress_update(progress_id, phase="prepare-hncode-grading", done=0, total=3, rows=[], message="Đang đọc contest HNCode")
+        admin_session = login_hncode(TARGETS["hncode"]["base_url"], "hncode", "HNCodemaidinh89()")
+        contest_problems = parse_hncode_contest_problems(admin_session, contest_key)
+        accounts = read_hncode_grading_accounts(account_csv)
+        safe_extract_zip(source_zip, extract_root)
+        source_root = grading_source_root(extract_root)
+        rows, warnings = collect_hncode_grading_files(source_root, accounts, contest_problems)
+        prepared_hncode_grading[prepare_id] = {"root": root, "source_root": source_root, "contest_key": contest_key, "contest_problems": contest_problems, "accounts": accounts, "rows": rows, "output": ""}
+        log_lines = [f"Contest: {contest_key}", f"Đã đọc {len(contest_problems)} bài: " + ", ".join(problem["code"] for problem in contest_problems), f"Đã đọc {len(accounts)} tài khoản.", f"Đã tìm thấy {len(rows)} file bài làm."]
+        log_lines.extend(f"- {warning}" for warning in warnings)
+        progress_update(progress_id, phase="prepare-hncode-grading", done=3, total=3, rows=rows, message="Đã chuẩn bị dữ liệu chấm")
+        progress_finish(progress_id, True, "Đã chuẩn bị dữ liệu chấm")
+        return jsonify({"prepare_id": prepare_id, "rows": rows, "problems": contest_problems, "accounts": accounts, "log": "\n".join(log_lines)})
+    except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/api/confirm-hncode-grading")
+def api_confirm_hncode_grading():
+    payload = request.get_json(force=True)
+    progress_id = payload.get("progress_id")
+    state = prepared_hncode_grading.get(payload.get("prepare_id", ""))
+    if not state:
+        progress_finish(progress_id, False, "Dữ liệu chuẩn bị chấm đã hết hạn")
+        return jsonify({"error": "Dữ liệu chuẩn bị chấm đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+    try:
+        requested = {row.get("original_key"): row for row in payload.get("rows", [])}
+        rows = []
+        for base in state["rows"]:
+            row = dict(base)
+            if row["original_key"] in requested:
+                row["selected"] = bool(requested[row["original_key"]].get("selected"))
+            rows.append(row)
+        selected_rows = [row for row in rows if row.get("selected")]
+        if not selected_rows:
+            raise RuntimeError("Chưa chọn bài nào để nộp chấm.")
+        contest_password = payload.get("contest_password", "")
+        poll_seconds = int(payload.get("poll_seconds") or 90)
+        account_by_username = {account["username"]: account for account in state["accounts"]}
+        sessions: dict[str, requests.Session] = {}
+        done = 0
+        log_lines = [f"Chấm bài HNCode contest {state['contest_key']}: {len(selected_rows)} file được chọn."]
+        progress_update(progress_id, phase="confirm-hncode-grading", done=0, total=len(selected_rows), rows=rows, message="Bắt đầu nộp bài")
+        for row in rows:
+            if not row.get("selected"):
+                row["status"] = "Bỏ qua"
+                continue
+            try:
+                account = account_by_username[row["username"]]
+                session = sessions.get(row["username"])
+                if session is None:
+                    session = hncode_student_session(account["username"], account["password"])
+                    log_lines.append(f"{account['name']} ({account['username']}): {join_hncode_contest_if_needed(session, state['contest_key'], contest_password)}.")
+                    sessions[row["username"]] = session
+                progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row['student']} - {row['problem']}: đang nộp")
+                row["status"] = "Đang nộp"
+                row["submission_url"] = submit_hncode_grading_file(session, row["problem"], Path(row["local_path"]))
+                result = poll_hncode_submission(session, row["submission_url"], poll_seconds=poll_seconds)
+                percent = result.get("percent")
+                row["percent"] = "" if percent is None else round(float(percent), 2)
+                row["score"] = "" if percent is None else round(float(row.get("contest_points") or 0) * float(percent) / 100.0, 2)
+                row["status"] = "✓ Đã chấm" if percent is not None else "✓ Đã nộp"
+                row["message"] = result.get("verdict") or ""
+                log_lines.append(f"✓ {row['student']} - {row['problem']}: {row['message']}, {row['percent']}%, điểm {row['score']}.")
+            except Exception as exc:
+                row["status"] = "✗ Lỗi"
+                row["message"] = str(exc)
+                log_lines.append(f"✗ {row.get('student')} - {row.get('problem')}: {exc}")
+            done += 1
+            progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row.get('student')} - {row.get('problem')}: {row.get('status')}")
+        output_path = Path(state["root"]) / "bang_diem_hncode.xlsx"
+        write_hncode_grading_excel(rows, state["contest_problems"], state["accounts"], output_path)
+        state["rows"] = rows
+        state["output"] = str(output_path)
+        ok = all((not row.get("selected")) or str(row.get("status", "")).startswith("✓") for row in rows)
+        progress_finish(progress_id, ok, "Đã hoàn tất chấm bài")
+        return jsonify({"ok": ok, "rows": rows, "log": "\n".join(log_lines), "download_url": f"/api/download-hncode-grading/{payload.get('prepare_id', '')}"})
+    except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.get("/api/download-hncode-grading/<prepare_id>")
+def api_download_hncode_grading(prepare_id: str):
+    state = prepared_hncode_grading.get(prepare_id)
+    if not state or not state.get("output"):
+        return jsonify({"error": "Chưa có file bảng điểm để tải."}), 404
+    path = Path(state["output"])
+    if not path.exists():
+        return jsonify({"error": "File bảng điểm không còn tồn tại."}), 404
+    return send_file(path, as_attachment=True, download_name=path.name, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.get("/api/progress/<progress_id>")
