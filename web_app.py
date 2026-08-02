@@ -3679,34 +3679,141 @@ def poll_hncode_submission(session: requests.Session, submission_url: str) -> di
         time.sleep(2)
 
 
-def write_hncode_grading_excel(rows: list[dict], contest_problems: list[dict], accounts: list[dict], output_path: Path) -> None:
+def html_cell_text(fragment: str) -> str:
+    text = html.unescape(re.sub(r"<[^>]+>", " ", fragment))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def number_from_rank_text(value: str) -> float | str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = text.replace(".", "").replace(",", ".") if "," in text else text
+    try:
+        return round(float(normalized), 2)
+    except ValueError:
+        return text
+
+
+def parse_hncode_ranking_table(page: str) -> tuple[list[dict], list[str]]:
+    table_match = re.search(r'<table\b[^>]*id=["\']users-table["\'][^>]*>([\s\S]*?)</table>', page, re.I)
+    if not table_match:
+        return [], []
+    table = table_match.group(1)
+    thead = re.search(r"<thead\b[^>]*>([\s\S]*?)</thead>", table, re.I)
+    problem_codes = []
+    if thead:
+        for th in re.findall(r"<th\b[^>]*problem-score-col[^>]*>([\s\S]*?)</th>", thead.group(1), re.I):
+            code_match = re.search(r'class=["\']problem-code["\'][^>]*>([\s\S]*?)</div>', th, re.I)
+            if code_match:
+                problem_codes.append(html_cell_text(code_match.group(1)))
+    tbody = re.search(r"<tbody\b[^>]*>([\s\S]*?)</tbody>", table, re.I)
+    if not tbody:
+        return [], problem_codes
+    ranking_rows = []
+    for tr in re.findall(r"<tr\b[^>]*>([\s\S]*?)</tr>", tbody.group(1), re.I):
+        cells = re.findall(r"<td\b([^>]*)>([\s\S]*?)</td>", tr, re.I)
+        if len(cells) < 3:
+            continue
+        rank = html_cell_text(cells[0][1])
+        user_cell = cells[1][1]
+        username_match = re.search(r'<a\b[^>]*href=["\']/user/[^"\']+["\'][^>]*>([\s\S]*?)</a>', user_cell, re.I)
+        fullname_match = re.search(r'class=["\'][^"\']*\bfullname\b[^"\']*["\'][^>]*>([\s\S]*?)</div>', user_cell, re.I)
+        participation_match = re.search(r"<sub\b[^>]*>\s*\[([0-9]+)\]\s*</sub>", user_cell, re.I)
+        total_cell = cells[2][1]
+        total_score = html_cell_text(re.sub(r'<div\b[^>]*class=["\']solving-time["\'][\s\S]*?</div>', "", total_cell, flags=re.I))
+        total_time_match = re.search(r'class=["\']solving-time["\'][^>]*>([\s\S]*?)</div>', total_cell, re.I)
+        item = {
+            "rank": number_from_rank_text(rank),
+            "username": html_cell_text(username_match.group(1)) if username_match else html_cell_text(user_cell),
+            "fullname": html_cell_text(fullname_match.group(1)) if fullname_match else "",
+            "participation": participation_match.group(1) if participation_match else "",
+            "total": number_from_rank_text(total_score),
+            "time": html_cell_text(total_time_match.group(1)) if total_time_match else "",
+            "scores": {},
+            "times": {},
+        }
+        problem_cells = [cell for attrs, cell in cells[3:] if "problem-score-col" in attrs]
+        for code, cell in zip(problem_codes, problem_cells):
+            score_match = re.search(r"<span\b[^>]*>([\s\S]*?)</span>", cell, re.I)
+            time_match = re.search(r'class=["\']solving-time["\'][^>]*>([\s\S]*?)</div>', cell, re.I)
+            score_text = html_cell_text(score_match.group(1)) if score_match else html_cell_text(cell)
+            item["scores"][code] = number_from_rank_text(score_text)
+            item["times"][code] = html_cell_text(time_match.group(1)) if time_match else ""
+        ranking_rows.append(item)
+    return ranking_rows, problem_codes
+
+
+def fetch_hncode_contest_ranking(session: requests.Session, contest_key: str) -> tuple[list[dict], list[str]]:
+    all_rows: list[dict] = []
+    problem_codes: list[str] = []
+    seen_keys: set[tuple[str, str, str]] = set()
+    for page_num in range(1, 51):
+        page = session.get(
+            urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/ranking/"),
+            params={"friend": "0", "virtual": "1", "page": str(page_num)},
+            timeout=30,
+        )
+        if not page.ok:
+            raise RuntimeError(f"Không đọc được bảng rank contest: HTTP {page.status_code}")
+        rows, codes = parse_hncode_ranking_table(page.text)
+        if codes and not problem_codes:
+            problem_codes = codes
+        new_rows = []
+        for row in rows:
+            key = (str(row.get("username", "")), str(row.get("participation", "")), str(row.get("rank", "")))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                new_rows.append(row)
+        if not new_rows:
+            break
+        all_rows.extend(new_rows)
+        if len(rows) < 100:
+            break
+    return all_rows, problem_codes
+
+
+def write_hncode_grading_excel(rows: list[dict], contest_problems: list[dict], accounts: list[dict], output_path: Path, ranking_rows: list[dict] | None = None, ranking_problem_codes: list[str] | None = None) -> None:
     from openpyxl import Workbook
     from copy import copy
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Bang diem"
-    problem_codes = [problem["code"] for problem in contest_problems]
-    ws.append(["STT", "Học sinh", "Username", *problem_codes, "Tổng điểm", "Số bài đã nộp"])
-    by_student_problem: dict[tuple[str, str], dict] = {}
-    for row in rows:
-        key = (row.get("username", ""), row.get("problem", ""))
-        current = by_student_problem.get(key)
-        if current is None or float(row.get("score") or 0) > float(current.get("score") or 0):
-            by_student_problem[key] = row
-    for account in accounts:
-        total = 0.0
-        count = 0
-        values = [account["index"], account["name"], account["username"]]
-        for code in problem_codes:
-            row = by_student_problem.get((account["username"], code))
-            score = float(row.get("score") or 0) if row else 0.0
-            total += score
-            if row and row.get("submission_url"):
-                count += 1
-            values.append(round(score, 2))
-        values.extend([round(total, 2), count])
-        ws.append(values)
+    problem_codes = list(ranking_problem_codes or []) or [problem["code"] for problem in contest_problems]
+    if ranking_rows:
+        ws.append(["Rank", "Username", "Họ tên", "Lượt ảo", "Tổng điểm", "Thời gian", *problem_codes])
+        for item in ranking_rows:
+            ws.append([
+                item.get("rank", ""),
+                item.get("username", ""),
+                item.get("fullname", ""),
+                item.get("participation", ""),
+                item.get("total", ""),
+                item.get("time", ""),
+                *[item.get("scores", {}).get(code, "") for code in problem_codes],
+            ])
+    else:
+        ws.append(["STT", "Học sinh", "Username", *problem_codes, "Tổng điểm", "Số bài đã nộp"])
+        by_student_problem: dict[tuple[str, str], dict] = {}
+        for row in rows:
+            key = (row.get("username", ""), row.get("problem", ""))
+            current = by_student_problem.get(key)
+            if current is None or float(row.get("score") or 0) > float(current.get("score") or 0):
+                by_student_problem[key] = row
+        for account in accounts:
+            total = 0.0
+            count = 0
+            values = [account["index"], account["name"], account["username"]]
+            for code in problem_codes:
+                row = by_student_problem.get((account["username"], code))
+                score = float(row.get("score") or 0) if row else 0.0
+                total += score
+                if row and row.get("submission_url"):
+                    count += 1
+                values.append(round(score, 2))
+            values.extend([round(total, 2), count])
+            ws.append(values)
     for cell in ws[1]:
         cell.font = copy(cell.font)
         cell.font = cell.font.copy(bold=True)
@@ -3823,7 +3930,15 @@ def api_confirm_hncode_grading():
             done += 1
             progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row.get('student')} - {row.get('problem')}: {row.get('status')}")
         output_path = Path(state["root"]) / "bang_diem_hncode.xlsx"
-        write_hncode_grading_excel(rows, state["contest_problems"], state["accounts"], output_path)
+        ranking_rows: list[dict] = []
+        ranking_problem_codes: list[str] = []
+        try:
+            rank_session = login_hncode(TARGETS["hncode"]["base_url"], "hncode", "HNCodemaidinh89()")
+            ranking_rows, ranking_problem_codes = fetch_hncode_contest_ranking(rank_session, state["contest_key"])
+            log_lines.append(f"Đã đọc lại bảng rank contest: {len(ranking_rows)} dòng.")
+        except Exception as exc:
+            log_lines.append(f"Không đọc được bảng rank, Excel dùng dữ liệu submission vừa nộp: {exc}")
+        write_hncode_grading_excel(rows, state["contest_problems"], state["accounts"], output_path, ranking_rows, ranking_problem_codes)
         state["rows"] = rows
         state["output"] = str(output_path)
         ok = all((not row.get("selected")) or str(row.get("status", "")).startswith("✓") for row in rows)
