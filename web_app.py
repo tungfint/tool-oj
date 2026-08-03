@@ -239,6 +239,7 @@ prepared_transfers: dict[str, dict] = {}
 prepared_contest_transfers: dict[str, dict] = {}
 prepared_quizzes: dict[str, dict] = {}
 prepared_lesson_copies: dict[str, dict] = {}
+prepared_course_clones: dict[str, dict] = {}
 prepared_hncode_grading: dict[str, dict] = {}
 
 
@@ -1385,7 +1386,9 @@ PAGE = r"""
     h2 { margin:0 0 8px; font-size:18px; }
     h3 { margin:16px 0 8px; font-size:15px; }
     p { color:var(--muted); line-height:1.45; margin:0 0 12px; }
-    .nav { display:flex; gap:8px; flex-wrap:wrap; }
+    .nav { display:flex; gap:10px; flex-wrap:wrap; align-items:stretch; }
+    .nav-group { display:flex; gap:6px; flex-wrap:wrap; align-items:center; border:1px solid var(--line); background:#f8fafc; border-radius:8px; padding:6px; }
+    .nav-label { color:#475467; font-size:12px; font-weight:800; padding:0 4px; text-transform:uppercase; letter-spacing:.03em; }
     .nav button, button.action { border:1px solid #b8c2d3; border-radius:6px; padding:10px 14px; background:#fff; color:var(--ink); font:inherit; font-weight:700; cursor:pointer; box-shadow:0 1px 2px rgba(16,24,40,.08); }
     .nav button:hover, button.action:hover { border-color:#8fa1b8; background:#f8fafc; }
     .nav button.active, button.primary { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 2px 6px rgba(15,118,110,.24); }
@@ -1449,15 +1452,28 @@ PAGE = r"""
   <header>
     <h1>Tool HNCode</h1>
     <div class="nav">
-      <button type="button" class="active" data-panel="accounts">Tài khoản & Hướng dẫn</button>
-      <button type="button" data-panel="upload">Up nhiều bài</button>
-      <button type="button" data-panel="single-upload">Up 1 bài</button>
-      <button type="button" data-panel="transfer">Chuyển bài</button>
-      <button type="button" data-panel="contest-transfer">Chuyển contest</button>
-      <button type="button" data-panel="contest-create">Tạo contest</button>
-      <button type="button" data-panel="contest-lesson-copy">Contest → Lesson</button>
-      <button type="button" data-panel="quiz-upload">Up Quiz</button>
-      <button type="button" data-panel="misc-tools">Tool lẻ</button>
+      <div class="nav-group">
+        <span class="nav-label">Chung</span>
+        <button type="button" class="active" data-panel="accounts">Tài khoản & Hướng dẫn</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-label">Bài tập</span>
+        <button type="button" data-panel="upload">Up nhiều bài</button>
+        <button type="button" data-panel="single-upload">Up 1 bài</button>
+        <button type="button" data-panel="transfer">Chuyển bài</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-label">Contest / Course</span>
+        <button type="button" data-panel="contest-transfer">Chuyển contest</button>
+        <button type="button" data-panel="contest-create">Tạo contest</button>
+        <button type="button" data-panel="contest-lesson-copy">Contest → Lesson</button>
+        <button type="button" data-panel="course-clone">Clone Course</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-label">Khác</span>
+        <button type="button" data-panel="quiz-upload">Up Quiz</button>
+        <button type="button" data-panel="misc-tools">Tool lẻ</button>
+      </div>
     </div>
   </header>
 
@@ -1767,6 +1783,28 @@ PAGE = r"""
         <div id="contestLessonCopyTable"></div>
       </div>
 
+      <div class="panel" id="panel-course-clone">
+        <h2>Clone Course HNCode</h2>
+        <p>Clone các lesson và contest từ course nguồn sang course đích. Lesson dùng nút Nhân bản native của HNCode; contest sẽ tạo bản clone với mã mới để không đụng contest gốc.</p>
+        <div class="grid-2">
+          <div><label>HNCode user</label><input id="courseCloneUserMirror" type="text" value="hncode" readonly><span id="courseCloneLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Hậu tố mã contest đích</label><input id="courseCloneContestSuffix" type="text" placeholder="Để trống thì tự dùng _<course đích>"></div>
+        </div>
+        <label>Course nguồn</label>
+        <input id="courseCloneSourceUrl" type="text" value="https://hncode.edu.vn/course/sach_cppcoban_share">
+        <label>Course đích</label>
+        <input id="courseCloneDestUrl" type="text" value="https://hncode.edu.vn/course/ngs_cpp_cb_01">
+        <div class="grid-2" style="margin-top:12px">
+          <label class="check"><input type="checkbox" id="courseCloneLessons" checked> Clone lesson</label>
+          <label class="check"><input type="checkbox" id="courseCloneContests" checked> Clone contest</label>
+        </div>
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareCourseClone">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmCourseClone" disabled>Xác nhận Clone Course</button>
+        </div>
+        <div id="courseCloneTable"></div>
+      </div>
+
       <div class="panel" id="panel-quiz-upload">
         <h2>Up Quiz</h2>
         <p>Up danh sách câu hỏi lên HNCode Quiz tại <code>https://oj.hncode.edu.vn/quiz/questions/create/</code>. Nhãn để trống.</p>
@@ -1871,6 +1909,7 @@ let preparedTransfer = null;
 let preparedContestTransfer = null;
 let preparedQuiz = null;
 let preparedContestLessonCopy = null;
+let preparedCourseClone = null;
 let preparedGrading = null;
 let selectedZipFile = null;
 let selectedSingleTestZipFile = null;
@@ -2127,7 +2166,7 @@ document.getElementById("createContestTarget").addEventListener("change", checkC
 renderLanguages();
 renderSingleLanguages();
 renderTransferLanguages();
-setTimeout(() => { checkUploadLogin(); checkSingleUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); checkLessonCopyLogin(); }, 300);
+setTimeout(() => { checkUploadLogin(); checkSingleUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); checkLessonCopyLogin(); checkCourseCloneLogin(); }, 300);
 
 function selectedLanguages() {
   return [...document.querySelectorAll("#languages input:checked")].map(item => item.value);
@@ -2211,6 +2250,10 @@ function checkQuizLogin() {
 function checkLessonCopyLogin() {
   document.getElementById("lessonCopyUserMirror").value = accountFields.hncode_user.value || "hncode";
   checkHncodeOjLogin("lessonCopyLogin");
+}
+function checkCourseCloneLogin() {
+  document.getElementById("courseCloneUserMirror").value = accountFields.hncode_user.value || "hncode";
+  checkLogin("hncode", "courseCloneLogin");
 }
 function uploadSettings() {
   const target = document.getElementById("uploadTarget").value;
@@ -2752,6 +2795,92 @@ function applyContestLessonCopyStatuses(rows) {
   const byCode = new Map(rows.map(row => [row.code, row]));
   for (const tr of document.querySelectorAll("#contestLessonCopyTable tbody tr")) {
     const row = byCode.get(tr.dataset.code);
+    if (!row) continue;
+    const detail = row.error ? "\n" + row.error : "";
+    setStatusCell(tr.querySelector(".row-status"), (row.status || "") + detail, row.link || "");
+  }
+}
+
+document.getElementById("prepareCourseClone").onclick = async () => {
+  try {
+    status("running");
+    log("Đang đọc lesson và contest của course nguồn...");
+    saveAccounts();
+    const data = await postJson("/api/prepare-course-clone", {
+      account: accountPayload("hncode"),
+      source_url: document.getElementById("courseCloneSourceUrl").value.trim(),
+      dest_url: document.getElementById("courseCloneDestUrl").value.trim(),
+      contest_suffix: document.getElementById("courseCloneContestSuffix").value.trim(),
+      include_lessons: document.getElementById("courseCloneLessons").checked,
+      include_contests: document.getElementById("courseCloneContests").checked,
+    });
+    preparedCourseClone = data.prepare_id;
+    renderCourseCloneTable(data.rows || []);
+    document.getElementById("confirmCourseClone").disabled = !data.can_clone;
+    log(data.log);
+    status(data.can_clone ? "ready" : "done", data.can_clone ? "ok" : "warn");
+  } catch (err) {
+    preparedCourseClone = null;
+    document.getElementById("confirmCourseClone").disabled = true;
+    document.getElementById("courseCloneTable").innerHTML = "";
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+document.getElementById("confirmCourseClone").onclick = async () => {
+  try {
+    if (!preparedCourseClone) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi Clone Course.");
+    status("running");
+    log("Đang clone course HNCode...");
+    markRowsProcessing("#courseCloneTable", "Đang clone...");
+    saveAccounts();
+    const res = await fetch("/api/confirm-course-clone", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
+      prepare_id: preparedCourseClone,
+      account: accountPayload("hncode"),
+      rows: collectCourseCloneRows(),
+    })});
+    const data = await parseJsonResponse(res);
+    applyCourseCloneStatuses(data.rows || []);
+    if (!res.ok) throw new Error(data.error || "Không clone được course.");
+    log(data.log);
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+function renderCourseCloneTable(rows) {
+  document.getElementById("courseCloneTable").innerHTML = `<div class="table-tools">
+    <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', false)">Bỏ chọn tất cả</button>
+  </div><table>
+    <thead><tr><th>Chọn</th><th>Loại</th><th>Thứ tự</th><th>Mã/ID nguồn</th><th>Tên</th><th>Mã contest đích</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map(row => `<tr data-kind="${escapeHtml(row.kind)}" data-key="${escapeHtml(row.key)}">
+      <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.can_clone ? "" : "disabled"}></td>
+      <td>${row.kind === "contest" ? "Contest" : "Lesson"}</td>
+      <td>${escapeHtml(row.order || "")}</td>
+      <td>${escapeHtml(row.key || "")}</td>
+      <td>${escapeHtml(row.title || "")}</td>
+      <td>${row.kind === "contest" ? `<input type="text" class="row-new-key" value="${escapeHtml(row.new_key || "")}">` : ""}</td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function collectCourseCloneRows() {
+  return [...document.querySelectorAll("#courseCloneTable tbody tr")].map(tr => ({
+    kind: tr.dataset.kind,
+    key: tr.dataset.key,
+    selected: tr.querySelector(".row-selected").checked,
+    new_key: tr.querySelector(".row-new-key") ? tr.querySelector(".row-new-key").value.trim() : "",
+  }));
+}
+
+function applyCourseCloneStatuses(rows) {
+  const byId = new Map(rows.map(row => [row.kind + ":" + row.key, row]));
+  for (const tr of document.querySelectorAll("#courseCloneTable tbody tr")) {
+    const row = byId.get(tr.dataset.kind + ":" + tr.dataset.key);
     if (!row) continue;
     const detail = row.error ? "\n" + row.error : "";
     setStatusCell(tr.querySelector(".row-status"), (row.status || "") + detail, row.link || "");
@@ -3300,6 +3429,153 @@ def api_prepare_quiz():
         )
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/prepare-course-clone")
+def api_prepare_course_clone():
+    payload = request.get_json(force=True)
+    account = payload.get("account", {})
+    try:
+        source_slug = extract_hncode_course_slug(payload.get("source_url", ""))
+        dest_slug = extract_hncode_course_slug(payload.get("dest_url", ""))
+        if source_slug == dest_slug:
+            raise RuntimeError("Course nguồn và course đích đang trùng nhau.")
+        include_lessons = bool(payload.get("include_lessons", True))
+        include_contests = bool(payload.get("include_contests", True))
+        if not include_lessons and not include_contests:
+            raise RuntimeError("Hãy chọn Clone lesson hoặc Clone contest.")
+        session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+        dest_course_id = hncode_course_admin_id(session, dest_slug)
+        source_lessons = hncode_course_lessons(session, source_slug) if include_lessons else []
+        source_contests = hncode_course_contests(session, source_slug) if include_contests else []
+        dest_lessons = hncode_course_lessons(session, dest_slug)
+        dest_contests = hncode_course_contests(session, dest_slug)
+        dest_lesson_titles = {row["title"].strip().casefold() for row in dest_lessons}
+        dest_contest_keys = {row["key"] for row in dest_contests}
+        rows: list[dict] = []
+        log_lines = [
+            "Chuẩn bị Clone Course HNCode",
+            f"Nguồn: {source_slug}",
+            f"Đích: {dest_slug}",
+            f"Lesson nguồn: {len(source_lessons)}",
+            f"Contest nguồn: {len(source_contests)}",
+        ]
+        for item in source_lessons:
+            exists = item["title"].strip().casefold() in dest_lesson_titles
+            row = {
+                **item,
+                "selected": not exists,
+                "can_clone": not exists,
+                "status": "Đã có lesson cùng tên ở đích" if exists else "✓ Sẵn sàng",
+                "new_key": "",
+            }
+            rows.append(row)
+            log_lines.append(f"Lesson {item['order']}. {item['title']}: {row['status']}")
+        suffix = payload.get("contest_suffix", "")
+        for item in source_contests:
+            new_key = default_course_clone_contest_key(item["key"], dest_slug, suffix)
+            in_dest = new_key in dest_contest_keys
+            global_exists = False
+            if not in_dest:
+                try:
+                    global_exists = bool(admin_contest_change_url(session, TARGETS["hncode"]["base_url"], new_key))
+                except Exception:
+                    global_exists = False
+            if in_dest:
+                status_text = "Đã có contest đích trong course"
+            elif global_exists:
+                status_text = "Mã contest đích đã tồn tại trên HNCode"
+            else:
+                status_text = "✓ Sẵn sàng"
+            row = {
+                **item,
+                "selected": status_text.startswith("✓"),
+                "can_clone": status_text.startswith("✓"),
+                "status": status_text,
+                "new_key": new_key,
+            }
+            rows.append(row)
+            log_lines.append(f"Contest {item['key']} → {new_key}: {status_text}")
+        prepare_id = uuid.uuid4().hex
+        prepared_course_clones[prepare_id] = {
+            "created_at": time.time(),
+            "source_slug": source_slug,
+            "dest_slug": dest_slug,
+            "dest_course_id": dest_course_id,
+            "rows": rows,
+        }
+        return jsonify(
+            {
+                "ok": True,
+                "prepare_id": prepare_id,
+                "rows": rows,
+                "can_clone": any(row.get("selected") for row in rows),
+                "log": "\n".join(log_lines),
+            }
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/confirm-course-clone")
+def api_confirm_course_clone():
+    payload = request.get_json(force=True)
+    account = payload.get("account", {})
+    prepare_id = payload.get("prepare_id", "")
+    state = prepared_course_clones.get(prepare_id)
+    if not state:
+        return jsonify({"ok": False, "error": "Dữ liệu chuẩn bị Clone Course đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+    rows_by_id = {(row["kind"], row["key"]): row for row in state["rows"]}
+    requested_rows = payload.get("rows", [])
+    result_rows = []
+    ok = True
+    log_lines = [
+        "Clone Course HNCode",
+        f"Nguồn: {state['source_slug']}",
+        f"Đích: {state['dest_slug']}",
+    ]
+    try:
+        session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+        for requested in requested_rows:
+            key = requested.get("key", "")
+            kind = requested.get("kind", "")
+            base = dict(rows_by_id.get((kind, key), requested))
+            base["selected"] = bool(requested.get("selected"))
+            if kind == "contest":
+                base["new_key"] = (requested.get("new_key") or base.get("new_key") or "").strip()
+            if not base["selected"]:
+                base["status"] = "Bỏ qua"
+                result_rows.append(base)
+                log_lines.append(f"- {kind} {key}: bỏ qua.")
+                continue
+            try:
+                if kind == "lesson":
+                    link = clone_hncode_lesson_native(session, state["source_slug"], key, base.get("title") or f"Lesson {key}", state["dest_course_id"])
+                    base["status"] = "✓ Đã clone"
+                    base["link"] = link
+                    log_lines.append(f"✓ Lesson {key}: đã clone.")
+                elif kind == "contest":
+                    new_key = base.get("new_key", "")
+                    if not re.fullmatch(r"[a-z0-9_-]+", new_key):
+                        raise RuntimeError("Mã contest đích chỉ nên gồm chữ thường, số, dấu gạch dưới hoặc gạch ngang.")
+                    link = clone_hncode_contest_native(session, key, new_key, state["dest_course_id"])
+                    base["status"] = "✓ Đã clone"
+                    base["link"] = link
+                    log_lines.append(f"✓ Contest {key} → {new_key}: đã clone.")
+                else:
+                    raise RuntimeError(f"Loại dòng không hợp lệ: {kind}")
+            except Exception as item_exc:
+                ok = False
+                base["status"] = "✗ Lỗi"
+                base["error"] = str(item_exc)
+                log_lines.append(f"✗ {kind} {key}: {item_exc}")
+            result_rows.append(base)
+        if not result_rows:
+            ok = False
+            log_lines.append("Không có dòng nào được gửi lên để clone.")
+        return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines), "course_link": hncode_course_page_url(state["dest_slug"])})
+    except Exception as exc:
+        return jsonify({"ok": False, "rows": result_rows, "error": str(exc)}), 400
 
 
 @app.post("/api/prepare-contest-to-lesson")
@@ -5742,6 +6018,156 @@ def compact_form_red_errors(page: str) -> list[str]:
         if text and text not in errors:
             errors.append(text)
     return errors
+
+
+def extract_hncode_course_slug(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        raise RuntimeError("Chưa nhập URL hoặc mã course HNCode.")
+    match = re.search(r"/course/([^/?#\s]+)", value)
+    if match:
+        return html.unescape(match.group(1)).strip("/")
+    if re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        return value
+    raise RuntimeError("Không đọc được mã course. Hãy nhập URL dạng https://hncode.edu.vn/course/<ma_course>.")
+
+
+def hncode_course_page_url(course_slug: str, path: str = "") -> str:
+    return urljoin(TARGETS["hncode"]["base_url"], f"/course/{course_slug}{path}")
+
+
+def hncode_course_admin_id(session: requests.Session, course_slug: str) -> str:
+    page = session.get(hncode_course_page_url(course_slug, "/edit_lessons"), timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được course {course_slug}: HTTP {page.status_code}")
+    match = re.search(r"/admin/judge/course/(\d+)/change/", page.text)
+    if not match:
+        raise RuntimeError(f"Không đọc được ID admin của course {course_slug}.")
+    return match.group(1)
+
+
+def hncode_course_lessons(session: requests.Session, course_slug: str) -> list[dict]:
+    page = session.get(hncode_course_page_url(course_slug, "/edit_lessons"), timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được danh sách lesson course {course_slug}: HTTP {page.status_code}")
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for lesson_id, block in re.findall(r'<li\b[^>]*class=["\'][^"\']*\bsortable-item\b[^"\']*["\'][^>]*data-id=["\']?(\d+)["\']?[^>]*>(.*?)</li>', page.text, re.S | re.I):
+        if lesson_id in seen:
+            continue
+        seen.add(lesson_id)
+        title_match = re.search(r'<a\b[^>]*href=["\']/course/[^"\']+/lesson/' + re.escape(lesson_id) + r'["\'][^>]*>(.*?)</a>', block, re.S | re.I)
+        order_match = re.search(r'<span\b[^>]*class=["\'][^"\']*\bitem-order\b[^"\']*["\'][^>]*>(.*?)</span>', block, re.S | re.I)
+        points_match = re.search(r'<span\b[^>]*class=["\'][^"\']*\bitem-points\b[^"\']*["\'][^>]*>(.*?)</span>', block, re.S | re.I)
+        rows.append(
+            {
+                "kind": "lesson",
+                "key": lesson_id,
+                "title": strip_html_text(title_match.group(1)) if title_match else f"Lesson {lesson_id}",
+                "order": strip_html_text(order_match.group(1)).rstrip(".") if order_match else str(len(rows) + 1),
+                "points": strip_html_text(points_match.group(1)) if points_match else "",
+            }
+        )
+    return rows
+
+
+def hncode_course_contests(session: requests.Session, course_slug: str) -> list[dict]:
+    page = session.get(hncode_course_page_url(course_slug, "/contests"), timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được danh sách contest course {course_slug}: HTTP {page.status_code}")
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for block in re.findall(r'<li\b[^>]*class=["\'][^"\']*\bsortable-item\b[^"\']*["\'][^>]*>(.*?)</li>', page.text, re.S | re.I):
+        link_match = re.search(r'<a\b[^>]*href=["\']/contest/([A-Za-z0-9_-]+)["\'][^>]*>(.*?)</a>', block, re.S | re.I)
+        if not link_match:
+            continue
+        key = html.unescape(link_match.group(1)).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        order_match = re.search(r'<span\b[^>]*class=["\'][^"\']*\bitem-order\b[^"\']*["\'][^>]*>(.*?)</span>', block, re.S | re.I)
+        points_match = re.search(r'<input\b[^>]*class=["\'][^"\']*\binline-points-edit\b[^"\']*["\'][^>]*value=["\']?([^"\'> ]*)', block, re.S | re.I)
+        rows.append(
+            {
+                "kind": "contest",
+                "key": key,
+                "title": strip_html_text(link_match.group(2)) or key,
+                "order": strip_html_text(order_match.group(1)).rstrip(".") if order_match else str(len(rows) + 1),
+                "points": html.unescape(points_match.group(1)) if points_match else "",
+            }
+        )
+    return rows
+
+
+def default_course_clone_contest_key(source_key: str, dest_slug: str, suffix: str = "") -> str:
+    suffix = (suffix or "").strip()
+    if not suffix:
+        suffix = "_" + dest_slug
+    if not suffix.startswith("_") and not suffix.startswith("-"):
+        suffix = "_" + suffix
+    raw = f"{source_key}{suffix}".lower()
+    raw = re.sub(r"[^a-z0-9_-]+", "_", raw)
+    raw = re.sub(r"_+", "_", raw).strip("_-")
+    return raw or source_key
+
+
+def collect_form_with_field(page: str, field_name: str) -> list[tuple[str, str]]:
+    parser = FormDataParser()
+    parser.feed(page)
+    for form in parser.forms:
+        if any(name == field_name for name, _value in form):
+            return form
+    return []
+
+
+def replace_form_fields(data: list[tuple[str, str]], updates: dict[str, str], remove_names: set[str] | None = None) -> list[tuple[str, str]]:
+    remove_names = set(remove_names or set()) | set(updates)
+    out = [(name, value) for name, value in data if name not in remove_names]
+    out.extend((name, value) for name, value in updates.items())
+    return out
+
+
+def clone_hncode_lesson_native(session: requests.Session, source_course: str, lesson_id: str, title: str, dest_course_id: str) -> str:
+    clone_url = hncode_course_page_url(source_course, f"/lesson/{lesson_id}/clone")
+    page = session.get(clone_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được form clone lesson {lesson_id}: HTTP {page.status_code}")
+    form_data = collect_form_with_field(page.text, "title")
+    if not form_data:
+        raise RuntimeError(f"Không tìm thấy form clone lesson {lesson_id}.")
+    data = replace_form_fields(form_data, {"title": title, "course": str(dest_course_id)})
+    result = session.post(clone_url, data=data, headers={"Referer": clone_url}, allow_redirects=True, timeout=60)
+    if not result.ok:
+        raise RuntimeError(f"Clone lesson {lesson_id} lỗi HTTP {result.status_code}")
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if errors:
+        raise RuntimeError("Form clone lesson báo lỗi:\n" + "\n".join(errors))
+    match = re.search(r"/course/([^/?#]+)/lesson/(\d+)", result.url)
+    if match:
+        return urljoin(TARGETS["hncode"]["base_url"], f"/course/{match.group(1)}/lesson/{match.group(2)}")
+    return urljoin(TARGETS["hncode"]["base_url"], result.url)
+
+
+def clone_hncode_contest_native(session: requests.Session, contest_key: str, new_key: str, dest_course_id: str) -> str:
+    clone_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/clone")
+    page = session.get(clone_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được form clone contest {contest_key}: HTTP {page.status_code}")
+    form_data = collect_form_with_field(page.text, "key")
+    if not form_data:
+        raise RuntimeError(f"Không tìm thấy form clone contest {contest_key}.")
+    data = replace_form_fields(
+        form_data,
+        {"key": new_key, "target_type": "course", "course": str(dest_course_id)},
+        remove_names={"organization"},
+    )
+    result = session.post(clone_url, data=data, headers={"Referer": clone_url}, allow_redirects=True, timeout=90)
+    if not result.ok:
+        raise RuntimeError(f"Clone contest {contest_key} lỗi HTTP {result.status_code}")
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if errors:
+        raise RuntimeError("Form clone contest báo lỗi:\n" + "\n".join(errors))
+    return urljoin(TARGETS["hncode"]["base_url"], f"/contest/{new_key}")
 
 
 def extract_hncode_contest_key(value: str) -> str:
