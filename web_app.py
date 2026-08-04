@@ -3550,7 +3550,7 @@ def api_confirm_course_clone():
                 continue
             try:
                 if kind == "lesson":
-                    link = clone_hncode_lesson_native(session, state["source_slug"], key, base.get("title") or f"Lesson {key}", state["dest_course_id"])
+                    link = clone_hncode_lesson_native(session, state["source_slug"], key, base.get("title") or f"Lesson {key}", state["dest_slug"], state["dest_course_id"])
                     base["status"] = "✓ Đã clone"
                     base["link"] = link
                     log_lines.append(f"✓ Lesson {key}: đã clone.")
@@ -3558,7 +3558,7 @@ def api_confirm_course_clone():
                     new_key = base.get("new_key", "")
                     if not re.fullmatch(r"[a-z0-9_-]+", new_key):
                         raise RuntimeError("Mã contest đích chỉ nên gồm chữ thường, số, dấu gạch dưới hoặc gạch ngang.")
-                    link = clone_hncode_contest_native(session, key, new_key, state["dest_course_id"])
+                    link = clone_hncode_contest_native(session, key, new_key, state["dest_slug"], state["dest_course_id"])
                     base["status"] = "✓ Đã clone"
                     base["link"] = link
                     log_lines.append(f"✓ Contest {key} → {new_key}: đã clone.")
@@ -6099,6 +6099,27 @@ def hncode_course_contests(session: requests.Session, course_slug: str) -> list[
     return rows
 
 
+def find_hncode_course_lesson_url(session: requests.Session, course_slug: str, title: str) -> str | None:
+    wanted = (title or "").strip().casefold()
+    if not wanted:
+        return None
+    matches = [row for row in hncode_course_lessons(session, course_slug) if row.get("title", "").strip().casefold() == wanted]
+    if not matches:
+        return None
+    chosen = matches[-1]
+    return hncode_course_page_url(course_slug, f"/lesson/{chosen['key']}")
+
+
+def find_hncode_course_contest_url(session: requests.Session, course_slug: str, contest_key: str) -> str | None:
+    contest_key = (contest_key or "").strip()
+    if not contest_key:
+        return None
+    for row in hncode_course_contests(session, course_slug):
+        if row.get("key") == contest_key:
+            return urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}")
+    return None
+
+
 def default_course_clone_contest_key(source_key: str, dest_slug: str, suffix: str = "") -> str:
     suffix = (suffix or "").strip()
     if not suffix:
@@ -6127,7 +6148,7 @@ def replace_form_fields(data: list[tuple[str, str]], updates: dict[str, str], re
     return out
 
 
-def clone_hncode_lesson_native(session: requests.Session, source_course: str, lesson_id: str, title: str, dest_course_id: str) -> str:
+def clone_hncode_lesson_native(session: requests.Session, source_course: str, lesson_id: str, title: str, dest_course_slug: str, dest_course_id: str) -> str:
     clone_url = hncode_course_page_url(source_course, f"/lesson/{lesson_id}/clone")
     page = session.get(clone_url, timeout=30)
     if not page.ok:
@@ -6142,13 +6163,13 @@ def clone_hncode_lesson_native(session: requests.Session, source_course: str, le
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
         raise RuntimeError("Form clone lesson báo lỗi:\n" + "\n".join(errors))
-    match = re.search(r"/course/([^/?#]+)/lesson/(\d+)", result.url)
-    if match:
-        return urljoin(TARGETS["hncode"]["base_url"], f"/course/{match.group(1)}/lesson/{match.group(2)}")
-    return urljoin(TARGETS["hncode"]["base_url"], result.url)
+    link = find_hncode_course_lesson_url(session, dest_course_slug, title)
+    if not link:
+        raise RuntimeError(f"Clone lesson {lesson_id} xong nhung chua thay lesson moi trong course dich {dest_course_slug}.")
+    return link
 
 
-def clone_hncode_contest_native(session: requests.Session, contest_key: str, new_key: str, dest_course_id: str) -> str:
+def clone_hncode_contest_native(session: requests.Session, contest_key: str, new_key: str, dest_course_slug: str, dest_course_id: str) -> str:
     clone_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/clone")
     page = session.get(clone_url, timeout=30)
     if not page.ok:
@@ -6167,7 +6188,10 @@ def clone_hncode_contest_native(session: requests.Session, contest_key: str, new
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
         raise RuntimeError("Form clone contest báo lỗi:\n" + "\n".join(errors))
-    return urljoin(TARGETS["hncode"]["base_url"], f"/contest/{new_key}")
+    link = find_hncode_course_contest_url(session, dest_course_slug, new_key)
+    if not link:
+        raise RuntimeError(f"Clone contest {contest_key} xong nhung chua thay contest {new_key} trong course dich {dest_course_slug}.")
+    return link
 
 
 def extract_hncode_contest_key(value: str) -> str:
