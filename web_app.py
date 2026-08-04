@@ -6148,49 +6148,220 @@ def replace_form_fields(data: list[tuple[str, str]], updates: dict[str, str], re
     return out
 
 
-def clone_hncode_lesson_native(session: requests.Session, source_course: str, lesson_id: str, title: str, dest_course_slug: str, dest_course_id: str) -> str:
-    clone_url = hncode_course_page_url(source_course, f"/lesson/{lesson_id}/clone")
-    page = session.get(clone_url, timeout=30)
+def lesson_quiz_rows_from_page(page: str, lesson_id: str) -> list[dict]:
+    prefix = f"quizzes_{lesson_id}"
+    total = int(input_value_from_page(page, f"{prefix}-TOTAL_FORMS", "0") or "0")
+    rows: list[dict] = []
+    for index in range(total):
+        quiz_id = selected_option_value(page, f"{prefix}-{index}-quiz", "") or input_value_from_page(page, f"{prefix}-{index}-quiz", "")
+        if not quiz_id:
+            continue
+        rows.append(
+            {
+                "id": input_value_from_page(page, f"{prefix}-{index}-id", ""),
+                "lesson": input_value_from_page(page, f"{prefix}-{index}-lesson", ""),
+                "quiz": quiz_id,
+                "points": input_value_from_page(page, f"{prefix}-{index}-points", "0"),
+                "max_attempts": input_value_from_page(page, f"{prefix}-{index}-max_attempts", "0"),
+                "order": input_value_from_page(page, f"{prefix}-{index}-order", str(index)),
+                "is_visible": input_checked(page, f"{prefix}-{index}-is_visible"),
+                "delete": input_checked(page, f"{prefix}-{index}-DELETE"),
+            }
+        )
+    return rows
+
+
+def remove_lesson_item_fields(data: list[tuple[str, str]], lesson_id: str) -> list[tuple[str, str]]:
+    prefixes = (f"problems_{lesson_id}-", f"quizzes_{lesson_id}-")
+    return [(name, value) for name, value in data if not any(name.startswith(prefix) for prefix in prefixes)]
+
+
+def append_lesson_quiz_formset(data: list[tuple[str, str]], lesson_id: str, rows: list[dict], initial_forms: int) -> list[tuple[str, str]]:
+    prefix = f"quizzes_{lesson_id}"
+    out = list(data)
+    out.extend(
+        [
+            (f"{prefix}-TOTAL_FORMS", str(len(rows))),
+            (f"{prefix}-INITIAL_FORMS", str(initial_forms)),
+            (f"{prefix}-MIN_NUM_FORMS", "0"),
+            (f"{prefix}-MAX_NUM_FORMS", "1000"),
+        ]
+    )
+    for index, row in enumerate(rows):
+        out.extend(
+            [
+                (f"{prefix}-{index}-order", str(row.get("order", index))),
+                (f"{prefix}-{index}-lesson", str(row.get("lesson", ""))),
+                (f"{prefix}-{index}-id", str(row.get("id", ""))),
+                (f"{prefix}-{index}-quiz", str(row.get("quiz", ""))),
+                (f"{prefix}-{index}-points", str(row.get("points", "0") or "0")),
+                (f"{prefix}-{index}-max_attempts", str(row.get("max_attempts", "0") or "0")),
+            ]
+        )
+        if row.get("is_visible"):
+            out.append((f"{prefix}-{index}-is_visible", "on"))
+        if row.get("delete"):
+            out.append((f"{prefix}-{index}-DELETE", "on"))
+    return out
+
+
+def copy_hncode_lesson_items(session: requests.Session, dest_course_slug: str, dest_lesson_id: str, source_page: str, source_lesson_id: str) -> None:
+    edit_url = hncode_course_page_url(dest_course_slug, f"/edit_lessons_new/{dest_lesson_id}")
+    page = session.get(edit_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"Không mở được form clone lesson {lesson_id}: HTTP {page.status_code}")
-    form_data = collect_form_with_field(page.text, "title")
+        raise RuntimeError(f"Không mở được form sửa lesson đích {dest_lesson_id}: HTTP {page.status_code}")
+    form_data = collect_lesson_form_data(page.text, dest_lesson_id)
     if not form_data:
-        raise RuntimeError(f"Không tìm thấy form clone lesson {lesson_id}.")
-    data = replace_form_fields(form_data, {"title": title, "course": str(dest_course_id)})
-    result = session.post(clone_url, data=data, headers={"Referer": clone_url}, allow_redirects=True, timeout=60)
+        raise RuntimeError(f"Không tìm thấy form danh sách bài/quiz trong lesson đích {dest_lesson_id}.")
+    source_problems = lesson_problem_rows_from_page(source_page, source_lesson_id)
+    source_quizzes = lesson_quiz_rows_from_page(source_page, source_lesson_id)
+    if not source_problems and not source_quizzes:
+        return
+    base_data = remove_lesson_item_fields(form_data, dest_lesson_id)
+    problem_rows = lesson_problem_rows_from_page(page.text, dest_lesson_id)
+    quiz_rows = lesson_quiz_rows_from_page(page.text, dest_lesson_id)
+    problem_initial = int(input_value_from_page(page.text, f"problems_{dest_lesson_id}-INITIAL_FORMS", str(len(problem_rows))) or str(len(problem_rows)))
+    quiz_initial = int(input_value_from_page(page.text, f"quizzes_{dest_lesson_id}-INITIAL_FORMS", str(len(quiz_rows))) or str(len(quiz_rows)))
+    existing_problem_ids = {str(row.get("problem")) for row in problem_rows}
+    existing_quiz_ids = {str(row.get("quiz")) for row in quiz_rows}
+    for row in source_problems:
+        problem_id = str(row.get("problem") or "")
+        if not problem_id or problem_id in existing_problem_ids:
+            continue
+        problem_rows.append(
+            {
+                "id": "",
+                "lesson": str(dest_lesson_id),
+                "problem": problem_id,
+                "score": str(row.get("score") or "100"),
+                "order": str(row.get("order") or len(problem_rows)),
+                "delete": False,
+            }
+        )
+        existing_problem_ids.add(problem_id)
+    for row in source_quizzes:
+        quiz_id = str(row.get("quiz") or "")
+        if not quiz_id or quiz_id in existing_quiz_ids:
+            continue
+        quiz_rows.append(
+            {
+                "id": "",
+                "lesson": str(dest_lesson_id),
+                "quiz": quiz_id,
+                "points": str(row.get("points") or "0"),
+                "max_attempts": str(row.get("max_attempts") or "0"),
+                "order": str(row.get("order") or len(quiz_rows)),
+                "is_visible": bool(row.get("is_visible")),
+                "delete": False,
+            }
+        )
+        existing_quiz_ids.add(quiz_id)
+    data = append_lesson_problem_formset(base_data, dest_lesson_id, problem_rows, problem_initial)
+    data = append_lesson_quiz_formset(data, dest_lesson_id, quiz_rows, quiz_initial)
+    result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=60)
     if not result.ok:
-        raise RuntimeError(f"Clone lesson {lesson_id} lỗi HTTP {result.status_code}")
+        raise RuntimeError(f"Lưu danh sách bài/quiz lesson {dest_lesson_id} lỗi HTTP {result.status_code}")
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError("Form clone lesson báo lỗi:\n" + "\n".join(errors))
+        raise RuntimeError("Form sửa lesson báo lỗi:\n" + "\n".join(errors))
+
+
+def clone_hncode_lesson_native(session: requests.Session, source_course: str, lesson_id: str, title: str, dest_course_slug: str, dest_course_id: str) -> str:
+    source_edit_url = hncode_course_page_url(source_course, f"/edit_lessons_new/{lesson_id}")
+    source_page = session.get(source_edit_url, timeout=30)
+    if not source_page.ok:
+        raise RuntimeError(f"Không mở được form sửa lesson nguồn {lesson_id}: HTTP {source_page.status_code}")
+    title = input_value_from_page(source_page.text, "title", title) or title
+    points = input_value_from_page(source_page.text, "points", "100") or "100"
+    content = textarea_value(source_page.text, "content")
+    order = input_value_from_page(source_page.text, "order", "")
+    create_url = hncode_course_page_url(dest_course_slug, "/lesson/create")
+    page = session.get(create_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được form tạo lesson ở course đích {dest_course_slug}: HTTP {page.status_code}")
+    form_data = collect_form_with_field(page.text, "title")
+    if not form_data:
+        raise RuntimeError(f"Không tìm thấy form tạo lesson ở course đích {dest_course_slug}.")
+    data = replace_form_fields(
+        form_data,
+        {"title": title, "points": points, "content": content, "order": order},
+        remove_names={"is_visible"},
+    )
+    if input_checked(source_page.text, "is_visible"):
+        data.append(("is_visible", "on"))
+    result = session.post(create_url, data=data, headers={"Referer": create_url}, allow_redirects=True, timeout=60)
+    if not result.ok:
+        raise RuntimeError(f"Tạo lesson {lesson_id} ở course đích lỗi HTTP {result.status_code}")
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if errors:
+        raise RuntimeError("Form tạo lesson báo lỗi:\n" + "\n".join(errors))
     link = find_hncode_course_lesson_url(session, dest_course_slug, title)
     if not link:
-        raise RuntimeError(f"Clone lesson {lesson_id} xong nhung chua thay lesson moi trong course dich {dest_course_slug}.")
+        raise RuntimeError(f"Tạo lesson {lesson_id} xong nhung chua thay lesson moi trong course dich {dest_course_slug}.")
+    match = re.search(r"/lesson/(\d+)", link)
+    if not match:
+        raise RuntimeError(f"Không đọc được ID lesson mới từ link {link}.")
+    copy_hncode_lesson_items(session, dest_course_slug, match.group(1), source_page.text, lesson_id)
     return link
 
 
+def hncode_contest_edit_problem_rows(page: str) -> list[dict]:
+    total = int(input_value_from_page(page, "rows-TOTAL_FORMS", "0") or "0")
+    rows: list[dict] = []
+    for index in range(total):
+        problem_id = selected_option_value(page, f"rows-{index}-problem", "") or input_value_from_page(page, f"rows-{index}-problem", "")
+        if not problem_id:
+            continue
+        rows.append(
+            {
+                "problem": problem_id,
+                "points": input_value_from_page(page, f"rows-{index}-points", "100") or "100",
+                "order": input_value_from_page(page, f"rows-{index}-order", str(index + 1)) or str(index + 1),
+            }
+        )
+    return rows
+
+
 def clone_hncode_contest_native(session: requests.Session, contest_key: str, new_key: str, dest_course_slug: str, dest_course_id: str) -> str:
-    clone_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/clone")
-    page = session.get(clone_url, timeout=30)
+    source_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/edit")
+    source_page = session.get(source_url, timeout=30)
+    if not source_page.ok:
+        raise RuntimeError(f"Không mở được form sửa contest nguồn {contest_key}: HTTP {source_page.status_code}")
+    name = input_value_from_page(source_page.text, "name", contest_key) or contest_key
+    start_time = input_value_from_page(source_page.text, "start_time", "")
+    end_time = input_value_from_page(source_page.text, "end_time", "")
+    problem_rows = hncode_contest_edit_problem_rows(source_page.text)
+    if not problem_rows:
+        raise RuntimeError(f"Contest nguồn {contest_key} không có bài để clone.")
+    add_url = hncode_course_page_url(dest_course_slug, "/add_contest")
+    page = session.get(add_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"Không mở được form clone contest {contest_key}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được form thêm contest vào course đích {dest_course_slug}: HTTP {page.status_code}")
     form_data = collect_form_with_field(page.text, "key")
     if not form_data:
-        raise RuntimeError(f"Không tìm thấy form clone contest {contest_key}.")
+        raise RuntimeError(f"Không tìm thấy form thêm contest vào course đích {dest_course_slug}.")
     data = replace_form_fields(
         form_data,
-        {"key": new_key, "target_type": "course", "course": str(dest_course_id)},
-        remove_names={"organization"},
+        {
+            "points": "1000",
+            "key": new_key,
+            "name": name,
+            "start_time": start_time,
+            "end_time": end_time,
+        },
+        remove_names={"problems"},
     )
-    result = session.post(clone_url, data=data, headers={"Referer": clone_url}, allow_redirects=True, timeout=90)
+    for row in sorted(problem_rows, key=lambda item: int(str(item.get("order") or "0")) if str(item.get("order") or "0").isdigit() else 0):
+        data.append(("problems", str(row["problem"])))
+    result = session.post(add_url, data=data, headers={"Referer": add_url}, allow_redirects=True, timeout=90)
     if not result.ok:
-        raise RuntimeError(f"Clone contest {contest_key} lỗi HTTP {result.status_code}")
+        raise RuntimeError(f"Tạo contest {new_key} trong course đích lỗi HTTP {result.status_code}")
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError("Form clone contest báo lỗi:\n" + "\n".join(errors))
+        raise RuntimeError("Form thêm contest vào course báo lỗi:\n" + "\n".join(errors))
     link = find_hncode_course_contest_url(session, dest_course_slug, new_key)
     if not link:
-        raise RuntimeError(f"Clone contest {contest_key} xong nhung chua thay contest {new_key} trong course dich {dest_course_slug}.")
+        raise RuntimeError(f"Tạo contest {new_key} xong nhung chua thay trong course dich {dest_course_slug}.")
     return link
 
 
