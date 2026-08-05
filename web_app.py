@@ -2165,6 +2165,12 @@ document.getElementById("contestDest").addEventListener("change", checkContestLo
 document.getElementById("contestCodes").addEventListener("blur", checkContestLogins);
 document.getElementById("createContestTarget").addEventListener("change", checkCreateContestLogin);
 document.getElementById("lessonCopySource").addEventListener("change", checkLessonCopyLogin);
+document.getElementById("lessonCopyContestUrl").addEventListener("blur", () => {
+  const value = document.getElementById("lessonCopyContestUrl").value.toLowerCase();
+  if (value.includes("hnoj.edu.vn")) document.getElementById("lessonCopySource").value = "hnoj";
+  if (value.includes("hncode.edu.vn") || value.includes("oj.hncode.edu.vn")) document.getElementById("lessonCopySource").value = "hncode";
+  checkLessonCopyLogin();
+});
 renderLanguages();
 renderSingleLanguages();
 renderTransferLanguages();
@@ -3590,11 +3596,12 @@ def api_confirm_course_clone():
 @app.post("/api/prepare-contest-to-lesson")
 def api_prepare_contest_to_lesson():
     payload = request.get_json(force=True)
-    source = payload.get("source", "hncode")
+    contest_url_value = payload.get("contest_url", "")
+    source = contest_lesson_source_from_url(payload.get("source", "hncode"), contest_url_value)
     source_account = payload.get("source_account", {})
     account = payload.get("account", {})
     try:
-        contest_key = extract_hncode_contest_key(payload.get("contest_url", ""))
+        contest_key = extract_hncode_contest_key(contest_url_value)
         course_slug, lesson_id = extract_hncode_lesson_ref(payload.get("lesson_url", ""))
         dst_session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
         if source == "hnoj":
@@ -6429,6 +6436,15 @@ def extract_hncode_contest_key(value: str) -> str:
     if re.fullmatch(r"[A-Za-z0-9_-]+", value):
         return value
     raise RuntimeError("Không đọc được mã contest. Hãy nhập URL dạng https://oj.hncode.edu.vn/contest/<ma_contest>.")
+
+
+def contest_lesson_source_from_url(source: str, contest_url_value: str) -> str:
+    text = (contest_url_value or "").strip().lower()
+    if "hnoj.edu.vn" in text:
+        return "hnoj"
+    if "hncode.edu.vn" in text or "oj.hncode.edu.vn" in text:
+        return "hncode"
+    return source if source in {"hncode", "hnoj"} else "hncode"
 
 
 def extract_hncode_lesson_ref(value: str) -> tuple[str, str]:
