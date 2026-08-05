@@ -3722,7 +3722,7 @@ def api_confirm_contest_to_lesson():
                             zip_path,
                             cases,
                             {"upload_statement": True, "upload_tests": True},
-                            list(LANGUAGES_BY_TARGET["hncode"].keys()),
+                            list(TARGETS["hncode"]["languages"].values()),
                             log_lines,
                         )
                     except ProblemAlreadyExists:
