@@ -1764,14 +1764,15 @@ PAGE = r"""
       </div>
 
       <div class="panel" id="panel-contest-lesson-copy">
-        <h2>Sao chép bài từ Contest HNCode → Lesson HNCode</h2>
-        <p>Lấy danh sách bài theo đúng thứ tự trong contest HNCode, rồi thêm vào lesson HNCode. Bài đã có trong lesson sẽ được báo rõ và bỏ qua.</p>
+        <h2>Sao chép bài từ Contest → Lesson HNCode</h2>
+        <p>Lấy danh sách bài theo đúng thứ tự trong contest HNCode/HNOJ, chuyển bài thiếu sang HNCode nếu cần, rồi thêm vào lesson HNCode. Bài đã có trong lesson sẽ được báo rõ và bỏ qua.</p>
         <div class="grid-2">
-          <div><label>HNCode user</label><input id="lessonCopyUserMirror" type="text" value="hncode" readonly><span id="lessonCopyLogin" class="login-badge">Chưa kiểm tra</span></div>
-          <div><label>Lesson đích</label><input id="lessonCopyLessonUrl" type="text" value="https://oj.hncode.edu.vn/course/dutuyenams26/lesson/2947"></div>
+          <div><label>Nguồn contest</label><select id="lessonCopySource"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select><span id="lessonCopySourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Lesson đích</label><input id="lessonCopyLessonUrl" type="text" value="https://hncode.edu.vn/course/26nc202/lesson/3073"></div>
         </div>
+        <div><label>HNCode đích</label><input id="lessonCopyUserMirror" type="text" value="hncode" readonly><span id="lessonCopyLogin" class="login-badge">Chưa kiểm tra</span></div>
         <label>Contest nguồn</label>
-        <input id="lessonCopyContestUrl" type="text" value="https://oj.hncode.edu.vn/contest/dpmarathon">
+        <input id="lessonCopyContestUrl" type="text" value="https://hnoj.edu.vn/contest/ctp_4">
         <div class="actions">
           <button class="action primary" type="button" id="prepareContestLessonCopy">Chuẩn bị dữ liệu</button>
           <button class="action primary" type="button" id="confirmContestLessonCopy" disabled>Sao chép bài</button>
@@ -2163,6 +2164,7 @@ document.getElementById("contestSource").addEventListener("change", checkContest
 document.getElementById("contestDest").addEventListener("change", checkContestLogins);
 document.getElementById("contestCodes").addEventListener("blur", checkContestLogins);
 document.getElementById("createContestTarget").addEventListener("change", checkCreateContestLogin);
+document.getElementById("lessonCopySource").addEventListener("change", checkLessonCopyLogin);
 renderLanguages();
 renderSingleLanguages();
 renderTransferLanguages();
@@ -2249,7 +2251,9 @@ function checkQuizLogin() {
 }
 function checkLessonCopyLogin() {
   document.getElementById("lessonCopyUserMirror").value = accountFields.hncode_user.value || "hncode";
-  checkHncodeOjLogin("lessonCopyLogin");
+  const source = document.getElementById("lessonCopySource").value;
+  checkLogin(source, "lessonCopySourceLogin");
+  checkLogin("hncode", "lessonCopyLogin");
 }
 function checkCourseCloneLogin() {
   document.getElementById("courseCloneUserMirror").value = accountFields.hncode_user.value || "hncode";
@@ -2715,7 +2719,10 @@ document.getElementById("prepareContestLessonCopy").onclick = async () => {
     status("running");
     log("Đang đọc danh sách bài trong contest và lesson đích...");
     saveAccounts();
+    const source = document.getElementById("lessonCopySource").value;
     const data = await postJson("/api/prepare-contest-to-lesson", {
+      source,
+      source_account: accountPayload(source),
       account: accountPayload("hncode"),
       contest_url: document.getElementById("lessonCopyContestUrl").value.trim(),
       lesson_url: document.getElementById("lessonCopyLessonUrl").value.trim(),
@@ -2741,8 +2748,10 @@ document.getElementById("confirmContestLessonCopy").onclick = async () => {
     log("Đang sao chép bài vào lesson HNCode...");
     markRowsProcessing("#contestLessonCopyTable", "Đang thêm...");
     saveAccounts();
+    const source = document.getElementById("lessonCopySource").value;
     const res = await fetch("/api/confirm-contest-to-lesson", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
       prepare_id: preparedContestLessonCopy,
+      source_account: accountPayload(source),
       account: accountPayload("hncode"),
       rows: collectContestLessonCopyRows(),
     })});
@@ -2776,7 +2785,7 @@ function renderContestLessonCopyTable(rows) {
     <tbody>${rows.map(row => `<tr data-code="${escapeHtml(row.code)}">
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.problem_id ? "" : "disabled"}></td>
       <td>${escapeHtml(row.index || "")}</td>
-      <td><a class="problem-link" href="https://oj.hncode.edu.vn/problem/${escapeHtml(row.code)}" target="_blank" rel="noopener">${escapeHtml(row.code)}</a></td>
+      <td><a class="problem-link" href="https://hncode.edu.vn/problem/${escapeHtml(row.code)}" target="_blank" rel="noopener">${escapeHtml(row.code)}</a></td>
       <td>${escapeHtml(row.title || "")}</td>
       <td><input type="text" class="row-score" value="${escapeHtml(row.score || "100")}"></td>
       <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}</td>
@@ -3581,27 +3590,37 @@ def api_confirm_course_clone():
 @app.post("/api/prepare-contest-to-lesson")
 def api_prepare_contest_to_lesson():
     payload = request.get_json(force=True)
+    source = payload.get("source", "hncode")
+    source_account = payload.get("source_account", {})
     account = payload.get("account", {})
     try:
         contest_key = extract_hncode_contest_key(payload.get("contest_url", ""))
         course_slug, lesson_id = extract_hncode_lesson_ref(payload.get("lesson_url", ""))
-        session = login_hncode(QUIZ_BASE_URL, account.get("username", ""), account.get("password", ""))
-        contest_rows = hncode_contest_problem_rows(session, contest_key)
-        lesson_page = session.get(hncode_lesson_edit_url(course_slug, lesson_id), timeout=30)
+        dst_session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+        if source == "hnoj":
+            src_session = login_hncode(TARGETS["hnoj"]["base_url"], source_account.get("username", ""), source_account.get("password", ""))
+            contest_rows = hnoj_contest_problem_rows(src_session, contest_key)
+            source_label = "HNOJ"
+        else:
+            contest_rows = hncode_contest_problem_rows(dst_session, contest_key)
+            source_label = "HNCode"
+        lesson_page = dst_session.get(hncode_lesson_edit_url(course_slug, lesson_id), timeout=30)
         if not lesson_page.ok:
             raise RuntimeError(f"Không mở được lesson đích: HTTP {lesson_page.status_code}")
         existing_ids = {row["problem"] for row in lesson_problem_rows_from_page(lesson_page.text, lesson_id)}
         rows = []
         log_lines = [
-            "Chuẩn bị sao chép bài HNCode Contest → Lesson",
+            f"Chuẩn bị sao chép bài {source_label} Contest → Lesson HNCode",
             f"Contest: {contest_key}",
             f"Lesson: {hncode_lesson_url(course_slug, lesson_id)}",
         ]
         for item in contest_rows:
-            problem_id = admin_problem_id(session, QUIZ_BASE_URL, item["code"])
+            source_code = item["code"]
+            dest_code = normalize_problem_code_for_target(source_code, "hncode")
+            problem_id = admin_problem_id(dst_session, TARGETS["hncode"]["base_url"], dest_code)
             if not problem_id:
-                status_text = "✗ Không tìm thấy bài trong admin"
-                selected = False
+                status_text = "Thiếu trên HNCode, sẽ chuyển khi xác nhận" if source == "hnoj" else "✗ Không tìm thấy bài trong admin HNCode"
+                selected = source == "hnoj"
             elif problem_id in existing_ids:
                 status_text = "Đã có trong lesson"
                 selected = False
@@ -3610,7 +3629,8 @@ def api_prepare_contest_to_lesson():
                 selected = True
             row = {
                 "index": item["order"],
-                "code": item["code"],
+                "source_code": source_code,
+                "code": dest_code,
                 "title": item["title"],
                 "score": item["points"],
                 "problem_id": problem_id or "",
@@ -3618,14 +3638,18 @@ def api_prepare_contest_to_lesson():
                 "status": status_text,
             }
             rows.append(row)
-            log_lines.append(f"{item['order']}. {item['code']} - {item['title']} - {status_text}")
+            log_lines.append(f"{item['order']}. {source_code} → {dest_code} - {item['title']} - {status_text}")
         prepare_id = uuid.uuid4().hex
+        root = RUNTIME / ("contest_lesson_copy_" + prepare_id)
+        root.mkdir(parents=True, exist_ok=True)
         prepared_lesson_copies[prepare_id] = {
             "created_at": time.time(),
+            "source": source,
             "contest_key": contest_key,
             "course_slug": course_slug,
             "lesson_id": lesson_id,
             "rows": rows,
+            "root": root,
         }
         return jsonify(
             {
@@ -3645,6 +3669,7 @@ def api_prepare_contest_to_lesson():
 def api_confirm_contest_to_lesson():
     payload = request.get_json(force=True)
     account = payload.get("account", {})
+    source_account = payload.get("source_account", {})
     prepare_id = payload.get("prepare_id", "")
     state = prepared_lesson_copies.get(prepare_id)
     if not state:
@@ -3654,11 +3679,15 @@ def api_confirm_contest_to_lesson():
         requested_rows = payload.get("rows", [])
         selected_refs = []
         result_rows = []
+        source = state.get("source", "hncode")
+        source_label = "HNOJ" if source == "hnoj" else "HNCode"
         log_lines = [
-            "Sao chép bài từ Contest HNCode → Lesson HNCode",
+            f"Sao chép bài từ Contest {source_label} → Lesson HNCode",
             f"Contest: {state['contest_key']}",
             f"Lesson: {hncode_lesson_url(state['course_slug'], state['lesson_id'])}",
         ]
+        dst_session = None
+        src_session = None
         for requested in requested_rows:
             code = requested.get("code", "")
             base = dict(rows_by_code.get(code, requested))
@@ -3666,18 +3695,43 @@ def api_confirm_contest_to_lesson():
             base["score"] = str(requested.get("score") or base.get("score") or "100")
             if not base["selected"]:
                 base["status"] = "Bỏ qua"
-            elif not base.get("problem_id"):
-                base["status"] = "✗ Không tìm thấy bài trong admin"
             elif "Đã có" in str(rows_by_code.get(code, {}).get("status", "")):
                 base["status"] = "Đã có trong lesson"
             else:
-                selected_refs.append(base)
-                base["status"] = "Đang thêm..."
+                if not dst_session:
+                    dst_session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+                if not base.get("problem_id") and source == "hnoj":
+                    if not src_session:
+                        src_session = login_hncode(TARGETS["hnoj"]["base_url"], source_account.get("username", ""), source_account.get("password", ""))
+                    source_code = base.get("source_code") or code
+                    log_lines.append(f"Đang chuyển {source_code} sang HNCode...")
+                    try:
+                        info, zip_path, cases, _attachments = fetch_source_problem(src_session, TARGETS["hnoj"]["base_url"], source_code, state["root"])
+                        upload_transfer_to_dmoj(
+                            dst_session,
+                            "hncode",
+                            code,
+                            info,
+                            zip_path,
+                            cases,
+                            {"upload_statement": True, "upload_tests": True},
+                            list(LANGUAGES_BY_TARGET["hncode"].keys()),
+                            log_lines,
+                        )
+                    except ProblemAlreadyExists:
+                        log_lines.append(f"{code}: bài đã có trên HNCode, dùng lại bài hiện có.")
+                    base["problem_id"] = admin_problem_id(dst_session, TARGETS["hncode"]["base_url"], code) or ""
+                if not base.get("problem_id"):
+                    base["status"] = "✗ Không tìm thấy bài trong admin HNCode"
+                else:
+                    selected_refs.append(base)
+                    base["status"] = "Đang thêm..."
             result_rows.append(base)
         link = hncode_lesson_url(state["course_slug"], state["lesson_id"])
         if selected_refs:
-            session = login_hncode(QUIZ_BASE_URL, account.get("username", ""), account.get("password", ""))
-            link = copy_hncode_contest_to_lesson(session, state["course_slug"], state["lesson_id"], selected_refs)
+            if not dst_session:
+                dst_session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+            link = copy_hncode_contest_to_lesson(dst_session, state["course_slug"], state["lesson_id"], selected_refs)
             added_ids = {str(row.get("problem_id")) for row in selected_refs}
             for row in result_rows:
                 if str(row.get("problem_id")) in added_ids and row.get("selected"):
@@ -6388,15 +6442,15 @@ def extract_hncode_lesson_ref(value: str) -> tuple[str, str]:
 
 
 def hncode_lesson_url(course_slug: str, lesson_id: str) -> str:
-    return urljoin(QUIZ_BASE_URL, f"/course/{course_slug}/lesson/{lesson_id}")
+    return urljoin(TARGETS["hncode"]["base_url"], f"/course/{course_slug}/lesson/{lesson_id}")
 
 
 def hncode_lesson_edit_url(course_slug: str, lesson_id: str) -> str:
-    return urljoin(QUIZ_BASE_URL, f"/course/{course_slug}/edit_lessons_new/{lesson_id}")
+    return urljoin(TARGETS["hncode"]["base_url"], f"/course/{course_slug}/edit_lessons_new/{lesson_id}")
 
 
 def hncode_contest_problem_rows(session, contest_key: str) -> list[dict]:
-    problems_url = urljoin(QUIZ_BASE_URL, f"/contest/{contest_key}/problems")
+    problems_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/problems")
     page = session.get(problems_url, timeout=30)
     if not page.ok:
         raise RuntimeError(f"Không mở được danh sách bài contest HNCode: HTTP {page.status_code}")
@@ -6417,6 +6471,76 @@ def hncode_contest_problem_rows(session, contest_key: str) -> list[dict]:
         rows.append({"code": code, "title": title, "points": points or "100", "order": len(rows) + 1})
     if not rows:
         raise RuntimeError(f"Không tìm thấy bài nào trong contest {contest_key}.")
+    return rows
+
+
+def source_problem_title(session: requests.Session, base_url: str, code: str) -> str:
+    page = session.get(urljoin(base_url, f"/problem/{code}/edit"), timeout=30)
+    if page.ok:
+        title = input_value(page.text, "name", "")
+        if title:
+            return title
+    public = session.get(urljoin(base_url, f"/problem/{code}"), timeout=30)
+    if public.ok:
+        match = re.search(r"<h1\b[^>]*>(.*?)</h1>", public.text, re.S | re.I)
+        if match:
+            title = strip_html_text(match.group(1))
+            if title:
+                return title
+    return code
+
+
+def hnoj_contest_problem_rows(session: requests.Session, contest_key: str) -> list[dict]:
+    page = session.get(contest_url(TARGETS["hnoj"]["base_url"], contest_key), timeout=30)
+    if page.ok:
+        rows: list[dict] = []
+        seen: set[str] = set()
+        for row_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", page.text, re.S | re.I):
+            link_match = re.search(r'<a\b[^>]*href=["\']/problem/([A-Za-z0-9_-]+)["\'][^>]*>(.*?)</a>', row_html, re.S | re.I)
+            if not link_match:
+                continue
+            code = html.unescape(link_match.group(1)).strip()
+            if not code or code in seen:
+                continue
+            seen.add(code)
+            title = strip_html_text(link_match.group(2)) or code
+            cells = re.findall(r"<td\b[^>]*>(.*?)</td>", row_html, re.S | re.I)
+            points = strip_html_text(cells[-1]) if cells else "100"
+            rows.append({"code": code, "title": title, "points": points or "100", "order": len(rows) + 1})
+        if rows:
+            return rows
+    try:
+        info = fetch_contest_info(session, TARGETS["hnoj"]["base_url"], contest_key)
+    except Exception:
+        codes = public_contest_problem_codes(session, TARGETS["hnoj"]["base_url"], contest_key)
+        rows = [
+            {
+                "code": code,
+                "title": source_problem_title(session, TARGETS["hnoj"]["base_url"], code),
+                "points": "100",
+                "order": index,
+            }
+            for index, code in enumerate(codes, 1)
+        ]
+        if rows:
+            return rows
+        raise
+    rows: list[dict] = []
+    for index, item in enumerate(info.get("problems", []), 1):
+        code = item.get("code", "")
+        if not code:
+            continue
+        order_value = item.get("order") or index
+        rows.append(
+            {
+                "code": code,
+                "title": source_problem_title(session, TARGETS["hnoj"]["base_url"], code),
+                "points": item.get("points") or "100",
+                "order": int(order_value) if str(order_value).isdigit() else index,
+            }
+        )
+    if not rows:
+        raise RuntimeError(f"Không tìm thấy bài nào trong contest HNOJ {contest_key}.")
     return rows
 
 
