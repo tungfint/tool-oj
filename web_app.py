@@ -3738,13 +3738,24 @@ def api_confirm_contest_to_lesson():
         if selected_refs:
             if not dst_session:
                 dst_session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
-            link = copy_hncode_contest_to_lesson(dst_session, state["course_slug"], state["lesson_id"], selected_refs)
-            added_ids = {str(row.get("problem_id")) for row in selected_refs}
+            added_ids: set[str] = set()
+            failed_by_id: dict[str, str] = {}
+            for ref in selected_refs:
+                problem_id = str(ref.get("problem_id") or ref.get("id") or "")
+                try:
+                    link = copy_hncode_contest_to_lesson(dst_session, state["course_slug"], state["lesson_id"], [ref])
+                    added_ids.add(problem_id)
+                except Exception as item_exc:
+                    failed_by_id[problem_id] = str(item_exc)
             for row in result_rows:
                 if str(row.get("problem_id")) in added_ids and row.get("selected"):
                     row["status"] = "✓ Đã thêm"
                     row["link"] = link
                     log_lines.append(f"✓ {row['code']}: đã thêm vào lesson.")
+                elif str(row.get("problem_id")) in failed_by_id and row.get("selected"):
+                    row["status"] = "✗ Lỗi"
+                    row["error"] = failed_by_id[str(row.get("problem_id"))]
+                    log_lines.append(f"✗ {row.get('code')}: {row['error']}")
                 elif row["status"] == "Bỏ qua":
                     log_lines.append(f"- {row.get('code')}: bỏ qua.")
                 elif row["status"] == "Đã có trong lesson":
@@ -6465,6 +6476,20 @@ def hncode_lesson_edit_url(course_slug: str, lesson_id: str) -> str:
     return urljoin(TARGETS["hncode"]["base_url"], f"/course/{course_slug}/edit_lessons_new/{lesson_id}")
 
 
+def contest_lesson_score(value: str, default: str = "100") -> str:
+    text = strip_html_text(value)
+    match = re.search(r"\d+(?:[.,]\d+)?", text)
+    if not match:
+        return default
+    parsed = match.group(0).replace(",", ".")
+    try:
+        if float(parsed) > 1000:
+            return default
+    except ValueError:
+        return default
+    return parsed
+
+
 def hncode_contest_problem_rows(session, contest_key: str) -> list[dict]:
     problems_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/problems")
     page = session.get(problems_url, timeout=30)
@@ -6473,18 +6498,41 @@ def hncode_contest_problem_rows(session, contest_key: str) -> list[dict]:
     rows: list[dict] = []
     seen: set[str] = set()
     for row_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", page.text, re.S | re.I):
-        code_match = re.search(r'href=["\']/problem/([A-Za-z0-9_-]+)["\']', row_html)
+        code_match = re.search(
+            r'href=["\'](?:/problem/|/contest/' + re.escape(contest_key) + r'/problems/)([A-Za-z0-9_-]+)["\']',
+            row_html,
+            re.I,
+        )
         if not code_match:
             continue
         code = html.unescape(code_match.group(1)).strip()
         if not code or code in seen:
             continue
         seen.add(code)
-        anchor_match = re.search(r'<a\b[^>]*href=["\']/problem/' + re.escape(code) + r'["\'][^>]*>(.*?)</a>', row_html, re.S | re.I)
+        anchor_match = re.search(
+            r'<a\b[^>]*href=["\'](?:/problem/|/contest/' + re.escape(contest_key) + r'/problems/)' + re.escape(code) + r'["\'][^>]*>(.*?)</a>',
+            row_html,
+            re.S | re.I,
+        )
         title = strip_html_text(anchor_match.group(1)) if anchor_match else code
         cells = re.findall(r"<td\b[^>]*>(.*?)</td>", row_html, re.S | re.I)
-        points = strip_html_text(cells[1]) if len(cells) > 1 else "100"
+        points = contest_lesson_score(cells[1], "1") if len(cells) > 1 else "100"
         rows.append({"code": code, "title": title, "points": points or "100", "order": len(rows) + 1})
+    if not rows:
+        ranking = session.get(urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/ranking/"), timeout=30)
+        if ranking.ok:
+            for th_html in re.findall(r"<th\b[^>]*\bproblem-score-col\b[^>]*>(.*?)</th>", ranking.text, re.S | re.I):
+                code_match = re.search(r'<div\b[^>]*class=["\']problem-code["\'][^>]*>(.*?)</div>', th_html, re.S | re.I)
+                href_match = re.search(r'href=["\']/problem/([A-Za-z0-9_-]+)["\']', th_html, re.I)
+                code = strip_html_text(code_match.group(1)) if code_match else (html.unescape(href_match.group(1)).strip() if href_match else "")
+                if not code or code in seen:
+                    continue
+                seen.add(code)
+                title_match = re.search(r'title=["\']([^"\']+)["\']', th_html, re.S | re.I)
+                title = html.unescape(title_match.group(1)).strip() if title_match else code
+                max_match = re.search(r'<div\b[^>]*class=["\']point-denominator["\'][^>]*>(.*?)</div>', th_html, re.S | re.I)
+                points = contest_lesson_score(max_match.group(1), "100") if max_match else "100"
+                rows.append({"code": code, "title": title, "points": points, "order": len(rows) + 1})
     if not rows:
         raise RuntimeError(f"Không tìm thấy bài nào trong contest {contest_key}.")
     return rows
@@ -6630,14 +6678,16 @@ def copy_hncode_contest_to_lesson(session, course_slug: str, lesson_id: str, pro
     form_data = collect_lesson_form_data(page.text, lesson_id)
     if not form_data:
         raise RuntimeError("Không tìm thấy form danh sách bài trong lesson HNCode.")
-    base_data = remove_lesson_problem_fields(form_data, lesson_id)
+    base_data = remove_lesson_item_fields(form_data, lesson_id)
     current_rows = lesson_problem_rows_from_page(page.text, lesson_id)
+    quiz_rows = lesson_quiz_rows_from_page(page.text, lesson_id)
     initial_forms = int(input_value_from_page(page.text, f"problems_{lesson_id}-INITIAL_FORMS", str(len(current_rows))) or str(len(current_rows)))
+    quiz_initial = int(input_value_from_page(page.text, f"quizzes_{lesson_id}-INITIAL_FORMS", str(len(quiz_rows))) or str(len(quiz_rows)))
     existing_problem_ids = {str(row.get("problem")) for row in current_rows if row.get("problem")}
-    next_order = 0
+    next_order = 1
     if current_rows:
         order_values = [int(str(row.get("order") or "0")) for row in current_rows if str(row.get("order") or "0").isdigit()]
-        next_order = (max(order_values) + 1) if order_values else len(current_rows)
+        next_order = (max(order_values) + 1) if order_values else len(current_rows) + 1
     added = 0
     for ref in problem_refs:
         problem_id = str(ref.get("problem_id") or ref.get("id") or "")
@@ -6658,6 +6708,7 @@ def copy_hncode_contest_to_lesson(session, course_slug: str, lesson_id: str, pro
     if added == 0:
         return hncode_lesson_url(course_slug, lesson_id)
     data = append_lesson_problem_formset(base_data, lesson_id, current_rows, initial_forms)
+    data = append_lesson_quiz_formset(data, lesson_id, quiz_rows, quiz_initial)
     result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=60)
     RUNTIME.mkdir(parents=True, exist_ok=True)
     debug_post = RUNTIME / "hncode_lesson_copy_last_post.html"
