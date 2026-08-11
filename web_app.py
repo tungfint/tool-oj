@@ -27,6 +27,8 @@ from http.cookies import SimpleCookie
 
 from flask import Flask, Response, jsonify, render_template_string, request, send_file
 
+from services import hncode as hncode_service
+
 from transfer_tinhoctre_to_hncode import (
     ProblemInfo,
     checkbox_checked,
@@ -6013,36 +6015,20 @@ def admin_contest_change_url(session, base_url: str, key: str) -> str | None:
 
 
 def admin_problem_id(session, base_url: str, code: str) -> str | None:
-    page = session.get(urljoin(base_url, "/admin/judge/problem/"), params={"q": code})
-    if not page.ok:
-        return None
-    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", page.text, re.S):
-        code_match = re.search(r'<th class="field-code">\s*<a href="/admin/judge/problem/(\d+)/change/[^"]*">\s*([^<]+)\s*</a>', row)
-        if code_match and html.unescape(code_match.group(2)).strip() == code:
-            return code_match.group(1)
-    return None
+    return hncode_service.find_problem_admin_id(session, base_url, code)
 
 
 def public_contest_problem_codes(session, base_url: str, key: str) -> list[str]:
-    page = session.get(contest_url(base_url, key))
-    if not page.ok:
-        return []
-    rows = extract_contest_problem_rows_from_html(page.text, key, "100")
-    codes: list[str] = [row["code"] for row in rows]
-    if not codes:
-        for code in re.findall(r"(?:/problem/|/contest/" + re.escape(key) + r"/problems/)([A-Za-z0-9_-]+)", page.text):
-            if code not in codes:
-                codes.append(code)
-    return codes
+    return [row["code"] for row in public_contest_problem_rows(session, base_url, key)]
 
 
 def public_contest_problem_rows(session, base_url: str, key: str) -> list[dict]:
+    rows = hncode_service.list_contest_problems(session, base_url, key, default_points="100")
+    if rows:
+        return rows
     page = session.get(contest_url(base_url, key), timeout=30)
     if not page.ok:
         return []
-    rows = extract_contest_problem_rows_from_html(page.text, key, "100")
-    if rows:
-        return rows
     codes: list[str] = []
     for code in re.findall(r"(?:/problem/|/contest/" + re.escape(key) + r"/problems/)([A-Za-z0-9_-]+)", page.text):
         if code not in codes:
@@ -6595,68 +6581,15 @@ def hncode_lesson_edit_url(course_slug: str, lesson_id: str) -> str:
 
 
 def contest_lesson_score(value: str, default: str = "100") -> str:
-    text = strip_html_text(value)
-    match = re.search(r"\d+(?:[.,]\d+)?", text)
-    if not match:
-        return default
-    parsed = match.group(0).replace(",", ".")
-    try:
-        if float(parsed) > 1000:
-            return default
-    except ValueError:
-        return default
-    return parsed
+    return hncode_service.contest_lesson_score(value, default)
 
 
 def extract_contest_problem_rows_from_html(page: str, contest_key: str = "", default_points: str = "100") -> list[dict]:
-    rows: list[dict] = []
-    seen: set[str] = set()
-    if contest_key:
-        href_re = r'(?:/problem/|/contest/' + re.escape(contest_key) + r'/problems/)([A-Za-z0-9_-]+)'
-    else:
-        href_re = r'/problem/([A-Za-z0-9_-]+)'
-
-    for row_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", page, re.S | re.I):
-        link_match = re.search(r'<a\b[^>]*href=["\']' + href_re + r'["\'][^>]*>(.*?)</a>', row_html, re.S | re.I)
-        if not link_match:
-            continue
-        code = html.unescape(link_match.group(1)).strip()
-        if not code or code in seen:
-            continue
-        seen.add(code)
-        title = strip_html_text(link_match.group(2)) or code
-        cells = re.findall(r"<td\b[^>]*>(.*?)</td>", row_html, re.S | re.I)
-        points = contest_lesson_score(cells[-1], default_points) if cells else default_points
-        rows.append({"code": code, "title": title, "points": points, "order": len(rows) + 1})
-
-    if rows:
-        return rows
-
-    for th_html in re.findall(r"<th\b[^>]*\bproblem-score-col\b[^>]*>(.*?)</th>", page, re.S | re.I):
-        code_match = re.search(r'<div\b[^>]*class=["\']problem-code["\'][^>]*>(.*?)</div>', th_html, re.S | re.I)
-        href_match = re.search(r'href=["\']/problem/([A-Za-z0-9_-]+)["\']', th_html, re.I)
-        code = strip_html_text(code_match.group(1)) if code_match else (html.unescape(href_match.group(1)).strip() if href_match else "")
-        if not code or code in seen:
-            continue
-        seen.add(code)
-        title_match = re.search(r'title=["\']([^"\']+)["\']', th_html, re.S | re.I)
-        title = html.unescape(title_match.group(1)).strip() if title_match else code
-        max_match = re.search(r'<div\b[^>]*class=["\']point-denominator["\'][^>]*>(.*?)</div>', th_html, re.S | re.I)
-        points = contest_lesson_score(max_match.group(1), default_points) if max_match else default_points
-        rows.append({"code": code, "title": title, "points": points, "order": len(rows) + 1})
-    return rows
+    return hncode_service.extract_contest_problem_rows_from_html(page, contest_key, default_points)
 
 
 def hncode_contest_problem_rows(session, contest_key: str) -> list[dict]:
-    problems_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/problems")
-    page = session.get(problems_url, timeout=30)
-    if not page.ok:
-        raise RuntimeError(f"Không mở được danh sách bài contest HNCode: HTTP {page.status_code}")
-    rows = extract_contest_problem_rows_from_html(page.text, contest_key, "1")
-    if not rows:
-        ranking = session.get(urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/ranking/"), timeout=30)
-        if ranking.ok:
-            rows = extract_contest_problem_rows_from_html(ranking.text, contest_key, "100")
+    rows = hncode_service.list_contest_problems(session, TARGETS["hncode"]["base_url"], contest_key, default_points="1")
     if not rows:
         raise RuntimeError(f"Không tìm thấy bài nào trong contest {contest_key}.")
     return rows
@@ -6679,50 +6612,15 @@ def source_problem_title(session: requests.Session, base_url: str, code: str) ->
 
 
 def extract_problem_link_rows_from_html(page: str, default_points: str = "") -> list[dict]:
-    rows: list[dict] = []
-    seen: set[str] = set()
-    for match in re.finditer(r'<a\b[^>]*href=["\']/problem/([A-Za-z0-9_-]+)(?:/[^"\']*)?["\'][^>]*>(.*?)</a>', page, re.S | re.I):
-        code = html.unescape(match.group(1)).strip()
-        if not code or code in seen:
-            continue
-        seen.add(code)
-        title = strip_html_text(match.group(2)) or code
-        rows.append({"code": code, "title": title, "points": default_points, "order": len(rows) + 1})
-    return rows
+    return hncode_service.extract_problem_link_rows_from_html(page, default_points)
 
 
 def admin_problem_code_name_by_id(session: requests.Session, base_url: str, problem_id: str) -> tuple[str, str]:
-    page = session.get(urljoin(base_url, f"/admin/judge/problem/{problem_id}/change/"), timeout=30)
-    if not page.ok:
-        return "", ""
-    return input_value(page.text, "code", ""), input_value(page.text, "name", "")
+    return hncode_service.find_problem_code_name_by_id(session, base_url, problem_id)
 
 
 def hncode_lesson_problem_code_rows(session: requests.Session, course_slug: str, lesson_id: str) -> list[dict]:
-    page = session.get(hncode_lesson_url(course_slug, lesson_id), timeout=30)
-    if page.ok:
-        rows = extract_problem_link_rows_from_html(page.text, "")
-        if rows:
-            return rows
-    edit_page = session.get(hncode_lesson_edit_url(course_slug, lesson_id), timeout=30)
-    if not edit_page.ok:
-        raise RuntimeError(f"Không mở được lesson HNCode: HTTP {edit_page.status_code}")
-    rows: list[dict] = []
-    for item in lesson_problem_rows_from_page(edit_page.text, lesson_id):
-        problem_id = str(item.get("problem") or "")
-        if not problem_id:
-            continue
-        code, name = admin_problem_code_name_by_id(session, TARGETS["hncode"]["base_url"], problem_id)
-        if not code:
-            continue
-        rows.append(
-            {
-                "code": code,
-                "title": name or code,
-                "points": item.get("score") or "",
-                "order": len(rows) + 1,
-            }
-        )
+    rows = hncode_service.list_lesson_problems(session, TARGETS["hncode"]["base_url"], course_slug, lesson_id)
     if not rows:
         raise RuntimeError(f"Không tìm thấy bài nào trong lesson {course_slug}/lesson/{lesson_id}.")
     return rows
