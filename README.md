@@ -323,18 +323,52 @@ Sau khi tạo xong, người dùng có thể vào admin của web đích để c
 
 ## Tab Contest → Lesson
 
-Tab này sao chép danh sách bài từ một contest HNCode trên `https://oj.hncode.edu.vn` vào một lesson HNCode.
+Tab này sao chép danh sách bài từ một contest HNCode/HNOJ vào một lesson HNCode.
+
+HNCode hiện dùng domain chính `https://hncode.edu.vn`. Tool vẫn nhận link cũ `https://oj.hncode.edu.vn` ở một số ô nhập cũ, nhưng sẽ ưu tiên chuẩn hóa sang `https://hncode.edu.vn` khi xử lý bài/contest/lesson.
 
 Luồng sử dụng:
 
-1. Nhập URL contest nguồn, ví dụ `https://oj.hncode.edu.vn/contest/dpmarathon`.
-2. Nhập URL lesson đích, ví dụ `https://oj.hncode.edu.vn/course/dutuyenams26/lesson/2947`.
-3. Bấm `Chuẩn bị dữ liệu`.
-4. Bảng sẽ hiển thị từng bài theo đúng thứ tự trong contest, gồm STT, mã bài, tên bài, điểm lesson và trạng thái.
-5. Chọn/bỏ chọn từng bài, chỉnh điểm lesson nếu cần. Có thể nhập `Điểm chung` rồi bấm `Áp dụng điểm cho tất cả bài`.
-6. Bấm `Sao chép bài`.
+1. Chọn nguồn contest `HNCode` hoặc `HNOJ`. Nếu URL có `hnoj.edu.vn` hoặc `hncode.edu.vn`, backend sẽ tự nhận lại nguồn theo URL để tránh chọn nhầm.
+2. Nhập URL contest nguồn, ví dụ `https://hncode.edu.vn/contest/nt26exam01`.
+3. Nhập URL lesson đích, ví dụ `https://hncode.edu.vn/course/nt26_tuyen3/lesson/3123`.
+4. Bấm `Chuẩn bị dữ liệu`.
+5. Bảng sẽ hiển thị từng bài theo đúng thứ tự trong contest, gồm STT, mã bài, tên bài, điểm lesson và trạng thái.
+6. Chọn/bỏ chọn từng bài, chỉnh điểm lesson nếu cần. Có thể nhập `Điểm chung` rồi bấm `Áp dụng điểm cho tất cả bài`.
+7. Bấm `Sao chép bài`.
 
 Tool mở form sửa lesson `edit_lessons_new/<lesson_id>`, giữ nguyên nội dung lesson và quiz hiện có, chỉ thêm các problem còn thiếu vào cuối danh sách. Nếu bài đã có trong lesson, dòng đó báo `Đã có trong lesson` và bị bỏ qua để tránh trùng.
+
+Để chống thay đổi giao diện của HNCode, tool dùng parser chung cho contest và nhận các dạng link bài:
+
+- Link bài cũ: `/problem/<ma_bai>`.
+- Link bài contest mới: `/contest/<contest>/problems/<ma_bai>`.
+- Header bảng xếp hạng có `.problem-code`.
+
+Khi HNCode trả điểm contest dạng `1p`, tool đổi thành `1` để điền vào điểm lesson. Nếu điểm trong bảng contest là một số lớn không phù hợp làm điểm lesson, người dùng có thể chỉnh lại trong bảng trước khi bấm `Sao chép bài`.
+
+API nội bộ tương ứng:
+
+```http
+POST /api/prepare-contest-to-lesson
+POST /api/confirm-contest-to-lesson
+```
+
+Luồng API: gọi `prepare`, lấy `prepare_id` và `rows`, chỉnh `rows[].selected` hoặc `rows[].score` nếu cần, rồi gọi `confirm`.
+
+Ví dụ payload `prepare`:
+
+```json
+{
+  "source": "hncode",
+  "account": {"username": "hncode", "password": "..."},
+  "source_account": {"username": "hncode", "password": "..."},
+  "contest_url": "https://hncode.edu.vn/contest/nt26exam01",
+  "lesson_url": "https://hncode.edu.vn/course/nt26_tuyen3/lesson/3123"
+}
+```
+
+`confirm` sẽ thêm từng bài một thay vì gửi cả lô, để nếu HNCode bỏ qua hoặc lỗi một bài thì các bài khác vẫn được xử lý và trạng thái từng bài vẫn rõ ràng.
 
 ## Tab Up Quiz
 

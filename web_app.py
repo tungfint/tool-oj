@@ -3815,22 +3815,18 @@ def parse_hncode_contest_problems(session: requests.Session, contest_key: str) -
     page = session.get(urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/problems"), timeout=30)
     if not page.ok:
         raise RuntimeError(f"Không mở được danh sách bài contest {contest_key}: HTTP {page.status_code}")
-    rows: list[dict] = []
-    seen: set[str] = set()
-    for row_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", page.text, re.S | re.I):
-        link = re.search(r'href=["\']/problem/([A-Za-z0-9_]+)["\'][^>]*>(.*?)</a>', row_html, re.S | re.I)
-        if not link:
-            continue
-        code = html.unescape(link.group(1)).strip()
-        if code in seen:
-            continue
-        title = html.unescape(re.sub(r"<.*?>", " ", link.group(2))).strip()
-        point_match = re.search(r"<td[^>]*>\s*([0-9]+(?:[.,][0-9]+)?)\s*p\s*</td>", row_html, re.S | re.I)
-        points = float((point_match.group(1) if point_match else "100").replace(",", "."))
-        rows.append({"code": code, "title": re.sub(r"\s+", " ", title), "points": points, "order": len(rows) + 1})
-        seen.add(code)
+    rows = extract_contest_problem_rows_from_html(page.text, contest_key, "100")
+    if not rows:
+        ranking = session.get(urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/ranking/"), timeout=30)
+        if ranking.ok:
+            rows = extract_contest_problem_rows_from_html(ranking.text, contest_key, "100")
     if not rows:
         raise RuntimeError(f"Không tìm thấy bài nào trong contest {contest_key}.")
+    for row in rows:
+        try:
+            row["points"] = float(str(row.get("points") or "100").replace(",", "."))
+        except ValueError:
+            row["points"] = 100.0
     change_url = admin_contest_change_url(session, TARGETS["hncode"]["base_url"], contest_key)
     if change_url:
         admin_page = session.get(change_url, timeout=30)
@@ -5925,11 +5921,27 @@ def public_contest_problem_codes(session, base_url: str, key: str) -> list[str]:
     page = session.get(contest_url(base_url, key))
     if not page.ok:
         return []
+    rows = extract_contest_problem_rows_from_html(page.text, key, "100")
+    codes: list[str] = [row["code"] for row in rows]
+    if not codes:
+        for code in re.findall(r"(?:/problem/|/contest/" + re.escape(key) + r"/problems/)([A-Za-z0-9_-]+)", page.text):
+            if code not in codes:
+                codes.append(code)
+    return codes
+
+
+def public_contest_problem_rows(session, base_url: str, key: str) -> list[dict]:
+    page = session.get(contest_url(base_url, key), timeout=30)
+    if not page.ok:
+        return []
+    rows = extract_contest_problem_rows_from_html(page.text, key, "100")
+    if rows:
+        return rows
     codes: list[str] = []
-    for code in re.findall(r"/problem/([A-Za-z0-9_-]+)", page.text):
+    for code in re.findall(r"(?:/problem/|/contest/" + re.escape(key) + r"/problems/)([A-Za-z0-9_-]+)", page.text):
         if code not in codes:
             codes.append(code)
-    return codes
+    return [{"code": code, "title": code, "points": "100", "order": index} for index, code in enumerate(codes, 1)]
 
 
 def problem_has_test_zip(session, base_url: str, code: str) -> bool:
@@ -6490,49 +6502,55 @@ def contest_lesson_score(value: str, default: str = "100") -> str:
     return parsed
 
 
+def extract_contest_problem_rows_from_html(page: str, contest_key: str = "", default_points: str = "100") -> list[dict]:
+    rows: list[dict] = []
+    seen: set[str] = set()
+    if contest_key:
+        href_re = r'(?:/problem/|/contest/' + re.escape(contest_key) + r'/problems/)([A-Za-z0-9_-]+)'
+    else:
+        href_re = r'/problem/([A-Za-z0-9_-]+)'
+
+    for row_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", page, re.S | re.I):
+        link_match = re.search(r'<a\b[^>]*href=["\']' + href_re + r'["\'][^>]*>(.*?)</a>', row_html, re.S | re.I)
+        if not link_match:
+            continue
+        code = html.unescape(link_match.group(1)).strip()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        title = strip_html_text(link_match.group(2)) or code
+        cells = re.findall(r"<td\b[^>]*>(.*?)</td>", row_html, re.S | re.I)
+        points = contest_lesson_score(cells[-1], default_points) if cells else default_points
+        rows.append({"code": code, "title": title, "points": points, "order": len(rows) + 1})
+
+    if rows:
+        return rows
+
+    for th_html in re.findall(r"<th\b[^>]*\bproblem-score-col\b[^>]*>(.*?)</th>", page, re.S | re.I):
+        code_match = re.search(r'<div\b[^>]*class=["\']problem-code["\'][^>]*>(.*?)</div>', th_html, re.S | re.I)
+        href_match = re.search(r'href=["\']/problem/([A-Za-z0-9_-]+)["\']', th_html, re.I)
+        code = strip_html_text(code_match.group(1)) if code_match else (html.unescape(href_match.group(1)).strip() if href_match else "")
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        title_match = re.search(r'title=["\']([^"\']+)["\']', th_html, re.S | re.I)
+        title = html.unescape(title_match.group(1)).strip() if title_match else code
+        max_match = re.search(r'<div\b[^>]*class=["\']point-denominator["\'][^>]*>(.*?)</div>', th_html, re.S | re.I)
+        points = contest_lesson_score(max_match.group(1), default_points) if max_match else default_points
+        rows.append({"code": code, "title": title, "points": points, "order": len(rows) + 1})
+    return rows
+
+
 def hncode_contest_problem_rows(session, contest_key: str) -> list[dict]:
     problems_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/problems")
     page = session.get(problems_url, timeout=30)
     if not page.ok:
         raise RuntimeError(f"Không mở được danh sách bài contest HNCode: HTTP {page.status_code}")
-    rows: list[dict] = []
-    seen: set[str] = set()
-    for row_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", page.text, re.S | re.I):
-        code_match = re.search(
-            r'href=["\'](?:/problem/|/contest/' + re.escape(contest_key) + r'/problems/)([A-Za-z0-9_-]+)["\']',
-            row_html,
-            re.I,
-        )
-        if not code_match:
-            continue
-        code = html.unescape(code_match.group(1)).strip()
-        if not code or code in seen:
-            continue
-        seen.add(code)
-        anchor_match = re.search(
-            r'<a\b[^>]*href=["\'](?:/problem/|/contest/' + re.escape(contest_key) + r'/problems/)' + re.escape(code) + r'["\'][^>]*>(.*?)</a>',
-            row_html,
-            re.S | re.I,
-        )
-        title = strip_html_text(anchor_match.group(1)) if anchor_match else code
-        cells = re.findall(r"<td\b[^>]*>(.*?)</td>", row_html, re.S | re.I)
-        points = contest_lesson_score(cells[1], "1") if len(cells) > 1 else "100"
-        rows.append({"code": code, "title": title, "points": points or "100", "order": len(rows) + 1})
+    rows = extract_contest_problem_rows_from_html(page.text, contest_key, "1")
     if not rows:
         ranking = session.get(urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/ranking/"), timeout=30)
         if ranking.ok:
-            for th_html in re.findall(r"<th\b[^>]*\bproblem-score-col\b[^>]*>(.*?)</th>", ranking.text, re.S | re.I):
-                code_match = re.search(r'<div\b[^>]*class=["\']problem-code["\'][^>]*>(.*?)</div>', th_html, re.S | re.I)
-                href_match = re.search(r'href=["\']/problem/([A-Za-z0-9_-]+)["\']', th_html, re.I)
-                code = strip_html_text(code_match.group(1)) if code_match else (html.unescape(href_match.group(1)).strip() if href_match else "")
-                if not code or code in seen:
-                    continue
-                seen.add(code)
-                title_match = re.search(r'title=["\']([^"\']+)["\']', th_html, re.S | re.I)
-                title = html.unescape(title_match.group(1)).strip() if title_match else code
-                max_match = re.search(r'<div\b[^>]*class=["\']point-denominator["\'][^>]*>(.*?)</div>', th_html, re.S | re.I)
-                points = contest_lesson_score(max_match.group(1), "100") if max_match else "100"
-                rows.append({"code": code, "title": title, "points": points, "order": len(rows) + 1})
+            rows = extract_contest_problem_rows_from_html(ranking.text, contest_key, "100")
     if not rows:
         raise RuntimeError(f"Không tìm thấy bài nào trong contest {contest_key}.")
     return rows
@@ -6555,24 +6573,9 @@ def source_problem_title(session: requests.Session, base_url: str, code: str) ->
 
 
 def hnoj_contest_problem_rows(session: requests.Session, contest_key: str) -> list[dict]:
-    page = session.get(contest_url(TARGETS["hnoj"]["base_url"], contest_key), timeout=30)
-    if page.ok:
-        rows: list[dict] = []
-        seen: set[str] = set()
-        for row_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", page.text, re.S | re.I):
-            link_match = re.search(r'<a\b[^>]*href=["\']/problem/([A-Za-z0-9_-]+)["\'][^>]*>(.*?)</a>', row_html, re.S | re.I)
-            if not link_match:
-                continue
-            code = html.unescape(link_match.group(1)).strip()
-            if not code or code in seen:
-                continue
-            seen.add(code)
-            title = strip_html_text(link_match.group(2)) or code
-            cells = re.findall(r"<td\b[^>]*>(.*?)</td>", row_html, re.S | re.I)
-            points = strip_html_text(cells[-1]) if cells else "100"
-            rows.append({"code": code, "title": title, "points": points or "100", "order": len(rows) + 1})
-        if rows:
-            return rows
+    rows = public_contest_problem_rows(session, TARGETS["hnoj"]["base_url"], contest_key)
+    if rows:
+        return rows
     try:
         info = fetch_contest_info(session, TARGETS["hnoj"]["base_url"], contest_key)
     except Exception:
