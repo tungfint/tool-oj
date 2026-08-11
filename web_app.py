@@ -1829,7 +1829,24 @@ PAGE = r"""
 
       <div class="panel" id="panel-misc-tools">
         <h2>Tool lẻ</h2>
-        <p>Các chức năng phụ chạy ổn định trên local, không cần đăng nhập web OJ.</p>
+        <p>Các chức năng phụ chạy ổn định trên local. Một số tool có dùng tài khoản OJ đã lưu ở tab Tài khoản.</p>
+        <div class="tool-card">
+          <h3 class="tool-title">Lấy list mã bài từ Contest / Lesson</h3>
+          <p class="tool-subtitle">Lấy danh sách mã bài theo đúng thứ tự từ HNCode Contest, HNCode Lesson hoặc HNOJ Contest. Kết quả có bảng chi tiết và ô mã bài để copy nhanh.</p>
+          <div class="grid-2">
+            <div><label>Web nguồn</label><select id="codeListSite"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select></div>
+            <div><label>Loại nguồn</label><select id="codeListType"><option value="contest">Contest</option><option value="lesson">Lesson (chỉ HNCode)</option></select></div>
+          </div>
+          <label>URL Contest / Lesson</label>
+          <input id="codeListUrl" type="text" value="https://hncode.edu.vn/contest/nt26exam01">
+          <div class="actions">
+            <button class="action primary" type="button" id="runCodeList">Lấy danh sách mã bài</button>
+          </div>
+          <label>Danh sách mã bài</label>
+          <textarea id="codeListOutput" rows="6" readonly placeholder="Mã bài sẽ hiện ở đây, mỗi dòng một mã."></textarea>
+          <div id="codeListSummary"></div>
+        </div>
+
         <div class="tool-card">
           <h3 class="tool-title">Lấy last submissions Scratch</h3>
           <p class="tool-subtitle">Upload file zip data. Tool sẽ lấy mỗi thí sinh 1 file `.sb3`: ưu tiên file trong thư mục `$History` có số cuối lớn nhất, nếu không có thì lấy file `.sb3` ở thư mục gốc của thí sinh.</p>
@@ -2988,6 +3005,53 @@ function applyQuizStatuses(rows) {
   }
 }
 
+function syncCodeListType() {
+  const site = document.getElementById("codeListSite").value;
+  const type = document.getElementById("codeListType");
+  if (site === "hnoj") {
+    type.value = "contest";
+    [...type.options].forEach(option => option.disabled = option.value === "lesson");
+    document.getElementById("codeListUrl").value = document.getElementById("codeListUrl").value || "https://hnoj.edu.vn/contest/ctp_4";
+  } else {
+    [...type.options].forEach(option => option.disabled = false);
+  }
+}
+document.getElementById("codeListSite").addEventListener("change", syncCodeListType);
+document.getElementById("runCodeList").onclick = async () => {
+  try {
+    status("running");
+    saveAccounts();
+    syncCodeListType();
+    const site = document.getElementById("codeListSite").value;
+    const sourceType = document.getElementById("codeListType").value;
+    log("Đang lấy danh sách mã bài...");
+    const data = await postJson("/api/misc/list-problem-codes", {
+      site,
+      source_type: sourceType,
+      url: document.getElementById("codeListUrl").value.trim(),
+      account: accountPayload(site),
+    });
+    document.getElementById("codeListOutput").value = data.codes_text || "";
+    const rows = data.rows || [];
+    document.getElementById("codeListSummary").innerHTML = `<div class="note">Tìm thấy ${rows.length} bài.</div>
+      <table>
+        <thead><tr><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm</th></tr></thead>
+        <tbody>${rows.map(row => `<tr>
+          <td>${row.index || row.order || ""}</td>
+          <td><code>${escapeHtml(row.code || "")}</code></td>
+          <td>${escapeHtml(row.title || "")}</td>
+          <td>${escapeHtml(row.points || row.score || "")}</td>
+        </tr>`).join("")}</tbody>
+      </table>`;
+    log(data.log || `Đã lấy ${rows.length} mã bài.`);
+    status("done", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+syncCodeListType();
+
 document.getElementById("chooseLastSubZip").onclick = () => document.getElementById("lastSubZipFile").click();
 document.getElementById("lastSubZipFile").addEventListener("change", event => {
   const file = event.target.files && event.target.files[0];
@@ -3376,6 +3440,48 @@ def api_check_login():
         return jsonify({"ok": True, "message": "Đăng nhập OK"})
     except Exception as exc:
         return jsonify({"ok": False, "message": str(exc)[:180]})
+
+
+@app.post("/api/misc/list-problem-codes")
+def api_misc_list_problem_codes():
+    payload = request.get_json(force=True)
+    site = payload.get("site", "hncode")
+    source_type = payload.get("source_type", "contest")
+    source_url = (payload.get("url") or "").strip()
+    account = payload.get("account", {})
+    try:
+        if site == "hncode":
+            session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+            if source_type == "lesson":
+                course_slug, lesson_id = extract_hncode_lesson_ref(source_url)
+                rows = hncode_lesson_problem_code_rows(session, course_slug, lesson_id)
+                source_label = f"HNCode Lesson: {course_slug}/lesson/{lesson_id}"
+            else:
+                contest_key = extract_hncode_contest_key(source_url)
+                rows = hncode_contest_problem_rows(session, contest_key)
+                source_label = f"HNCode Contest: {contest_key}"
+        elif site == "hnoj":
+            if source_type != "contest":
+                raise RuntimeError("HNOJ hiện chỉ hỗ trợ lấy mã bài từ Contest.")
+            session = login_hncode(TARGETS["hnoj"]["base_url"], account.get("username", ""), account.get("password", ""))
+            contest_key = extract_hncode_contest_key(source_url)
+            rows = hnoj_contest_problem_rows(session, contest_key)
+            source_label = f"HNOJ Contest: {contest_key}"
+        else:
+            raise RuntimeError("Nguồn không hợp lệ. Hãy chọn HNCode hoặc HNOJ.")
+        for index, row in enumerate(rows, 1):
+            row["index"] = index
+        codes_text = "\n".join(row["code"] for row in rows)
+        compact_text = " ".join(row["code"] for row in rows)
+        log_lines = [
+            f"Nguồn: {source_label}",
+            f"Số bài: {len(rows)}",
+            "Danh sách mã bài:",
+            codes_text,
+        ]
+        return jsonify({"ok": True, "rows": rows, "codes_text": codes_text, "compact_text": compact_text, "log": "\n".join(log_lines)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
 
 @app.post("/api/upload-quiz")
@@ -6570,6 +6676,56 @@ def source_problem_title(session: requests.Session, base_url: str, code: str) ->
             if title:
                 return title
     return code
+
+
+def extract_problem_link_rows_from_html(page: str, default_points: str = "") -> list[dict]:
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for match in re.finditer(r'<a\b[^>]*href=["\']/problem/([A-Za-z0-9_-]+)(?:/[^"\']*)?["\'][^>]*>(.*?)</a>', page, re.S | re.I):
+        code = html.unescape(match.group(1)).strip()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        title = strip_html_text(match.group(2)) or code
+        rows.append({"code": code, "title": title, "points": default_points, "order": len(rows) + 1})
+    return rows
+
+
+def admin_problem_code_name_by_id(session: requests.Session, base_url: str, problem_id: str) -> tuple[str, str]:
+    page = session.get(urljoin(base_url, f"/admin/judge/problem/{problem_id}/change/"), timeout=30)
+    if not page.ok:
+        return "", ""
+    return input_value(page.text, "code", ""), input_value(page.text, "name", "")
+
+
+def hncode_lesson_problem_code_rows(session: requests.Session, course_slug: str, lesson_id: str) -> list[dict]:
+    page = session.get(hncode_lesson_url(course_slug, lesson_id), timeout=30)
+    if page.ok:
+        rows = extract_problem_link_rows_from_html(page.text, "")
+        if rows:
+            return rows
+    edit_page = session.get(hncode_lesson_edit_url(course_slug, lesson_id), timeout=30)
+    if not edit_page.ok:
+        raise RuntimeError(f"Không mở được lesson HNCode: HTTP {edit_page.status_code}")
+    rows: list[dict] = []
+    for item in lesson_problem_rows_from_page(edit_page.text, lesson_id):
+        problem_id = str(item.get("problem") or "")
+        if not problem_id:
+            continue
+        code, name = admin_problem_code_name_by_id(session, TARGETS["hncode"]["base_url"], problem_id)
+        if not code:
+            continue
+        rows.append(
+            {
+                "code": code,
+                "title": name or code,
+                "points": item.get("score") or "",
+                "order": len(rows) + 1,
+            }
+        )
+    if not rows:
+        raise RuntimeError(f"Không tìm thấy bài nào trong lesson {course_slug}/lesson/{lesson_id}.")
+    return rows
 
 
 def hnoj_contest_problem_rows(session: requests.Session, contest_key: str) -> list[dict]:

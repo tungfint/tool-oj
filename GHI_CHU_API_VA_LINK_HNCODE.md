@@ -69,6 +69,39 @@ Payload mẫu:
 
 Thông thường lấy nguyên `rows` từ bước prepare, chỉnh `selected` hoặc `score` nếu cần, rồi gửi sang confirm.
 
+## API lấy list mã bài
+
+Endpoint:
+
+```http
+POST /api/misc/list-problem-codes
+```
+
+Nguồn hỗ trợ:
+
+```text
+site=hncode, source_type=contest
+site=hncode, source_type=lesson
+site=hnoj, source_type=contest
+```
+
+Payload mẫu:
+
+```json
+{
+  "site": "hncode",
+  "source_type": "lesson",
+  "url": "https://hncode.edu.vn/course/nt26_tuyen3/lesson/3123",
+  "account": {"username": "hncode", "password": "..."}
+}
+```
+
+Kết quả gồm:
+
+- `rows`: danh sách chi tiết theo thứ tự.
+- `codes_text`: mỗi mã bài một dòng.
+- `compact_text`: các mã bài cách nhau bằng dấu cách.
+
 ## Lưu ý điểm lesson
 
 HNCode có thể hiển thị điểm contest dạng `1p`. Tool đổi dạng này thành `1` khi điền điểm lesson.

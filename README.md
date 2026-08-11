@@ -370,6 +370,40 @@ Ví dụ payload `prepare`:
 
 `confirm` sẽ thêm từng bài một thay vì gửi cả lô, để nếu HNCode bỏ qua hoặc lỗi một bài thì các bài khác vẫn được xử lý và trạng thái từng bài vẫn rõ ràng.
 
+## Tool lẻ: Lấy list mã bài
+
+Tool này lấy danh sách mã bài theo đúng thứ tự để copy nhanh sang các chức năng khác.
+
+Nguồn hỗ trợ:
+
+- `HNCode / Contest`: nhập URL dạng `https://hncode.edu.vn/contest/<ma_contest>`.
+- `HNCode / Lesson`: nhập URL dạng `https://hncode.edu.vn/course/<course>/lesson/<lesson_id>`.
+- `HNOJ / Contest`: nhập URL dạng `https://hnoj.edu.vn/contest/<ma_contest>`.
+
+Kết quả gồm:
+
+- Ô textarea chứa mỗi mã bài một dòng để copy.
+- Bảng chi tiết gồm STT, mã bài, tên bài, điểm nếu đọc được.
+
+API nội bộ:
+
+```http
+POST /api/misc/list-problem-codes
+```
+
+Payload mẫu:
+
+```json
+{
+  "site": "hncode",
+  "source_type": "contest",
+  "url": "https://hncode.edu.vn/contest/nt26exam01",
+  "account": {"username": "hncode", "password": "..."}
+}
+```
+
+Với HNCode Lesson, đổi `source_type` thành `lesson`.
+
 ## Tab Up Quiz
 
 Tab này up danh sách câu hỏi lên HNCode Quiz qua form:
