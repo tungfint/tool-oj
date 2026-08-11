@@ -295,6 +295,14 @@ submit_trial_solution(target, code, solution_file)
 
 Làm sau giai đoạn 1 vì phần này rộng, dễ đụng nhiều chức năng.
 
+Tr?ng th?i hi?n t?i:
+
+- ?? t?o `services/problem_bundle.py` ?? gom ph?n ??c b? b?i, t?ch Markdown t?ng h?p, ??c metadata `T?n b?i | M? b?i | ?i?m | Tags`, ch?y gentest/zip test cho lu?ng up b?i.
+- ?? t?o `services/problem_upload.py` cho helper upload d?ng chung HNCode/HNOJ: chu?n h?a m? b?i, memory limit, link b?i/test, upload test, n?p th?, ch?n language submit.
+- `web_app.py` ?? gi? c?c h?m wrapper c? nh?ng chuy?n helper HNCode/HNOJ sang g?i service m?i, ?? UI/API hi?n t?i kh?ng ??i contract.
+- ?? test `services/problem_bundle.py` v?i `samples/bo_mau_1_bai_tonghaiso.zip`: ??c ???c 1 b?i, 10 test, ??ng ?i?m/tags.
+- Ph?m vi l?n n?y ch? ?p d?ng HNCode v? HNOJ; TinHocTre gi? nguy?n lu?ng c? v? c?n ph? thu?c cookie/WAF ri?ng.
+
 ## Giai đoạn 3: Chuẩn hóa job/progress
 
 Mục tiêu: mọi chức năng dài đều có tiến độ rõ.

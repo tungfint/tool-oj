@@ -28,6 +28,8 @@ from http.cookies import SimpleCookie
 from flask import Flask, Response, jsonify, render_template_string, request, send_file
 
 from services import hncode as hncode_service
+from services import problem_bundle as bundle_service
+from services import problem_upload as upload_service
 
 from transfer_tinhoctre_to_hncode import (
     ProblemInfo,
@@ -4664,47 +4666,13 @@ def receive_upload_source_file(root: Path, payload: dict) -> Path:
 
 
 def split_combined_markdown_bundles(markdown_path: Path, source_dir: Path) -> list[ProblemBundle]:
-    text = read_text_smart(markdown_path)
-    matches = list(re.finditer(r"(?m)^#\s*(?:Bài\s+(\d+)\.\s*)?(.+?)\s*\|\s*([A-Za-z0-9_-]+)(?:\s*\|.*)?\s*$", text))
-    if not matches:
-        raise RuntimeError("Không tìm thấy bài nào. Mỗi bài cần bắt đầu dạng: # Bài 1. Tên bài | ma_bai | điểm | tags")
-    bundles: list[ProblemBundle] = []
-    seen: set[str] = set()
-    for idx, match in enumerate(matches):
-        number = int(match.group(1) or idx + 1)
-        name = match.group(2).strip()
-        code = match.group(3).strip()
-        if code in seen:
-            raise RuntimeError(f"Mã bài bị trùng trong file Markdown: {code}")
-        seen.add(code)
-        body_start = match.end()
-        body_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-        body = text[body_start:body_end].strip()
-        statement_path = source_dir / f"{number}_{code}.md"
-        statement_path.write_text(f"{name} | {code}\n\n{body}\n", encoding="utf-8")
-        bundles.append(ProblemBundle(number, code, name, statement_path, None, None, None, None))
-    return bundles
-
+    return bundle_service.split_combined_markdown_bundles(markdown_path, source_dir)
 
 def statement_header_parts(statement_path: Path) -> list[str]:
-    for line in read_text_smart(statement_path).splitlines():
-        text = line.strip().strip("#* ")
-        if not text:
-            continue
-        return [part.strip() for part in text.split("|")]
-    return []
-
+    return bundle_service.statement_header_parts(statement_path)
 
 def metadata_from_statement(statement_path: Path, defaults: dict) -> dict:
-    parts = statement_header_parts(statement_path)
-    points = parts[2] if len(parts) > 2 and parts[2] else str(defaults.get("points") or "100")
-    tags = parts[3] if len(parts) > 3 and parts[3] else str(defaults.get("tags") or "")
-    return {
-        "points": points,
-        "tags": tags,
-        "partial": bool(defaults.get("partial", True)),
-    }
-
+    return bundle_service.metadata_from_statement(statement_path, defaults)
 
 @app.post("/api/prepare-single-upload")
 def api_prepare_single_upload():
@@ -4831,77 +4799,16 @@ def infer_statement_title(statement: str) -> tuple[str, str]:
 
 
 def repair_python_main_guard(text: str) -> str:
-    return text.replace("if **name** == \"**main**\":", "if __name__ == \"__main__\":")
-
+    return bundle_service.repair_python_main_guard(text)
 
 def generate_tests_from_cpp_generator(generator_path: Path, build_root: Path, code: str) -> GeneratedTests:
-    build_dir = build_root / code
-    build_dir.mkdir(parents=True, exist_ok=True)
-    local_source = build_dir / generator_path.name
-    shutil.copy2(generator_path, local_source)
-    exe_name = "generator.exe" if sys.platform == "win32" else "generator"
-    env = os.environ.copy()
-    env.setdefault("PYTHONIOENCODING", "utf-8")
-    compile_result = subprocess.run(
-        ["g++", "-O2", local_source.name, "-o", exe_name],
-        cwd=build_dir,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        env=env,
-        timeout=120,
-    )
-    if compile_result.returncode != 0:
-        raise RuntimeError(f"C++ generator compile failed for {code}\nSTDOUT:\n{compile_result.stdout}\nSTDERR:\n{compile_result.stderr}")
-    run_cmd = [str(build_dir / exe_name)] if sys.platform == "win32" else [f"./{exe_name}"]
-    run_result = subprocess.run(
-        run_cmd,
-        cwd=build_dir,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        env=env,
-        timeout=120,
-    )
-    if run_result.returncode != 0:
-        raise RuntimeError(f"C++ generator failed for {code}\nSTDOUT:\n{run_result.stdout}\nSTDERR:\n{run_result.stderr}")
-    dummy_bundle = ProblemBundle(1, code, code, generator_path, None, None, None, None)
-    zip_path = find_generated_zip_for_single(build_dir, dummy_bundle)
-    if zip_path is None:
-        zip_path = zip_generated_case_files(build_dir, code)
-    input_files, output_files = zip_case_files(zip_path)
-    if not input_files:
-        raise RuntimeError(f"C++ generator không tạo file .inp nào cho {code}.")
-    return GeneratedTests(zip_path, input_files, output_files)
-
+    return bundle_service.generate_tests_from_cpp_generator(generator_path, build_root, code)
 
 def find_generated_zip_for_single(build_dir: Path, bundle: ProblemBundle) -> Path | None:
-    from upload_tinhoctre_batch import find_generated_zip
-
-    return find_generated_zip(build_dir, bundle)
-
+    return bundle_service.find_generated_zip_for_single(build_dir, bundle)
 
 def zip_generated_case_files(build_dir: Path, code: str) -> Path:
-    candidates = sorted(
-        path
-        for path in build_dir.rglob("*.inp")
-        if path.is_file() and "__pycache__" not in path.parts
-    )
-    if not candidates:
-        raise RuntimeError("Generator đã chạy xong nhưng không tạo zip test hoặc file .inp/.out.")
-    zip_path = build_dir / f"{code}.zip"
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for inp in candidates:
-            rel = inp.relative_to(build_dir).as_posix()
-            out = inp.with_suffix(".out")
-            if not out.exists():
-                raise RuntimeError(f"Thiếu file output tương ứng: {out.name}")
-            archive.write(inp, rel)
-            archive.write(out, out.relative_to(build_dir).as_posix())
-    return zip_path
-
+    return bundle_service.zip_generated_case_files(build_dir, code)
 
 @app.post("/api/confirm-single-upload")
 def api_confirm_single_upload():
@@ -5505,35 +5412,15 @@ def upload_one_problem(
 def problem_exists_for_target(session, target: str, base_url: str, code: str) -> bool:
     if target == "tinhoctre":
         return tinhoctre_problem_exists(session, base_url, code)
-    for path in (f"/problem/{code}/edit", f"/problem/{code}/test_data"):
-        try:
-            page = session.get(urljoin(base_url, path), timeout=30, allow_redirects=True)
-        except Exception:
-            continue
-        if page.status_code == 200 and "/accounts/login" not in page.url and "/admin/login" not in page.url:
-            return True
-    return destination_problem_exists(session, base_url, code)
-
+    return upload_service.problem_exists_for_target(session, target, base_url, code)
 
 def resolve_problem_code_for_upload(session, target: str, base_url: str, raw_code: str) -> tuple[str, str]:
-    code = (raw_code or "").strip().lower()
-    if target != "hncode":
-        return code, ""
-    normalized = normalize_problem_code_for_target(code, target)
-    if code and code != normalized and problem_exists_for_target(session, target, base_url, code):
-        return code, ""
-    validate_problem_code_for_target(normalized, target)
-    if code != normalized:
-        return normalized, f"{code}: mã HNCode dùng để tạo mới được đổi thành {normalized}"
-    return code, ""
-
+    if target == "tinhoctre":
+        return (raw_code or "").strip().lower(), ""
+    return upload_service.resolve_problem_code_for_upload(session, target, base_url, raw_code)
 
 def statement_for_target(target: str, statement: str, *, skip_title_line: bool = False) -> str:
-    text = statement_body_text(statement, skip_title_line=skip_title_line) if skip_title_line else clean_statement(statement)
-    if target == "hncode":
-        return text.replace("~", "$")
-    return text.replace("$", "~")
-
+    return upload_service.statement_for_target(target, statement, skip_title_line=skip_title_line)
 
 def problem_info_for_target(info: ProblemInfo, target: str) -> ProblemInfo:
     return replace(info, description=statement_for_target(target, info.description))
@@ -5658,133 +5545,29 @@ def selected_option_value(page: str, name: str, default: str = "") -> str:
 
 
 def upload_tests_for_target(session, target: str, base_url: str, code: str, tests: GeneratedTests) -> None:
-    if TARGETS[target]["test_backend"] == "vnoj":
+    if target == "tinhoctre":
         upload_tinhoctre_tests(session, base_url, code, tests)
         return
-    if target == "hnoj":
-        upload_tinhoctre_tests(session, base_url, code, tests)
-        return
-    from upload_hncode_batch import test_cases_from_files
-
-    upload_hncode_tests(session, base_url, code, tests.zip_path, test_cases_from_files(tests.input_files, tests.output_files))
-
+    upload_service.upload_tests_for_target(session, target, base_url, code, tests, upload_hncode_tests, upload_tinhoctre_tests)
 
 def submit_if_requested(session, base_url: str, bundle: ProblemBundle, settings: dict, log_lines: list[str]) -> None:
-    if settings.get("no_submit"):
-        log_lines.append(f"{bundle.code}: không nộp bài chấm thử theo lựa chọn.")
-        return
-    if settings.get("submit_cpp"):
-        if bundle.solution_cpp:
-            try:
-                submission = submit_solution_file(
-                    session,
-                    base_url,
-                    bundle.code,
-                    bundle.solution_cpp,
-                    ["C++17", "GNU C++17", "C++20", "GNU C++20", "C++"],
-                )
-                log_lines.append(f"{bundle.code}: đã nộp thử C++ {submission}.")
-            except Exception as exc:
-                log_lines.append(f"{bundle.code}: không nộp thử C++ được: {exc}")
-        else:
-            log_lines.append(f"{bundle.code}: không có sol C++, bỏ qua nộp thử C++.")
-    if settings.get("submit_python"):
-        if bundle.solution:
-            try:
-                submission = submit_solution_file(
-                    session,
-                    base_url,
-                    bundle.code,
-                    bundle.solution,
-                    ["PyPy 3", "Pypy 3", "Python 3", "Python3", "Python"],
-                )
-                log_lines.append(f"{bundle.code}: đã nộp thử Python {submission}.")
-            except Exception as first_exc:
-                if "hncode.edu.vn" in base_url:
-                    log_lines.append(f"{bundle.code}: không nộp thử Python được: {first_exc}")
-                else:
-                    try:
-                        submission = submit_solution(session, base_url, bundle, language_id="17", poll_seconds=0)
-                        log_lines.append(f"{bundle.code}: đã nộp thử Python {submission}.")
-                    except Exception as exc:
-                        log_lines.append(f"{bundle.code}: không nộp thử Python được: {first_exc}; fallback cũng lỗi: {exc}")
-        else:
-            log_lines.append(f"{bundle.code}: không có sol Python, bỏ qua nộp thử Python.")
-
+    fallback = None if "hncode.edu.vn" in base_url else submit_solution
+    upload_service.submit_if_requested(session, base_url, bundle, settings, log_lines, compact_form_red_errors, fallback_submit_solution=fallback)
 
 def submit_solution_file(session, base_url: str, code: str, source_path: Path, preferred_languages: list[str]) -> str:
-    submit_url = urljoin(base_url, f"/problem/{code}/submit")
-    page = session.get(submit_url, timeout=30)
-    if not page.ok:
-        raise RuntimeError(f"Submit page failed: HTTP {page.status_code}")
-    language_id = language_id_from_submit_page(page.text, preferred_languages)
-    if not language_id:
-        raise RuntimeError("không tìm thấy ngôn ngữ phù hợp trên trang submit")
-    result = session.post(
-        submit_url,
-        data={
-            "csrfmiddlewaretoken": csrf_token(page.text),
-            "source": source_path.read_text(encoding="utf-8", errors="replace"),
-            "language": language_id,
-            "judge": "",
-        },
-        headers={"Referer": submit_url},
-        allow_redirects=True,
-        timeout=30,
-    )
-    if not result.ok:
-        raise RuntimeError(f"Submit failed: HTTP {result.status_code}")
-    errors = form_errors(result.text) + compact_form_red_errors(result.text)
-    if errors:
-        raise RuntimeError("Submit form báo lỗi: " + "; ".join(errors))
-    if "/submission/" not in result.url:
-        raise RuntimeError(f"Submit chưa tạo submission; URL sau POST: {result.url}")
-    return result.url
-
+    return upload_service.submit_solution_file(session, base_url, code, source_path, preferred_languages, compact_form_red_errors)
 
 def language_id_from_submit_page(page: str, preferred_languages: list[str]) -> str:
-    select_match = re.search(r"<select\b[^>]*name=[\"']language[\"'][^>]*>(.*?)</select>", page, re.S | re.I)
-    haystack = select_match.group(1) if select_match else page
-    options: list[tuple[str, str]] = []
-    for match in re.finditer(r"<option\b([^>]*)>(.*?)</option>", haystack, re.S | re.I):
-        attrs, label_html = match.groups()
-        value_match = re.search(r"value=[\"']([^\"']+)", attrs)
-        if not value_match:
-            continue
-        label = html.unescape(re.sub(r"<.*?>", " ", label_html)).strip()
-        options.append((html.unescape(value_match.group(1)), label))
-    for preferred in preferred_languages:
-        wanted = normalize_language_label(preferred)
-        for value, label in options:
-            if wanted and wanted in normalize_language_label(label):
-                return value
-    return ""
-
+    return upload_service.language_id_from_submit_page(page, preferred_languages)
 
 def normalize_language_label(label: str) -> str:
-    return re.sub(r"[^a-z0-9+#]+", "", label.lower())
-
+    return upload_service.normalize_language_label(label)
 
 def language_ids_for_target(target: str, names: list[str]) -> list[str]:
-    mapping = TARGETS[target]["languages"]
-    return [mapping[name] for name in names if mapping.get(name)]
-
+    return upload_service.language_ids_for_target(TARGETS[target], names)
 
 def memory_limit_to_kb(value: object) -> str:
-    text = str(value or "").strip().lower().replace(" ", "")
-    if not text:
-        return "1048576"
-    match = re.fullmatch(r"(\d+(?:\.\d+)?)(kb|k|mb|m|gb|g)?", text)
-    if not match:
-        return str(value)
-    amount = float(match.group(1))
-    unit = match.group(2) or "kb"
-    if unit in {"gb", "g"}:
-        amount *= 1024 * 1024
-    elif unit in {"mb", "m"}:
-        amount *= 1024
-    return str(int(round(amount)))
-
+    return upload_service.memory_limit_to_kb(value)
 
 def type_id_from_tags(value: object) -> str:
     match = re.search(r"\b\d+\b", str(value or ""))
@@ -5812,26 +5595,16 @@ def type_ids_from_tags(value: object, target: str) -> list[str]:
 
 
 def problem_url(base_url: str, code: str) -> str:
-    return urljoin(base_url, f"/problem/{code}")
-
+    return upload_service.problem_url(base_url, code)
 
 def normalize_problem_code_for_target(code: str, target: str) -> str:
-    code = (code or "").strip().lower()
-    if target == "hncode":
-        code = re.sub(r"[^a-z0-9_]+", "", code)
-    return code
-
+    return upload_service.normalize_problem_code_for_target(code, target)
 
 def validate_problem_code_for_target(code: str, target: str) -> None:
-    if target == "hncode" and not re.fullmatch(r"[a-z0-9_]+", code or ""):
-        normalized = normalize_problem_code_for_target(code, target)
-        hint = f" Gợi ý mã hợp lệ: {normalized}" if normalized else ""
-        raise RuntimeError(f"HNCode cho phép mã bài gồm chữ thường, số và dấu gạch dưới (^[a-z0-9_]+$).{hint}")
-
+    upload_service.validate_problem_code_for_target(code, target)
 
 def test_data_url(base_url: str, code: str) -> str:
-    return urljoin(base_url, f"/problem/{code}/test_data")
-
+    return upload_service.test_data_url(base_url, code)
 
 def session_from_cookie(cookie_header: str):
     s = tinhoctre_session()
