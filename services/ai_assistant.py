@@ -253,6 +253,20 @@ def selected_parts_text(options: dict) -> str:
     return "\n".join(parts) or "- Chỉ rà soát và báo cáo vấn đề."
 
 
+def extract_points_guidelines(reference_text: str, max_chars: int = 12000) -> str:
+    text = str(reference_text or "")
+    start = text.find("## 6. Việc 4: Points")
+    if start < 0:
+        start = text.find("## 6.")
+    if start < 0:
+        return ""
+    end = text.find("\n## 7.", start + 1)
+    section = text[start : end if end >= 0 else len(text)].strip()
+    if len(section) > max_chars:
+        section = section[:max_chars].rstrip() + "\n..."
+    return section
+
+
 def build_hncode_normalization_prompt(reference_text: str, snapshot: dict, options: dict) -> str:
     target = options.get("target") or "hncode"
     target_label = "HNCode" if target == "hncode" else "HNOJ"
@@ -261,6 +275,7 @@ def build_hncode_normalization_prompt(reference_text: str, snapshot: dict, optio
     statement = snapshot.get("statement") or ""
     solution = snapshot.get("solution") or ""
     test_summary = snapshot.get("test_summary") or ""
+    points_guidelines = extract_points_guidelines(reference_text)
     return f"""Bạn là trợ lý chuẩn hóa bài lập trình cho {target_label}.
 
 Hãy xử lý bài `{code}` - `{name}` theo tài liệu chuẩn hóa bên dưới.
@@ -287,6 +302,15 @@ Yêu cầu trả về:
   - `confidence`: `high`, `medium` hoặc `low`.
 - Nếu thiếu dữ kiện, không tự bịa; ghi rõ trong `issues`.
 - Với HNCode dùng `$...$` cho công thức. Với HNOJ dùng `~...~`.
+- Khi đánh giá `points`, bắt buộc dùng quy tắc Points bên dưới: đây là độ khó kiểu Codeforces/rating, không phải điểm contest.
+- `points` nên chọn mốc gần nhất trong các mốc 800, 900, 1000, ..., 2800+.
+- Không được chỉ nhìn tag để gán points; phải xét độ khó hiểu đề, nhận xét, thuật toán, cài đặt, case biên, chứng minh và giới hạn dữ liệu.
+- Trong `test_review` hoặc `issues`, nếu điểm chỉ là tạm thời do thiếu đề/giới hạn/lời giải, hãy ghi rõ.
+
+Quy tắc đánh giá Points:
+```text
+{points_guidelines}
+```
 
 Tài liệu chuẩn hóa:
 ```text

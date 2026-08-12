@@ -9,7 +9,7 @@ from services import ai_assistant as ai_service
 class AiAssistantServiceTests(unittest.TestCase):
     def test_build_prompt_contains_reference_snapshot_and_options(self):
         prompt = ai_service.build_hncode_normalization_prompt(
-            "Quy tắc chuẩn hóa",
+            "Quy tắc chuẩn hóa\n\n## 6. Việc 4: Points\n\nPoints là CF-style rating.\n\n| `1500` | Khá |\n\n## 7. Việc 5",
             {
                 "code": "tonghaiso",
                 "name": "Tổng hai số",
@@ -29,6 +29,16 @@ class AiAssistantServiceTests(unittest.TestCase):
         self.assertIn("Quy tắc chuẩn hóa", prompt)
         self.assertIn("solution_markdown", prompt)
         self.assertIn("$...$", prompt)
+        self.assertIn("Quy tắc đánh giá Points", prompt)
+        self.assertIn("CF-style rating", prompt)
+        self.assertIn("không phải điểm contest", prompt)
+
+    def test_extract_points_guidelines_reads_section_six_only(self):
+        reference = "Intro\n\n## 6. Việc 4: Points\n\nA\n\n### 6.4. Thang Points chi tiết\n\nB\n\n## 7. Việc 5: Allows partial points\n\nC"
+        section = ai_service.extract_points_guidelines(reference)
+
+        self.assertIn("Thang Points chi tiết", section)
+        self.assertNotIn("Allows partial points", section)
 
     def test_validate_statement_markdown_for_hncode_and_hnoj(self):
         hncode = "Tổng hai số | tonghaiso | 800 | implementation\n\nCho $a,b$.\n"

@@ -358,3 +358,4 @@ Ghi chú flow AI mới:
 - `/api/ai/normalize` ghi lại file Markdown đã chuẩn hóa vào cùng phiên `prepare_id`.
 - `/api/ai/apply-normalize` mới thực hiện cập nhật live lên HNCode. Test tự động phải mock các hàm login/update, không gọi admin thật.
 - Model mặc định hiện dùng `gemini-3.5-flash`. Nếu người dùng còn lưu model 2.5 cũ và Google trả 404 `no longer available`, backend tự thử các model fallback Gemini 3 trước khi báo lỗi.
+- Khi đề xuất `points`, prompt trích riêng phần `## 6. Việc 4: Points` trong `MO_TA_CHUAN_HOA_BAI_HNCODE_CHO_AI.md` để AI chấm theo rating Codeforces, không nhầm với điểm contest.
