@@ -9,7 +9,7 @@ from services import ai_assistant as ai_service
 class AiAssistantServiceTests(unittest.TestCase):
     def test_build_prompt_contains_reference_snapshot_and_options(self):
         prompt = ai_service.build_hncode_normalization_prompt(
-            "Quy tắc chuẩn hóa\n\n## 6. Việc 4: Points\n\nPoints là CF-style rating.\n\n| `1500` | Khá |\n\n## 7. Việc 5",
+            "Quy tắc chuẩn hóa\n\n## 3. Việc 1: Chuẩn hoá đề bài\n\nExample trên web dùng admonition.\n\n## 4. Việc 2: Kiểm tra tính đúng đắn của đề\n\nKiểm tra Input Output.\n\n## 5. Việc 3\n\nTags\n\n## 6. Việc 4: Points\n\nPoints là CF-style rating.\n\n| `1500` | Khá |\n\n## 7. Việc 5",
             {
                 "code": "tonghaiso",
                 "name": "Tổng hai số",
@@ -32,6 +32,8 @@ class AiAssistantServiceTests(unittest.TestCase):
         self.assertIn("Quy tắc đánh giá Points", prompt)
         self.assertIn("CF-style rating", prompt)
         self.assertIn("không phải điểm contest", prompt)
+        self.assertIn("Quy tắc chuẩn hoá đề bài", prompt)
+        self.assertIn("admonition", prompt)
 
     def test_extract_points_guidelines_reads_section_six_only(self):
         reference = "Intro\n\n## 6. Việc 4: Points\n\nA\n\n### 6.4. Thang Points chi tiết\n\nB\n\n## 7. Việc 5: Allows partial points\n\nC"
@@ -40,9 +42,39 @@ class AiAssistantServiceTests(unittest.TestCase):
         self.assertIn("Thang Points chi tiết", section)
         self.assertNotIn("Allows partial points", section)
 
+    def test_extract_statement_guidelines_reads_sections_three_and_four(self):
+        reference = "Intro\n\n## 3. Việc 1: Chuẩn hoá đề bài\n\nA\n\n## 4. Việc 2: Kiểm tra tính đúng đắn của đề\n\nB\n\n## 5. Việc 3: Tags\n\nC"
+        section = ai_service.extract_statement_guidelines(reference)
+
+        self.assertIn("Chuẩn hoá đề bài", section)
+        self.assertIn("Kiểm tra tính đúng đắn", section)
+        self.assertNotIn("Tags", section)
+
     def test_validate_statement_markdown_for_hncode_and_hnoj(self):
-        hncode = "Tổng hai số | tonghaiso | 800 | implementation\n\nCho $a,b$.\n"
-        hnoj = "Tổng hai số | tonghaiso | 800 | implementation\n\nCho ~a,b~.\n"
+        hncode = """Tổng hai số | tonghaiso | 800 | implementation
+
+Cho $a,b$.
+
+**Yêu cầu:** Tính tổng.
+
+#### Input
+- Một dòng chứa $a,b$.
+
+#### Output
+- In tổng.
+
+#### Example
+!!! question "Test 1"
+    ???+ "Input"
+        ```sample
+        1 2
+        ```
+    ???+ success "Output"
+        ```sample
+        3
+        ```
+"""
+        hnoj = hncode.replace("$", "~")
 
         _checks, hncode_meta = ai_service.validate_statement_markdown(hncode, "hncode")
         _checks, hnoj_meta = ai_service.validate_statement_markdown(hnoj, "hnoj")
@@ -50,6 +82,34 @@ class AiAssistantServiceTests(unittest.TestCase):
         self.assertTrue(hncode_meta["valid"])
         self.assertTrue(hnoj_meta["valid"])
         self.assertEqual(hncode_meta["code"], "tonghaiso")
+
+    def test_validate_statement_flags_plain_example_format(self):
+        bad = """Mê Cung | mecung_ncd | 2200 | graphs
+
+Mô tả.
+
+#### Input
+- Dữ liệu.
+
+#### Output
+- Kết quả.
+
+#### Example
+
+**Input:**
+```sample
+1
+```
+**Output:**
+```sample
+1
+```
+"""
+        checks, meta = ai_service.validate_statement_markdown(bad, "hncode")
+
+        self.assertFalse(meta["valid"])
+        self.assertTrue(any(row["name"] == "Dòng yêu cầu" and not row["ok"] for row in checks))
+        self.assertTrue(any(row["name"] == "Format Example" and not row["ok"] for row in checks))
 
     def test_parse_ai_json_accepts_fenced_json_and_string_tags(self):
         parsed = ai_service.parse_ai_json(
@@ -159,7 +219,28 @@ class AiAssistantApiTests(unittest.TestCase):
             {
                 "code": "tonghaiso",
                 "name": "Tổng hai số",
-                "statement_markdown": "Tổng hai số | tonghaiso | 800 | implementation, math\n\nCho $a,b$.",
+                "statement_markdown": """Tong hai so | tonghaiso | 800 | implementation, math
+
+Cho $a,b$.
+
+**Yeu cau:** Tinh tong hai so.
+
+#### Input
+- Mot dong chua hai so nguyen $a$ va $b$.
+
+#### Output
+- In ra tong cua $a$ va $b$.
+
+#### Example
+!!! question "Test 1"
+    ???+ "Input"
+        ```sample
+        1 2
+        ```
+    ???+ success "Output"
+        ```sample
+        3
+        ```""",
                 "points": 800,
                 "tags": ["implementation", "math"],
                 "allows_partial_points": True,
@@ -208,7 +289,28 @@ class AiAssistantApiTests(unittest.TestCase):
         rows[0].update(
             {
                 "selected": True,
-                "statement_markdown": "Tổng hai số | tonghaiso | 200 | math\n\nCho $a,b$.",
+                "statement_markdown": """Tong hai so | tonghaiso | 200 | math
+
+Cho $a,b$.
+
+**Yeu cau:** Tinh tong hai so.
+
+#### Input
+- Mot dong chua hai so nguyen $a$ va $b$.
+
+#### Output
+- In ra tong cua $a$ va $b$.
+
+#### Example
+!!! question "Test 1"
+    ???+ "Input"
+        ```sample
+        1 2
+        ```
+    ???+ success "Output"
+        ```sample
+        3
+        ```""",
                 "solution_markdown": "# Lời giải\n\nCộng hai số.",
                 "points": "200",
             }
@@ -291,7 +393,31 @@ class AiAssistantApiTests(unittest.TestCase):
     def test_validate_statement_endpoint(self):
         response = self.client.post(
             "/api/ai/validate-statement",
-            json={"target": "hncode", "markdown": "Bài | bai | 100 | math\n\nCho $n$."},
+            json={
+                "target": "hncode",
+                "markdown": """Bai | bai | 100 | math
+
+Cho $n$.
+
+**Yeu cau:** In $n$.
+
+#### Input
+- Mot dong chua $n$.
+
+#### Output
+- In ra $n$.
+
+#### Example
+!!! question "Test 1"
+    ???+ "Input"
+        ```sample
+        1
+        ```
+    ???+ success "Output"
+        ```sample
+        1
+        ```""",
+            },
         )
         data = response.get_json()
 

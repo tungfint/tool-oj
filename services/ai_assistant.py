@@ -234,6 +234,12 @@ def validate_statement_markdown(markdown: str, target: str) -> tuple[list[dict],
     add("Ký hiệu công thức", math_ok, math_message)
     body_ok = len(text.splitlines()) >= 3
     add("Phần thân đề", body_ok, "Có phần thân đề sau dòng metadata." if body_ok else "Nên có nội dung đề sau dòng đầu.")
+    requirement_ok = "**Yêu cầu:**" in text or "**Yeu cau:**" in text
+    add("Dòng yêu cầu", requirement_ok, "Có dòng `**Yêu cầu:**`." if requirement_ok else "Thiếu dòng `**Yêu cầu:**` sau mô tả bài toán.")
+    headings_ok = all(heading in text for heading in ("#### Input", "#### Output", "#### Example"))
+    add("Heading Input/Output/Example", headings_ok, "Có đủ `#### Input`, `#### Output`, `#### Example`." if headings_ok else "Thiếu một trong các heading `#### Input`, `#### Output`, `#### Example`.")
+    example_ok = '!!! question' in text and '???+ "Input"' in text and '???+ success "Output"' in text and "```sample" in text
+    add("Format Example", example_ok, "Example dùng đúng admonition và code block `sample`." if example_ok else "Example cần dùng `!!! question`, `???+ \"Input\"`, `???+ success \"Output\"` và code block `sample`.")
     meta = {key: header[key] for key in ("name", "code", "points", "tags")}
     meta["valid"] = all(row["ok"] for row in checks)
     meta["normalized_markdown"] = normalize_statement_for_target(text, target)
@@ -251,6 +257,27 @@ def selected_parts_text(options: dict) -> str:
     if options.get("test_review", True):
         parts.append("- Nhận xét bộ test hiện có và đề xuất số lượng/nhóm test cần bổ sung nếu thiếu.")
     return "\n".join(parts) or "- Chỉ rà soát và báo cáo vấn đề."
+
+
+def extract_numbered_section(reference_text: str, start_heading: str, next_heading: str, max_chars: int = 12000) -> str:
+    text = str(reference_text or "")
+    start = text.find(start_heading)
+    if start < 0:
+        return ""
+    end = text.find(next_heading, start + 1)
+    section = text[start : end if end >= 0 else len(text)].strip()
+    if len(section) > max_chars:
+        section = section[:max_chars].rstrip() + "\n..."
+    return section
+
+
+def extract_statement_guidelines(reference_text: str, max_chars: int = 16000) -> str:
+    section_3 = extract_numbered_section(reference_text, "## 3. Việc 1: Chuẩn hoá đề bài", "\n## 4.", max_chars)
+    section_4 = extract_numbered_section(reference_text, "## 4. Việc 2: Kiểm tra tính đúng đắn của đề", "\n## 5.", max_chars)
+    joined = "\n\n".join(part for part in (section_3, section_4) if part)
+    if len(joined) > max_chars:
+        joined = joined[:max_chars].rstrip() + "\n..."
+    return joined
 
 
 def extract_points_guidelines(reference_text: str, max_chars: int = 12000) -> str:
@@ -275,6 +302,7 @@ def build_hncode_normalization_prompt(reference_text: str, snapshot: dict, optio
     statement = snapshot.get("statement") or ""
     solution = snapshot.get("solution") or ""
     test_summary = snapshot.get("test_summary") or ""
+    statement_guidelines = extract_statement_guidelines(reference_text)
     points_guidelines = extract_points_guidelines(reference_text)
     return f"""Bạn là trợ lý chuẩn hóa bài lập trình cho {target_label}.
 
@@ -302,10 +330,19 @@ Yêu cầu trả về:
   - `confidence`: `high`, `medium` hoặc `low`.
 - Nếu thiếu dữ kiện, không tự bịa; ghi rõ trong `issues`.
 - Với HNCode dùng `$...$` cho công thức. Với HNOJ dùng `~...~`.
+- Khi viết `statement_markdown`, bắt buộc tuân thủ quy tắc chuẩn hoá đề bài bên dưới.
+- `statement_markdown` phải có dòng đầu metadata, rồi phần thân đề có `**Yêu cầu:**`, `#### Input`, `#### Output`, `#### Example`.
+- Example trên HNCode phải dùng admonition `!!! question`, `???+ "Input"`, `???+ success "Output"` và code block ```sample.
+- Nếu bài có nhiều ví dụ, mỗi ví dụ là một khối `!!! question "Test k"`.
 - Khi đánh giá `points`, bắt buộc dùng quy tắc Points bên dưới: đây là độ khó kiểu Codeforces/rating, không phải điểm contest.
 - `points` nên chọn mốc gần nhất trong các mốc 800, 900, 1000, ..., 2800+.
 - Không được chỉ nhìn tag để gán points; phải xét độ khó hiểu đề, nhận xét, thuật toán, cài đặt, case biên, chứng minh và giới hạn dữ liệu.
 - Trong `test_review` hoặc `issues`, nếu điểm chỉ là tạm thời do thiếu đề/giới hạn/lời giải, hãy ghi rõ.
+
+Quy tắc chuẩn hoá đề bài:
+```text
+{statement_guidelines}
+```
 
 Quy tắc đánh giá Points:
 ```text
