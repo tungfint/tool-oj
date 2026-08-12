@@ -1,0 +1,68 @@
+:root { --bg:#f5f7fb; --panel:#fff; --ink:#172033; --muted:#667085; --line:#d8dee9; --soft:#eef2f6; --accent:#0f766e; --ok:#087443; --bad:#b42318; --warn:#b54708; --code:#101828; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font-family:"Segoe UI", Arial, sans-serif; font-size:14px; }
+    header { background:var(--panel); border-bottom:1px solid var(--line); padding:16px 22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    h1 { margin:0; font-size:22px; letter-spacing:0; }
+    h2 { margin:0 0 8px; font-size:18px; }
+    h3 { margin:16px 0 8px; font-size:15px; }
+    p { color:var(--muted); line-height:1.45; margin:0 0 12px; }
+    .nav { display:flex; gap:10px; flex-wrap:wrap; align-items:stretch; }
+    .nav-group { display:flex; gap:6px; flex-wrap:wrap; align-items:center; border:1px solid var(--line); background:#f8fafc; border-radius:8px; padding:6px; }
+    .nav-label { color:#475467; font-size:12px; font-weight:800; padding:0 4px; text-transform:uppercase; letter-spacing:.03em; }
+    .nav button, button.action { border:1px solid #b8c2d3; border-radius:6px; padding:10px 14px; background:#fff; color:var(--ink); font:inherit; font-weight:700; cursor:pointer; box-shadow:0 1px 2px rgba(16,24,40,.08); }
+    .nav button:hover, button.action:hover { border-color:#8fa1b8; background:#f8fafc; }
+    .nav button.active, button.primary { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 2px 6px rgba(15,118,110,.24); }
+    button.primary:hover { background:#0b665f; border-color:#0b665f; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    main { max-width:1480px; margin:0 auto; padding:20px; display:flex; align-items:flex-start; gap:18px; }
+    section { background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+    main > section:first-child { flex:1 1 auto; min-width:0; }
+    .panel { display:none; padding:18px; }
+    .panel.active { display:block; }
+    label { display:block; margin:12px 0 6px; color:#344054; font-weight:650; }
+    input[type=text], input[type=password], select, textarea { width:100%; border:1px solid var(--line); border-radius:6px; padding:9px 10px; font:inherit; background:#fff; color:var(--ink); }
+    textarea { min-height:78px; resize:vertical; line-height:1.45; }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+    .row { display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
+    .row > .grow { flex:1 1 340px; }
+    .actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+    #toggleGuide { margin-top:6px; }
+    .table-tools { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+    .note, .guide { border:1px solid #b8d8d3; background:#f0fdfa; color:#134e48; border-radius:8px; padding:12px; line-height:1.48; margin:12px 0; }
+    .guide { border-color:var(--line); background:#fafbfc; color:var(--ink); }
+    .tool-card { border:1px solid #cbd5e1; background:#fff; border-radius:8px; padding:16px; margin-top:16px; box-shadow:0 1px 3px rgba(16,24,40,.08); }
+    .tool-card + .tool-card { margin-top:18px; }
+    .tool-title { display:flex; align-items:center; gap:10px; margin:0 0 8px; font-size:18px; color:#0f172a; }
+    .tool-title::before { content:""; width:6px; height:24px; border-radius:999px; background:var(--accent); display:inline-block; }
+    .tool-subtitle { margin-bottom:14px; }
+    .sample, pre#log { background:var(--code); color:#f2f4f7; border-radius:6px; padding:12px; white-space:pre-wrap; overflow:auto; font-family:Consolas, "Cascadia Mono", monospace; font-size:12px; line-height:1.45; }
+    .log-panel { flex:0 0 auto; width:min(380px, 34vw); min-width:280px; max-width:680px; display:grid; grid-template-rows:auto minmax(360px, 1fr); min-height:520px; resize:horizontal; overflow:auto; }
+    .log-head { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    pre#log { margin:0; border-radius:0 0 8px 8px; }
+    .status { border-radius:999px; padding:4px 10px; background:var(--soft); color:var(--muted); font-weight:650; font-size:12px; }
+    .status.ok { background:#dcfae6; color:var(--ok); }
+    .status.err { background:#fee4e2; color:var(--bad); }
+    .status.warn { background:#fef0c7; color:var(--warn); }
+    .row-status.ok { color:var(--ok); font-weight:700; }
+    .row-status.err { color:var(--bad); font-weight:700; }
+    .row-status.warn { color:var(--warn); font-weight:700; }
+    .log-ok { color:#86efac; font-weight:700; }
+    .log-err { color:#fca5a5; font-weight:700; }
+    .log-warn { color:#fde68a; font-weight:700; }
+    .log-progress { color:#bfdbfe; font-weight:700; }
+    .login-badge { display:inline-flex; align-items:center; min-height:24px; border-radius:999px; padding:3px 9px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:700; margin-top:6px; }
+    .login-badge.ok { background:#dcfae6; color:var(--ok); }
+    .login-badge.err { background:#fee4e2; color:var(--bad); }
+    table { width:100%; border-collapse:collapse; margin-top:14px; font-size:13px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px; vertical-align:top; text-align:left; }
+    th { background:#f8fafc; font-weight:700; }
+    .inner-table { margin-top:0; font-size:12px; }
+    .inner-table th, .inner-table td { padding:5px 6px; }
+    td input[type=text] { padding:6px 7px; }
+    a.problem-link { color:var(--accent); font-weight:700; text-decoration:none; }
+    .test-meta { color:var(--muted); font-size:12px; line-height:1.4; }
+    .lang-list { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; margin-top:8px; }
+    .check { display:flex; align-items:center; gap:7px; }
+    .hidden { display:none; }
+    @media (max-width:980px) { main { display:block; padding:14px; } .log-panel { width:100%; max-width:none; margin-top:14px; resize:vertical; } .grid-2,.grid-3,.lang-list { grid-template-columns:1fr; } }

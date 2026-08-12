@@ -1,0 +1,490 @@
+
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tool HNCode</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon-HNCode.svg">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <header>
+    <h1>Tool HNCode</h1>
+    <div class="nav">
+      <div class="nav-group">
+        <span class="nav-label">Chung</span>
+        <button type="button" class="active" data-panel="accounts">Tài khoản & Hướng dẫn</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-label">Bài tập</span>
+        <button type="button" data-panel="upload">Up nhiều bài</button>
+        <button type="button" data-panel="single-upload">Up 1 bài</button>
+        <button type="button" data-panel="transfer">Chuyển bài</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-label">Contest / Course</span>
+        <button type="button" data-panel="contest-transfer">Chuyển contest</button>
+        <button type="button" data-panel="contest-create">Tạo contest</button>
+        <button type="button" data-panel="contest-lesson-copy">Contest → Lesson</button>
+        <button type="button" data-panel="course-clone">Clone Course</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-label">Khác</span>
+        <button type="button" data-panel="quiz-upload">Up Quiz</button>
+        <button type="button" data-panel="misc-tools">Tool lẻ</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div class="panel active" id="panel-accounts">
+        <h2>Tài khoản & Hướng dẫn</h2>
+        <p>Lưu tạm tài khoản trên trình duyệt máy này. Khi chạy tác vụ, form sẽ tự điền các thông tin đã lưu.</p>
+        <div class="grid-3">
+          <div><label>HNOJ user</label><input id="acct_hnoj_user" type="text" value="hncode"><span id="login_hnoj" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>HNCode user</label><input id="acct_hncode_user" type="text" value="hncode"><span id="login_hncode" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>TinHocTre user</label><input id="acct_tinhoctre_user" type="text" value="admin"><span id="login_tinhoctre" class="login-badge">Chưa kiểm tra</span></div>
+        </div>
+        <div class="grid-3">
+          <div><label>HNOJ password</label><input id="acct_hnoj_pass" type="password"></div>
+          <div><label>HNCode password</label><input id="acct_hncode_pass" type="password"></div>
+          <div><label>TinHocTre password</label><input id="acct_tinhoctre_pass" type="password"></div>
+        </div>
+        <label>Cookie TinHocTre nếu bị WAF/challenge</label>
+        <textarea id="acct_tinhoctre_cookie" placeholder="Dán nguyên dòng Cookie của tinhoctre.vn sau khi đăng nhập, ví dụ: sessionid=...; csrftoken=...; ..."></textarea>
+        <p>Nếu TinHocTre chặn đăng nhập tự động, hãy đăng nhập TinHocTre trên trình duyệt, mở DevTools → Network, chọn một request tới tinhoctre.vn rồi copy Request Header `Cookie` dán vào ô này.</p>
+        <div class="actions">
+          <button class="action" type="button" id="openTinHocTreBrowser">Mở Edge đăng nhập TinHocTre</button>
+          <button class="action" type="button" id="pullTinHocTreCookie">Lấy cookie từ Edge</button>
+          <button class="action primary" type="button" id="quickTinHocTreCookie">Lấy cookie nhanh từ Edge</button>
+        </div>
+        <div class="grid-2">
+          <div><label>HNOJ Contest user</label><input id="acct_contest_hnoj_user" type="text" value="admin"><span id="login_contest_hnoj" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>HNOJ Contest password</label><input id="acct_contest_hnoj_pass" type="password"></div>
+        </div>
+        <div class="actions">
+          <button class="action primary" type="button" id="saveAccounts">Lưu tạm</button>
+          <button class="action" type="button" id="checkAccounts">Kiểm tra đăng nhập</button>
+          <button class="action" type="button" id="clearAccounts">Xóa thông tin đã lưu</button>
+        </div>
+        <button class="action" type="button" id="toggleGuide">Ẩn / Hiện hướng dẫn prompt</button>
+        <div class="guide hidden" id="promptGuide"><div class="sample">{{ prompt_guide }}</div></div>
+      </div>
+
+      <div class="panel" id="panel-upload">
+        <h2>Up nhiều bài</h2>
+        <p>Chọn web đích, chọn zip bộ bài, bấm Chuẩn bị dữ liệu để xem bảng bài trước khi up thật.</p>
+        <div class="grid-2">
+          <div>
+            <label>Web đích</label>
+            <select id="uploadTarget">
+              <option value="hnoj">HNOJ</option>
+              <option value="hncode">HNCode</option>
+              <option value="tinhoctre">TinHocTre</option>
+            </select><span id="uploadTargetLogin" class="login-badge">Chưa kiểm tra</span>
+          </div>
+          <div>
+            <label>File zip bộ bài hoặc file Markdown tổng hợp</label>
+            <div class="row">
+              <div class="grow"><input id="uploadZip" type="text" value="{{ default_zip }}"></div>
+              <button class="action" type="button" id="chooseZip">Chọn file</button>
+              <button class="action" type="button" id="useBatchSample">Dùng mẫu Tổng hai số</button>
+              <input id="zipFileInput" class="hidden" type="file" accept=".zip,.md,application/zip,text/markdown,text/plain">
+            </div>
+          </div>
+        </div>
+        <div class="note" style="margin-top:12px">
+          <b>Cấu trúc file zip bộ bài:</b><br>
+          Mỗi bài nên có đủ file <code>&lt;ma_bai&gt;.md</code>, <code>gentest_&lt;ma_bai&gt;.py</code> hoặc <code>&lt;ma_bai&gt;.zip</code>, <code>sol_&lt;ma_bai&gt;.md</code> và nếu cần nộp thử thì có <code>sol_&lt;ma_bai&gt;.cpp</code>, <code>sol_&lt;ma_bai&gt;.py</code>.<br>
+          File Markdown nên có dòng đầu <code>Tên bài | Mã bài | Điểm | Các Tags</code>. File sinh test sẽ tạo thư mục test và nén thành <code>&lt;ma_bai&gt;.zip</code>; nếu zip test có sẵn thì tool dùng trực tiếp. Thông tin nào thiếu sẽ để trống hoặc dùng mặc định.
+          <br><b>Ràng buộc gentest:</b> nên là Python, tên <code>gentest_&lt;ma_bai&gt;.py</code>, tự tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất có đủ cặp <code>.inp/.out</code>; không cần input tương tác; chạy trong 120 giây; nếu dùng C++ trong gentest thì máy/VPS cần có <code>g++</code>.
+          <br><a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso.zip" target="_blank" rel="noopener">Tải mẫu bo_mau_1_bai_tonghaiso.zip</a>
+        </div>
+        <div class="grid-2">
+          <div><label>Giới hạn thời gian</label><input id="timeLimit" type="text" value="1.0"></div>
+          <div><label>Giới hạn bộ nhớ</label><input id="memoryLimit" type="text" value="1048576"></div>
+        </div>
+        <h3>Ngôn ngữ cho phép</h3>
+        <div id="languages" class="lang-list"></div>
+
+        <div class="actions">
+          <button class="action" type="button" id="toggleAdvanced">Mở rộng thông tin khác</button>
+        </div>
+        <div id="advancedUpload" class="hidden">
+          <div class="grid-3">
+            <div><label>Người tạo (Creators)</label><input id="creator" type="text" value="mrtee"></div>
+            <div><label>Điểm mặc định</label><input id="uploadPoints" type="text" value="100"></div>
+            <div><label>Dạng bài tập / Tags mặc định</label><input id="uploadTags" type="text" placeholder="Chưa phân loại, implementation, math, hoặc Type ID"></div>
+          </div>
+          <div class="grid-3">
+            <label class="check"><input type="checkbox" id="uploadPartial" checked> Cho phép điểm thành phần</label>
+            <label class="check"><input type="checkbox" id="overwriteExisting"> Ghi đè bài đã có</label>
+            <label class="check"><input type="checkbox" id="overwriteStatement"> Ghi đè đề bài nếu mã bài đã có</label>
+            <label class="check"><input type="checkbox" id="overwriteTests"> Ghi đè test nếu mã bài đã có</label>
+          </div>
+          <div class="grid-3">
+            <div><label>Dạng đề (Problem types)</label><input id="typeLabel" type="text" value="Chưa phân loại" disabled></div>
+            <div><label>Nhóm bài (Problem group)</label><input id="groupLabel" type="text" value="Chưa phân loại" disabled></div>
+          </div>
+        </div>
+
+        <div class="grid-3" style="margin-top:12px">
+          <label class="check"><input type="checkbox" id="submitCpp"> Nộp bài chấm thử C++</label>
+          <label class="check"><input type="checkbox" id="submitPython" checked> Nộp bài chấm thử Python</label>
+          <label class="check"><input type="checkbox" id="noSubmit"> Không nộp bài chấm thử</label>
+        </div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="skipStatementTitle" checked> Bỏ dòng đầu tiên trong file đề bài</label>
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareUpload">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmUpload" disabled>Xác nhận Up nhiều bài</button>
+        </div>
+        <div id="uploadTable"></div>
+      </div>
+
+      <div class="panel" id="panel-single-upload">
+        <h2>Up 1 bài</h2>
+        <p>Nhập trực tiếp một bài, kiểm tra dữ liệu trước, rồi xác nhận up. Thiếu phần nào thì tool bỏ qua phần đó.</p>
+        <div class="grid-2">
+          <div>
+            <label>Web đích</label>
+            <select id="singleUploadTarget">
+              <option value="hnoj">HNOJ</option>
+              <option value="hncode">HNCode</option>
+              <option value="tinhoctre">TinHocTre</option>
+            </select><span id="singleUploadLogin" class="login-badge">Chưa kiểm tra</span>
+          </div>
+          <div>
+            <label>Mã bài</label>
+            <input id="singleCode" type="text" placeholder="tht26_tongbi">
+          </div>
+        </div>
+        <div><label>Tên bài toán</label><input id="singleName" type="text" placeholder="Tổng bi"></div>
+        <div class="grid-2">
+          <div><label>Giới hạn thời gian</label><input id="singleTimeLimit" type="text" value="1.0"></div>
+          <div><label>Giới hạn bộ nhớ</label><input id="singleMemoryLimit" type="text" value="1024M"></div>
+        </div>
+        <div class="grid-3">
+          <div><label>Điểm</label><input id="singlePoints" type="text" value="100"></div>
+          <div><label>Dạng bài tập / Tags</label><input id="singleTags" type="text" placeholder="Có thể để trống; nếu nhập số ID thì dùng làm Type ID"></div>
+          <label class="check"><input type="checkbox" id="singlePartial" checked> Cho phép điểm thành phần</label>
+        </div>
+        <div class="grid-2" style="margin-top:12px">
+          <label class="check"><input type="checkbox" id="singleOverwrite"> Ghi đè nếu mã bài đã có</label>
+        </div>
+        <h3>Ngôn ngữ cho phép</h3>
+        <div id="singleLanguages" class="lang-list"></div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Đề bài</h3>
+          <div class="actions">
+            <button class="action" type="button" id="toggleSingleStatement">Thu gọn đề bài</button>
+            <button class="action" type="button" id="chooseSingleStatement">Chọn file .md</button>
+            <input id="singleStatementFile" class="hidden" type="file" accept=".md,text/markdown,text/plain">
+          </div>
+          <div id="singleStatementBox">
+            <textarea id="singleStatement" placeholder="Dòng đầu có thể là: Tên bài | ma_bai | Điểm | Tags&#10;&#10;Sau đó là nội dung đề bài."></textarea>
+            <label class="check" style="margin-top:8px"><input type="checkbox" id="singleSkipStatementTitle" checked> Bỏ dòng đầu tiên trong file đề bài</label>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Code sinh test</h3>
+          <div class="actions">
+            <button class="action" type="button" id="toggleSingleGenerator">Thu gọn sinh test</button>
+            <button class="action" type="button" id="chooseSingleGenerator">Chọn code Python / C++</button>
+            <button class="action" type="button" id="chooseSingleTestZip">Chọn zip test có sẵn</button>
+            <button class="action" type="button" id="useSingleSample">Dùng mẫu Tổng hai số</button>
+            <input id="singleGeneratorFile" class="hidden" type="file" accept=".py,.cpp,text/plain">
+            <input id="singleTestZipFile" class="hidden" type="file" accept=".zip,application/zip">
+          </div>
+          <div id="singleGeneratorBox">
+            <input id="singleGeneratorName" type="text" placeholder="Chưa chọn file sinh test" readonly>
+            <input id="singleTestZipName" type="text" placeholder="Chưa chọn zip test có sẵn" readonly>
+            <textarea id="singleGenerator" placeholder="Dán code gentest Python vào đây. Gentest cần tự sinh zip test, không chờ nhập bàn phím, chạy trong 120 giây; nếu gọi g++ thì máy/VPS phải có g++."></textarea>
+            <div class="note"><b>Ràng buộc gentest:</b> nên đặt tên <code>gentest_&lt;ma_bai&gt;.py</code>; tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất; trong zip có đủ cặp <code>.inp/.out</code>. Nếu chọn zip test có sẵn thì tool ưu tiên zip đó.</div>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Lời giải / hướng dẫn</h3>
+          <div class="actions">
+            <button class="action" type="button" id="toggleSingleSolution">Thu gọn lời giải</button>
+            <button class="action" type="button" id="chooseSingleSolution">Chọn file .md</button>
+            <input id="singleSolutionFile" class="hidden" type="file" accept=".md,text/markdown,text/plain">
+          </div>
+          <div id="singleSolutionBox">
+            <textarea id="singleSolution" placeholder="Dán lời giải/hướng dẫn Markdown nếu muốn up kèm."></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareSingleUpload">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmSingleUpload" disabled>Xác nhận Up 1 bài</button>
+        </div>
+        <div id="singleUploadTable"></div>
+      </div>
+
+      <div class="panel" id="panel-transfer">
+        <h2>Chuyển bài</h2>
+        <p>Chọn nguồn, đích và danh sách mã bài. Tool sẽ lấy đề/test từ nguồn rồi tạo bài và upload test ở đích.</p>
+        <div class="grid-2">
+          <div><label>Nguồn</label><select id="transferSource"><option value="tinhoctre">TinHocTre</option><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option></select><span id="transferSourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Đích</label><select id="transferDest"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option><option value="tinhoctre">TinHocTre</option></select><span id="transferDestLogin" class="login-badge">Chưa kiểm tra</span></div>
+        </div>
+        <div class="grid-2">
+          <div><label>Giới hạn thời gian mặc định</label><input id="transferTimeLimit" type="text" value="1.0"></div>
+          <div><label>Giới hạn bộ nhớ mặc định</label><input id="transferMemoryLimit" type="text" value="1048576"></div>
+        </div>
+        <div class="actions">
+          <button class="action" type="button" id="applyTransferLimits">Áp dụng cho tất cả các bài</button>
+          <button class="action" type="button" id="resetTransferLimits">Mặc định</button>
+        </div>
+        <h3>Ngôn ngữ cho phép ở đích</h3>
+        <div id="transferLanguages" class="lang-list"></div>
+        <div class="actions">
+          <button class="action" type="button" id="toggleTransferAdvanced">Mở rộng thông tin khác</button>
+        </div>
+        <div id="advancedTransfer" class="hidden">
+          <div class="grid-3">
+            <div><label>Người tạo (Creators)</label><input id="transferCreator" type="text" value="mrtee"></div>
+            <div><label>Dạng đề (Problem types)</label><input id="transferTypeLabel" type="text" value="Chưa phân loại" disabled></div>
+            <div><label>Nhóm bài (Problem group)</label><input id="transferGroupLabel" type="text" value="Chưa phân loại" disabled></div>
+          </div>
+        </div>
+        <label>Danh sách mã bài cần chuyển</label>
+        <textarea id="transferCodes" placeholder="tht26_tongbi&#10;tht26_quatang"></textarea>
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareTransfer">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmTransfer" disabled>Xác nhận chuyển bài</button>
+        </div>
+        <div id="transferTable"></div>
+      </div>
+
+      <div class="panel" id="panel-contest-transfer">
+        <h2>Chuyển contest</h2>
+        <p>Chuyển contest gồm thông tin cơ bản, danh sách bài, điểm và bộ test của từng bài. Không chuyển bài nộp của học sinh.</p>
+        <div class="grid-2">
+          <div>
+            <label>Nguồn</label>
+            <select id="contestSource">
+              <option value="contest_hnoj">HNOJ Contest</option>
+              <option value="hnoj">HNOJ</option>
+              <option value="hncode">HNCode</option>
+              <option value="tinhoctre">TinHocTre</option>
+            </select><span id="contestSourceLogin" class="login-badge">Chưa kiểm tra</span>
+          </div>
+          <div>
+            <label>Đích</label>
+            <select id="contestDest">
+              <option value="hnoj">HNOJ</option>
+              <option value="hncode">HNCode</option>
+              <option value="tinhoctre">TinHocTre</option>
+            </select><span id="contestDestLogin" class="login-badge">Chưa kiểm tra</span>
+          </div>
+        </div>
+        <label>Danh sách mã contest cần chuyển</label>
+        <textarea id="contestCodes" placeholder="tht2026_hn_ck_a&#10;tht2026_hn_ck_b&#10;tht2026_hn_ck_c"></textarea>
+        <div class="grid-2">
+          <div><label>Time mặc định cho bài thiếu thông tin</label><input id="contestProblemTime" type="text" value="1.0"></div>
+          <div><label>Memory mặc định cho bài thiếu thông tin</label><input id="contestProblemMemory" type="text" value="1048576"></div>
+        </div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="contestReuseExistingProblems" checked> Nếu bài đã có ở đích thì dùng lại bài đó</label>
+        <label class="check" style="margin-top:8px"><input type="checkbox" id="contestCreateMissingProblems" checked> Tự chuyển bài/test còn thiếu trước khi tạo contest</label>
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareContestTransfer">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmContestTransfer" disabled>Xác nhận chuyển contest</button>
+        </div>
+        <div id="contestTransferTable"></div>
+      </div>
+
+      <div class="panel" id="panel-contest-create">
+        <h2>Tạo contest từ mã bài</h2>
+        <p>Tạo contest cơ bản và gắn các mã bài đã có trên web đích. Các thiết lập chi tiết có thể chỉnh lại trong admin sau.</p>
+        <div class="grid-2">
+          <div><label>Web đích</label><select id="createContestTarget"><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option><option value="tinhoctre">TinHocTre</option></select><span id="createContestLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Mã contest</label><input id="createContestKey" type="text" placeholder="tht2026_hn_ck_a"></div>
+        </div>
+        <label>Tên contest</label><input id="createContestName" type="text" placeholder="TIN HỌC TRẺ 2026 - HÀ NỘI - CHUNG KẾT - BẢNG A">
+        <div class="grid-2">
+          <div><label>Bắt đầu</label><input id="createContestStart" type="datetime-local"></div>
+          <div><label>Kết thúc</label><input id="createContestEnd" type="datetime-local"></div>
+        </div>
+        <div class="actions">
+          <button class="action" type="button" id="contestTimeToday">Hôm nay 8:00-11:00</button>
+          <button class="action" type="button" id="contestTimeTomorrow">Ngày mai 8:00-11:00</button>
+          <button class="action" type="button" id="contestTime90">Kết thúc sau 90 phút</button>
+        </div>
+        <label>Danh sách mã bài</label>
+        <textarea id="createContestProblems" placeholder="tht26hn_cka_thieunhi&#10;tht26hn_cka_tongdayso"></textarea>
+        <div class="actions">
+          <button class="action primary" type="button" id="createContestButton">Tạo contest</button>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-contest-lesson-copy">
+        <h2>Sao chép bài từ Contest → Lesson HNCode</h2>
+        <p>Lấy danh sách bài theo đúng thứ tự trong contest HNCode/HNOJ, chuyển bài thiếu sang HNCode nếu cần, rồi thêm vào lesson HNCode. Bài đã có trong lesson sẽ được báo rõ và bỏ qua.</p>
+        <div class="grid-2">
+          <div><label>Nguồn contest</label><select id="lessonCopySource"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select><span id="lessonCopySourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Lesson đích</label><input id="lessonCopyLessonUrl" type="text" value="https://hncode.edu.vn/course/26nc202/lesson/3073"></div>
+        </div>
+        <div><label>HNCode đích</label><input id="lessonCopyUserMirror" type="text" value="hncode" readonly><span id="lessonCopyLogin" class="login-badge">Chưa kiểm tra</span></div>
+        <label>Contest nguồn</label>
+        <input id="lessonCopyContestUrl" type="text" value="https://hnoj.edu.vn/contest/ctp_4">
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareContestLessonCopy">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmContestLessonCopy" disabled>Sao chép bài</button>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div style="max-width:180px"><label>Điểm chung</label><input id="lessonCopyBulkScore" type="text" value="100"></div>
+          <button class="action" type="button" id="fillLessonCopyScores">Áp dụng điểm cho tất cả bài</button>
+        </div>
+        <div id="contestLessonCopyTable"></div>
+      </div>
+
+      <div class="panel" id="panel-course-clone">
+        <h2>Clone Course HNCode</h2>
+        <p>Clone các lesson và contest từ course nguồn sang course đích. Lesson dùng nút Nhân bản native của HNCode; contest sẽ tạo bản clone với mã mới để không đụng contest gốc.</p>
+        <div class="grid-2">
+          <div><label>HNCode user</label><input id="courseCloneUserMirror" type="text" value="hncode" readonly><span id="courseCloneLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Hậu tố mã contest đích</label><input id="courseCloneContestSuffix" type="text" placeholder="Để trống thì tự dùng _<course đích>"></div>
+        </div>
+        <label>Course nguồn</label>
+        <input id="courseCloneSourceUrl" type="text" value="https://hncode.edu.vn/course/sach_cppcoban_share">
+        <label>Course đích</label>
+        <input id="courseCloneDestUrl" type="text" value="https://hncode.edu.vn/course/ngs_cpp_cb_01">
+        <div class="grid-2" style="margin-top:12px">
+          <label class="check"><input type="checkbox" id="courseCloneLessons" checked> Clone lesson</label>
+          <label class="check"><input type="checkbox" id="courseCloneContests" checked> Clone contest</label>
+        </div>
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareCourseClone">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmCourseClone" disabled>Xác nhận Clone Course</button>
+        </div>
+        <div id="courseCloneTable"></div>
+      </div>
+
+      <div class="panel" id="panel-quiz-upload">
+        <h2>Up Quiz</h2>
+        <p>Up danh sách câu hỏi lên HNCode Quiz tại <code>https://oj.hncode.edu.vn/quiz/questions/create/</code>. Nhãn để trống.</p>
+        <div class="grid-2">
+          <div><label>HNCode user</label><input id="quizUserMirror" type="text" value="hncode" readonly><span id="quizLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>File quiz Markdown/TXT</label><div class="row"><div class="grow"><input id="quizFileName" type="text" placeholder="Có thể bỏ trống và dán trực tiếp nội dung bên dưới" readonly></div><button class="action" type="button" id="chooseQuizFile">Chọn file</button><input id="quizFileInput" class="hidden" type="file" accept=".md,.txt,text/markdown,text/plain"></div></div>
+        </div>
+        <div class="grid-2" style="margin-top:12px">
+          <label class="check"><input type="checkbox" id="quizShuffleChoices" checked> Xáo trộn lựa chọn</label>
+          <label class="check"><input type="checkbox" id="quizPublic"> Công khai</label>
+        </div>
+        <label>Nội dung danh sách quiz</label>
+        <textarea id="quizMarkdown" style="min-height:340px" placeholder="Dán danh sách quiz theo format, hoặc bấm Chèn mẫu format."></textarea>
+        <div class="actions">
+          <button class="action" type="button" id="fillQuizSample">Chèn mẫu format</button>
+          <button class="action primary" type="button" id="prepareQuizButton">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="uploadQuizButton">Up list quiz</button>
+        </div>
+        <div id="quizUploadSummary"></div>
+      </div>
+
+      <div class="panel" id="panel-misc-tools">
+        <h2>Tool lẻ</h2>
+        <p>Các chức năng phụ chạy ổn định trên local. Một số tool có dùng tài khoản OJ đã lưu ở tab Tài khoản.</p>
+        <div class="tool-card">
+          <h3 class="tool-title">Lấy list mã bài từ Contest / Lesson</h3>
+          <p class="tool-subtitle">Lấy danh sách mã bài theo đúng thứ tự từ HNCode Contest, HNCode Lesson hoặc HNOJ Contest. Kết quả có bảng chi tiết và ô mã bài để copy nhanh.</p>
+          <div class="grid-2">
+            <div><label>Web nguồn</label><select id="codeListSite"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select></div>
+            <div><label>Loại nguồn</label><select id="codeListType"><option value="contest">Contest</option><option value="lesson">Lesson (chỉ HNCode)</option></select></div>
+          </div>
+          <label>URL Contest / Lesson</label>
+          <input id="codeListUrl" type="text" value="https://hncode.edu.vn/contest/nt26exam01">
+          <div class="actions">
+            <button class="action primary" type="button" id="runCodeList">Lấy danh sách mã bài</button>
+          </div>
+          <label>Danh sách mã bài</label>
+          <textarea id="codeListOutput" rows="6" readonly placeholder="Mã bài sẽ hiện ở đây, mỗi dòng một mã."></textarea>
+          <div id="codeListSummary"></div>
+        </div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Lấy last submissions Scratch</h3>
+          <p class="tool-subtitle">Upload file zip data. Tool sẽ lấy mỗi thí sinh 1 file `.sb3`: ưu tiên file trong thư mục `$History` có số cuối lớn nhất, nếu không có thì lấy file `.sb3` ở thư mục gốc của thí sinh.</p>
+          <label>File zip data</label>
+          <div class="row">
+            <div class="grow"><input id="lastSubZipName" type="text" placeholder="Chưa chọn file zip" readonly></div>
+            <button class="action" type="button" id="chooseLastSubZip">Chọn file</button>
+            <input id="lastSubZipFile" class="hidden" type="file" accept=".zip,application/zip">
+          </div>
+          <div class="actions">
+            <button class="action primary" type="button" id="runLastSubmissions">Tạo zip last submissions</button>
+          </div>
+          <div id="lastSubmissionsSummary"></div>
+        </div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Chấm bài HNCode</h3>
+          <p class="tool-subtitle">Đọc file zip bài làm theo dạng <code>BaiLam/TenHocSinh/MABAI.cpp</code>, đọc file CSV tài khoản có cột <code>username,password,name</code>, đăng nhập từng tài khoản, tham gia contest và nộp các bài tương ứng. Kết quả xuất ra Excel.</p>
+          <label>File zip bài làm của học sinh</label>
+          <div class="row">
+            <div class="grow"><input id="gradingZipName" type="text" placeholder="Chưa chọn file BaiLam.zip" readonly></div>
+            <button class="action" type="button" id="chooseGradingZip">Chọn file</button>
+            <input id="gradingZipFile" class="hidden" type="file" accept=".zip,application/zip">
+          </div>
+          <label>File CSV tài khoản nộp bài</label>
+          <div class="row">
+            <div class="grow"><input id="gradingCsvName" type="text" placeholder="Chưa chọn file TaiKhoan.csv" readonly></div>
+            <button class="action" type="button" id="chooseGradingCsv">Chọn file</button>
+            <input id="gradingCsvFile" class="hidden" type="file" accept=".csv,text/csv">
+          </div>
+          <div class="grid-2">
+            <div><label>URL contest HNCode</label><input id="gradingContestUrl" type="text" value="https://hncode.edu.vn/contest/_nt26tst"></div>
+            <div><label>Mật khẩu contest nếu có</label><input id="gradingContestPassword" type="password" value="amsvodich*8*^^"></div>
+          </div>
+          <div class="grid-2">
+            <div><label>Thời gian chờ mỗi submission</label><input id="gradingPollSeconds" type="text" value="Đến khi chấm xong" readonly></div>
+            <div><label>Quy đổi điểm</label><input type="text" value="% chấm x điểm contest" readonly></div>
+          </div>
+          <div class="actions">
+            <button class="action primary" type="button" id="prepareGrading">Chuẩn bị dữ liệu</button>
+            <button class="action primary" type="button" id="confirmGrading" disabled>Xác nhận nộp và chấm</button>
+            <a class="action primary hidden" id="downloadGradingResult" href="#" download="bang_diem_hncode.xlsx">Tải bảng điểm Excel</a>
+          </div>
+          <div id="gradingSummary"></div>
+        </div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Cảnh báo sử dụng AI để code</h3>
+          <p class="tool-subtitle">Nhận vào một folder chứa nhiều file zip contest hoặc chọn một file zip data contest. Tool phân tích dấu hiệu AI code, đổi phong cách code và nghi vấn chép code nhau, rồi xuất Excel có link mở file code.</p>
+          <label>Folder chứa các zip contest</label>
+          <input id="aiWarningFolder" type="text" value="{{ ai_source_default }}">
+          <label>Hoặc chọn 1 file zip data contest</label>
+          <div class="row">
+            <div class="grow"><input id="aiWarningZipName" type="text" placeholder="Không chọn thì dùng folder ở trên" readonly></div>
+            <button class="action" type="button" id="chooseAiWarningZip">Chọn file zip</button>
+            <input id="aiWarningZipFile" class="hidden" type="file" accept=".zip,application/zip">
+          </div>
+          <p>Đây là báo cáo cảnh báo/nghi vấn, không phải kết luận chắc chắn. Nên mở các file mẫu trong Excel để kiểm tra lại.</p>
+          <div class="actions">
+            <button class="action primary" type="button" id="runAiWarning">Tạo báo cáo Excel</button>
+          </div>
+          <div id="aiWarningSummary"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="log-panel">
+      <div class="log-head"><h2>Thông tin trả về</h2><span id="jobStatus" class="status">idle</span></div>
+      <pre id="log">Sẵn sàng.</pre>
+    </section>
+  </main>
+
+<script>
+window.APP_CONFIG = {
+  targets: {{ targets_json | safe }},
+  quizFormatGuide: {{ quiz_format_guide_json | safe }}
+};
+</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

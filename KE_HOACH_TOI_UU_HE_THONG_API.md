@@ -359,6 +359,14 @@ templates/index.html
 
 Hiện tại HTML/JS/CSS nằm nhiều trong `web_app.py`, AI đọc sẽ bị nặng. Tách ra sẽ dễ sửa giao diện hơn.
 
+Tráº¡ng thÃ¡i hiá»n táº¡i:
+
+- ÄÃ£ tÃ¡ch HTML chÃ­nh ra `templates/index.html`.
+- ÄÃ£ tÃ¡ch CSS ra `static/styles.css`.
+- ÄÃ£ tÃ¡ch JS giao diá»n ra `static/app.js`; template chá» cÃ²n block `window.APP_CONFIG` nhá» Äá» truyá»n dá»¯ liá»u Jinja cho JS.
+- Route `/` ÄÃ£ chuyá»n tá»« `render_template_string` sang `render_template("index.html")`.
+- ChÆ°a tÃ¡ch nhá» `static/api.js` vÃ  `static/tables.js`; nÃªn lÃ m á» giai Äoáº¡n sau Äá» trÃ¡nh lÃ m vá»¡ JS Äang cÃ³ nhiá»u phá»¥ thuá»c chÃ©o.
+
 ## Giai đoạn 5: Viết test parser và test dữ liệu mẫu
 
 Mục tiêu: khi HNCode đổi HTML, sửa parser xong test ngay.
