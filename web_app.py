@@ -1584,63 +1584,35 @@ def api_prepare_course_clone():
         source_slug = extract_hncode_course_slug(payload.get("source_url", ""))
         dest_slug = extract_hncode_course_slug(payload.get("dest_url", ""))
         if source_slug == dest_slug:
-            raise RuntimeError("Course nguồn và course đích đang trùng nhau.")
+            raise RuntimeError("Course ngu?n v? course ??ch ?ang tr?ng nhau.")
         include_lessons = bool(payload.get("include_lessons", True))
         include_contests = bool(payload.get("include_contests", True))
         if not include_lessons and not include_contests:
-            raise RuntimeError("Hãy chọn Clone lesson hoặc Clone contest.")
+            raise RuntimeError("H?y ch?n Clone lesson ho?c Clone contest.")
         session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
         dest_course_id = hncode_course_admin_id(session, dest_slug)
         source_lessons = hncode_course_lessons(session, source_slug) if include_lessons else []
         source_contests = hncode_course_contests(session, source_slug) if include_contests else []
         dest_lessons = hncode_course_lessons(session, dest_slug)
         dest_contests = hncode_course_contests(session, dest_slug)
-        dest_lesson_titles = {row["title"].strip().casefold() for row in dest_lessons}
-        dest_contest_keys = {row["key"] for row in dest_contests}
-        rows: list[dict] = []
         log_lines = [
-            "Chuẩn bị Clone Course HNCode",
-            f"Nguồn: {source_slug}",
-            f"Đích: {dest_slug}",
-            f"Lesson nguồn: {len(source_lessons)}",
-            f"Contest nguồn: {len(source_contests)}",
+            "Chu?n b? Clone Course HNCode",
+            f"Ngu?n: {source_slug}",
+            f"??ch: {dest_slug}",
+            f"Lesson ngu?n: {len(source_lessons)}",
+            f"Contest ngu?n: {len(source_contests)}",
         ]
-        for item in source_lessons:
-            exists = item["title"].strip().casefold() in dest_lesson_titles
-            row = {
-                **item,
-                "selected": not exists,
-                "can_clone": not exists,
-                "status": "Đã có lesson cùng tên ở đích" if exists else "✓ Sẵn sàng",
-                "new_key": "",
-            }
-            rows.append(row)
-            log_lines.append(f"Lesson {item['order']}. {item['title']}: {row['status']}")
         suffix = payload.get("contest_suffix", "")
-        for item in source_contests:
-            new_key = default_course_clone_contest_key(item["key"], dest_slug, suffix)
-            in_dest = new_key in dest_contest_keys
-            global_exists = False
-            if not in_dest:
-                try:
-                    global_exists = bool(admin_contest_change_url(session, TARGETS["hncode"]["base_url"], new_key))
-                except Exception:
-                    global_exists = False
-            if in_dest:
-                status_text = "Đã có contest đích trong course"
-            elif global_exists:
-                status_text = "Mã contest đích đã tồn tại trên HNCode"
-            else:
-                status_text = "✓ Sẵn sàng"
-            row = {
-                **item,
-                "selected": status_text.startswith("✓"),
-                "can_clone": status_text.startswith("✓"),
-                "status": status_text,
-                "new_key": new_key,
-            }
-            rows.append(row)
-            log_lines.append(f"Contest {item['key']} → {new_key}: {status_text}")
+        rows, row_logs = course_service.build_course_clone_rows(
+            source_lessons,
+            source_contests,
+            dest_lessons,
+            dest_contests,
+            dest_slug,
+            suffix,
+            contest_exists=lambda new_key: admin_contest_change_url(session, TARGETS["hncode"]["base_url"], new_key),
+        )
+        log_lines.extend(row_logs)
         prepare_id = uuid.uuid4().hex
         prepared_course_clones[prepare_id] = {
             "created_at": time.time(),
@@ -1670,7 +1642,6 @@ def api_confirm_course_clone():
     state = prepared_course_clones.get(prepare_id)
     if not state:
         return jsonify({"ok": False, "error": "Dữ liệu chuẩn bị Clone Course đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
-    rows_by_id = {(row["kind"], row["key"]): row for row in state["rows"]}
     requested_rows = payload.get("rows", [])
     result_rows = []
     ok = True
@@ -1681,13 +1652,9 @@ def api_confirm_course_clone():
     ]
     try:
         session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
-        for requested in requested_rows:
-            key = requested.get("key", "")
-            kind = requested.get("kind", "")
-            base = dict(rows_by_id.get((kind, key), requested))
-            base["selected"] = bool(requested.get("selected"))
-            if kind == "contest":
-                base["new_key"] = (requested.get("new_key") or base.get("new_key") or "").strip()
+        for base in course_service.merge_requested_course_clone_rows(state["rows"], requested_rows):
+            key = base.get("key", "")
+            kind = base.get("kind", "")
             if not base["selected"]:
                 base["status"] = "Bỏ qua"
                 result_rows.append(base)
@@ -3982,53 +3949,14 @@ def hncode_course_lessons(session: requests.Session, course_slug: str) -> list[d
     page = session.get(hncode_course_page_url(course_slug, "/edit_lessons"), timeout=30)
     if not page.ok:
         raise RuntimeError(f"Không mở được danh sách lesson course {course_slug}: HTTP {page.status_code}")
-    rows: list[dict] = []
-    seen: set[str] = set()
-    for lesson_id, block in re.findall(r'<li\b[^>]*class=["\'][^"\']*\bsortable-item\b[^"\']*["\'][^>]*data-id=["\']?(\d+)["\']?[^>]*>(.*?)</li>', page.text, re.S | re.I):
-        if lesson_id in seen:
-            continue
-        seen.add(lesson_id)
-        title_match = re.search(r'<a\b[^>]*href=["\']/course/[^"\']+/lesson/' + re.escape(lesson_id) + r'["\'][^>]*>(.*?)</a>', block, re.S | re.I)
-        order_match = re.search(r'<span\b[^>]*class=["\'][^"\']*\bitem-order\b[^"\']*["\'][^>]*>(.*?)</span>', block, re.S | re.I)
-        points_match = re.search(r'<span\b[^>]*class=["\'][^"\']*\bitem-points\b[^"\']*["\'][^>]*>(.*?)</span>', block, re.S | re.I)
-        rows.append(
-            {
-                "kind": "lesson",
-                "key": lesson_id,
-                "title": strip_html_text(title_match.group(1)) if title_match else f"Lesson {lesson_id}",
-                "order": strip_html_text(order_match.group(1)).rstrip(".") if order_match else str(len(rows) + 1),
-                "points": strip_html_text(points_match.group(1)) if points_match else "",
-            }
-        )
-    return rows
+    return course_service.parse_course_lessons_from_html(page.text)
 
 
 def hncode_course_contests(session: requests.Session, course_slug: str) -> list[dict]:
     page = session.get(hncode_course_page_url(course_slug, "/contests"), timeout=30)
     if not page.ok:
         raise RuntimeError(f"Không mở được danh sách contest course {course_slug}: HTTP {page.status_code}")
-    rows: list[dict] = []
-    seen: set[str] = set()
-    for block in re.findall(r'<li\b[^>]*class=["\'][^"\']*\bsortable-item\b[^"\']*["\'][^>]*>(.*?)</li>', page.text, re.S | re.I):
-        link_match = re.search(r'<a\b[^>]*href=["\']/contest/([A-Za-z0-9_-]+)["\'][^>]*>(.*?)</a>', block, re.S | re.I)
-        if not link_match:
-            continue
-        key = html.unescape(link_match.group(1)).strip()
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        order_match = re.search(r'<span\b[^>]*class=["\'][^"\']*\bitem-order\b[^"\']*["\'][^>]*>(.*?)</span>', block, re.S | re.I)
-        points_match = re.search(r'<input\b[^>]*class=["\'][^"\']*\binline-points-edit\b[^"\']*["\'][^>]*value=["\']?([^"\'> ]*)', block, re.S | re.I)
-        rows.append(
-            {
-                "kind": "contest",
-                "key": key,
-                "title": strip_html_text(link_match.group(2)) or key,
-                "order": strip_html_text(order_match.group(1)).rstrip(".") if order_match else str(len(rows) + 1),
-                "points": html.unescape(points_match.group(1)) if points_match else "",
-            }
-        )
-    return rows
+    return course_service.parse_course_contests_from_html(page.text)
 
 
 def find_hncode_course_lesson_url(session: requests.Session, course_slug: str, title: str) -> str | None:

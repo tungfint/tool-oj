@@ -220,7 +220,7 @@ Clone lesson và contest sang course đích.
 
 Service nền:
 
-- `services/course.py`: parse course slug, build course URL, chuẩn hóa mã contest clone mặc định.
+- `services/course.py`: parse course slug, build course URL, parse danh sách lesson/contest từ HTML course, chuẩn hóa mã contest clone mặc định, build bảng chuẩn bị Clone Course và merge rows xác nhận.
 
 ## Quiz
 

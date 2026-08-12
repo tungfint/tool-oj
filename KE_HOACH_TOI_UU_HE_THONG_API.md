@@ -546,6 +546,22 @@ Trạng thái hiện tại:
 - Đã thêm `tests/test_contest_lesson.py` để test parse lesson form, build rows, merge rows và API prepare bằng mock session, không cần login thật.
 - Test hiện tại: 16/16 pass.
 
+## VII.D. Chặng 2: Refactor Clone Course
+
+Trạng thái hiện tại:
+
+- Đã tách phần parser/build dữ liệu Clone Course sang `services/course.py`.
+- `services/course.py` hiện có các helper: `parse_course_lessons_from_html`, `parse_course_contests_from_html`, `default_clone_contest_key`, `build_course_clone_rows`, `merge_requested_course_clone_rows`.
+- `web_app.py` vẫn giữ route `/api/prepare-course-clone` và `/api/confirm-course-clone`, nhưng route chuẩn bị đã gọi service để parse/build bảng, route xác nhận đã gọi service để merge rows người dùng gửi lên.
+- Phần live admin clone lesson/contest vẫn giữ trong `web_app.py` để không đổi hành vi form admin hiện tại.
+- Đã thêm fixture/mock cho danh sách lesson, danh sách contest, tạo mã contest đích mặc định, build rows chuẩn bị Clone Course và API prepare bằng mock session, không cần login thật.
+
+Lệnh test riêng cho chặng này:
+
+```powershell
+python -m unittest tests.test_course_clone -v
+```
+
 ## VIII. Việc chưa nên làm ngay
 
 Chưa nên làm ngay:

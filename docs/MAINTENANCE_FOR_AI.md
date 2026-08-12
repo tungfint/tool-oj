@@ -93,6 +93,7 @@ Test nền hiện có:
 
 ```powershell
 python -m unittest tests.test_contest_lesson -v
+python -m unittest tests.test_course_clone -v
 ```
 
 ## Khi chuyển bài hoặc upload test lỗi
