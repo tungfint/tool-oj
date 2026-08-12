@@ -126,6 +126,8 @@ class CourseCloneTests(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["ok"])
+        for key in ["message", "rows", "log", "errors", "meta"]:
+            self.assertIn(key, data)
         self.assertTrue(data["can_clone"])
         self.assertEqual(len(data["rows"]), 4)
         self.assertEqual(data["rows"][2]["new_key"], "ccb_kiemtratonghop_01_dest")

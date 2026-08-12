@@ -36,6 +36,10 @@ class ApiTests(unittest.TestCase):
     def setUp(self):
         self.client = web_app.app.test_client()
 
+    def assert_standard_response_shape(self, data):
+        for key in ["ok", "message", "rows", "log", "errors", "meta"]:
+            self.assertIn(key, data)
+
     def test_index_loads_static_modules(self):
         response = self.client.get("/")
         html = response.get_data(as_text=True)
@@ -66,6 +70,7 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["ok"])
+        self.assert_standard_response_shape(data)
         self.assertIn("message", data)
         self.assertIn("rows", data)
         self.assertIn("log", data)
@@ -90,9 +95,46 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["ok"])
+        self.assert_standard_response_shape(data)
         self.assertEqual([row["code"] for row in data["rows"]], ["new_square", "new_path"])
         self.assertEqual(data["codes_text"], "new_square\nnew_path")
         self.assertEqual(data["meta"]["count"], 2)
+
+    def test_prioritized_api_errors_use_standard_shape_without_live_login(self):
+        cases = [
+            ("/api/prepare-transfer", {"source": "hnoj", "dest": "hncode", "codes": []}),
+            ("/api/prepare-contest-transfer", {"source": "hnoj", "dest": "hncode", "codes": []}),
+            ("/api/confirm-contest-transfer", {"source": "hnoj", "dest": "hncode", "prepare_id": "missing", "rows": []}),
+            ("/api/confirm-contest-to-lesson", {"prepare_id": "missing", "rows": []}),
+            ("/api/confirm-course-clone", {"prepare_id": "missing", "rows": []}),
+            ("/api/confirm-hncode-grading", {"prepare_id": "missing", "rows": []}),
+        ]
+        for url, payload in cases:
+            with self.subTest(url=url):
+                response = self.client.post(url, json=payload)
+                data = response.get_json()
+
+                self.assertEqual(response.status_code, 400)
+                self.assertFalse(data["ok"])
+                self.assert_standard_response_shape(data)
+                self.assertTrue(data["error"])
+
+    def test_confirm_transfer_same_source_dest_keeps_legacy_200_with_standard_shape(self):
+        response = self.client.post(
+            "/api/confirm-transfer",
+            json={
+                "source": "hncode",
+                "dest": "hncode",
+                "rows": [{"selected": True, "code": "abc"}],
+                "settings": {},
+            },
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(data["ok"])
+        self.assert_standard_response_shape(data)
+        self.assertEqual(len(data["rows"]), 1)
 
 
 if __name__ == "__main__":

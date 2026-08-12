@@ -1517,7 +1517,7 @@ def api_upload_quiz():
         prepare_id = payload.get("prepare_id", "")
         state = prepared_quizzes.get(prepare_id)
         if not state:
-            return jsonify({"ok": False, "error": "Dữ liệu quiz đã hết hạn hoặc chưa chuẩn bị. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+            return api_response.api_error("Dữ liệu quiz đã hết hạn hoặc chưa chuẩn bị. Hãy bấm Chuẩn bị dữ liệu lại.")
         questions = state["questions"]
         session = login_hncode(QUIZ_BASE_URL, account.get("username", ""), account.get("password", ""))
         shuffle_choices = bool(payload.get("shuffle_choices"))
@@ -1546,7 +1546,7 @@ def api_upload_quiz():
             rows.append(row)
         return jsonify({"ok": ok, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/prepare-quiz")
@@ -1574,7 +1574,7 @@ def api_prepare_quiz():
             }
         )
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/prepare-course-clone")
@@ -1585,7 +1585,7 @@ def api_prepare_course_clone():
         source_slug = extract_hncode_course_slug(payload.get("source_url", ""))
         dest_slug = extract_hncode_course_slug(payload.get("dest_url", ""))
         if source_slug == dest_slug:
-            raise RuntimeError("Course ngu?n v? course ??ch ?ang tr?ng nhau.")
+            raise RuntimeError("Course nguồn và course đích đang trùng nhau.")
         include_lessons = bool(payload.get("include_lessons", True))
         include_contests = bool(payload.get("include_contests", True))
         if not include_lessons and not include_contests:
@@ -1598,8 +1598,8 @@ def api_prepare_course_clone():
         dest_contests = hncode_course_contests(session, dest_slug)
         log_lines = [
             "Chu?n b? Clone Course HNCode",
-            f"Ngu?n: {source_slug}",
-            f"??ch: {dest_slug}",
+            f"Nguồn: {source_slug}",
+            f"Đích: {dest_slug}",
             f"Lesson ngu?n: {len(source_lessons)}",
             f"Contest ngu?n: {len(source_contests)}",
         ]
@@ -1622,17 +1622,16 @@ def api_prepare_course_clone():
             "dest_course_id": dest_course_id,
             "rows": rows,
         }
-        return jsonify(
-            {
-                "ok": True,
-                "prepare_id": prepare_id,
-                "rows": rows,
-                "can_clone": any(row.get("selected") for row in rows),
-                "log": "\n".join(log_lines),
-            }
+        return api_response.api_success(
+            message="Đã chuẩn bị dữ liệu Clone Course",
+            rows=rows,
+            log="\n".join(log_lines),
+            prepare_id=prepare_id,
+            can_clone=any(row.get("selected") for row in rows),
+            meta={"source_slug": source_slug, "dest_slug": dest_slug},
         )
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/confirm-course-clone")
@@ -1642,7 +1641,7 @@ def api_confirm_course_clone():
     prepare_id = payload.get("prepare_id", "")
     state = prepared_course_clones.get(prepare_id)
     if not state:
-        return jsonify({"ok": False, "error": "Dữ liệu chuẩn bị Clone Course đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+        return api_response.api_error("Dữ liệu chuẩn bị Clone Course đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
     requested_rows = payload.get("rows", [])
     result_rows = []
     ok = True
@@ -1686,9 +1685,16 @@ def api_confirm_course_clone():
         if not result_rows:
             ok = False
             log_lines.append("Không có dòng nào được gửi lên để clone.")
-        return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines), "course_link": hncode_course_page_url(state["dest_slug"])})
+        return api_response.api_success(
+            message="Đã hoàn tất Clone Course" if ok else "Clone Course có lỗi",
+            rows=result_rows,
+            log="\n".join(log_lines),
+            course_link=hncode_course_page_url(state["dest_slug"]),
+            meta={"source_slug": state["source_slug"], "dest_slug": state["dest_slug"]},
+            ok=ok,
+        )
     except Exception as exc:
-        return jsonify({"ok": False, "rows": result_rows, "error": str(exc)}), 400
+        return api_response.api_error(str(exc), rows=result_rows)
 
 
 @app.post("/api/prepare-contest-to-lesson")
@@ -1739,18 +1745,17 @@ def api_prepare_contest_to_lesson():
             "rows": rows,
             "root": root,
         }
-        return jsonify(
-            {
-                "ok": True,
-                "prepare_id": prepare_id,
-                "rows": rows,
-                "can_copy": any(row.get("selected") for row in rows),
-                "lesson_link": hncode_lesson_url(course_slug, lesson_id),
-                "log": "\n".join(log_lines),
-            }
+        return api_response.api_success(
+            message="Đã chuẩn bị dữ liệu sao chép Contest → Lesson",
+            rows=rows,
+            log="\n".join(log_lines),
+            prepare_id=prepare_id,
+            can_copy=any(row.get("selected") for row in rows),
+            lesson_link=hncode_lesson_url(course_slug, lesson_id),
+            meta={"source": source, "contest_key": contest_key, "course_slug": course_slug, "lesson_id": lesson_id},
         )
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/confirm-contest-to-lesson")
@@ -1761,7 +1766,7 @@ def api_confirm_contest_to_lesson():
     prepare_id = payload.get("prepare_id", "")
     state = prepared_lesson_copies.get(prepare_id)
     if not state:
-        return jsonify({"ok": False, "error": "Dữ liệu chuẩn bị đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+        return api_response.api_error("Dữ liệu chuẩn bị đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
     try:
         requested_rows = payload.get("rows", [])
         result_rows, selected_refs = lesson_service.merge_requested_lesson_copy_rows(state["rows"], requested_rows)
@@ -1834,13 +1839,13 @@ def api_confirm_contest_to_lesson():
         else:
             log_lines.append("Không có bài mới được chọn để thêm.")
         ok = all(not row.get("selected") or row.get("status", "").startswith("✓") or "Đã có" in row.get("status", "") for row in result_rows)
-        return jsonify({"ok": ok, "rows": result_rows, "link": link, "log": "\n".join(log_lines)})
+        return api_response.api_success(message="Đã hoàn tất sao chép Contest → Lesson" if ok else "Sao chép Contest → Lesson có lỗi", rows=result_rows, log="\n".join(log_lines), link=link, ok=ok)
     except Exception as exc:
         rows = payload.get("rows", [])
         for row in rows:
             row["status"] = "✗ Lỗi"
             row["error"] = str(exc)
-        return jsonify({"ok": False, "rows": rows, "error": str(exc)}), 400
+        return api_response.api_error(str(exc), rows=rows)
 
 
 def decode_text_smart(raw: bytes) -> str:
@@ -2080,9 +2085,9 @@ def api_prepare_hncode_grading():
         zip_file = request.files.get("zip_file")
         csv_file = request.files.get("csv_file")
         if not zip_file or not zip_file.filename:
-            return jsonify({"error": "Chưa chọn file zip bài làm."}), 400
+            return api_response.api_error("Chưa chọn file zip bài làm.")
         if not csv_file or not csv_file.filename:
-            return jsonify({"error": "Chưa chọn file CSV tài khoản."}), 400
+            return api_response.api_error("Chưa chọn file CSV tài khoản.")
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / ("hncode_grading_" + prepare_id)
         source_zip = root / "bai_lam.zip"
@@ -2103,10 +2108,10 @@ def api_prepare_hncode_grading():
         log_lines.extend(f"- {warning}" for warning in warnings)
         progress_update(progress_id, phase="prepare-hncode-grading", done=3, total=3, rows=rows, message="Đã chuẩn bị dữ liệu chấm")
         progress_finish(progress_id, True, "Đã chuẩn bị dữ liệu chấm")
-        return jsonify({"prepare_id": prepare_id, "rows": rows, "problems": contest_problems, "accounts": accounts, "log": "\n".join(log_lines)})
+        return api_response.api_success(message="Đã chuẩn bị dữ liệu chấm HNCode", rows=rows, log="\n".join(log_lines), prepare_id=prepare_id, problems=contest_problems, accounts=accounts, meta={"contest_key": contest_key})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/confirm-hncode-grading")
@@ -2116,7 +2121,7 @@ def api_confirm_hncode_grading():
     state = prepared_hncode_grading.get(payload.get("prepare_id", ""))
     if not state:
         progress_finish(progress_id, False, "Dữ liệu chuẩn bị chấm đã hết hạn")
-        return jsonify({"error": "Dữ liệu chuẩn bị chấm đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+        return api_response.api_error("Dữ liệu chuẩn bị chấm đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
     try:
         rows = grading_service.merge_requested_rows(state["rows"], payload.get("rows", []))
         selected_rows = [row for row in rows if row.get("selected")]
@@ -2169,10 +2174,10 @@ def api_confirm_hncode_grading():
         state["output"] = str(output_path)
         ok = all((not row.get("selected")) or str(row.get("status", "")).startswith("✓") for row in rows)
         progress_finish(progress_id, ok, "Đã hoàn tất chấm bài")
-        return jsonify({"ok": ok, "rows": rows, "log": "\n".join(log_lines), "download_url": f"/api/download-hncode-grading/{payload.get('prepare_id', '')}"})
+        return api_response.api_success(message="Đã hoàn tất chấm bài HNCode" if ok else "Chấm bài HNCode có lỗi", rows=rows, log="\n".join(log_lines), download_url=f"/api/download-hncode-grading/{payload.get('prepare_id', '')}", ok=ok)
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.get("/api/download-hncode-grading/<prepare_id>")
@@ -2189,16 +2194,16 @@ def api_download_hncode_grading(prepare_id: str):
 @app.get("/api/progress/<progress_id>")
 def api_progress(progress_id: str):
     if not valid_progress_id(progress_id):
-        return jsonify({"error": "invalid progress_id"}), 400
+        return api_response.api_error("invalid progress_id")
     return jsonify(job_service.read_job(PROGRESS_DIR, progress_id))
 
 @app.post("/api/misc/last-submissions")
 def api_misc_last_submissions():
     uploaded = request.files.get("zip_file")
     if not uploaded or not uploaded.filename:
-        return jsonify({"error": "Chưa chọn file zip data."}), 400
+        return api_response.api_error("Chưa chọn file zip data.")
     if Path(uploaded.filename).suffix.lower() != ".zip":
-        return jsonify({"error": "File data phải là .zip."}), 400
+        return api_response.api_error("File data phải là .zip.")
     job_root = RUNTIME / "misc" / uuid.uuid4().hex
     input_zip = job_root / "input.zip"
     extract_root = job_root / "extract"
@@ -2210,7 +2215,7 @@ def api_misc_last_submissions():
         data_root = find_scratch_data_root(extract_root)
         summary = collect_last_scratch_submissions(data_root, output_dir)
         if summary["total"] == 0:
-            return jsonify({"error": "Không tìm thấy thư mục thí sinh nào trong file zip."}), 400
+            return api_response.api_error("Không tìm thấy thư mục thí sinh nào trong file zip.")
         output_zip = job_root / "last_submissions.zip"
         with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for item in sorted(output_dir.iterdir(), key=lambda path: path.name.lower()):
@@ -2226,7 +2231,7 @@ def api_misc_last_submissions():
         response.headers["X-Last-Submissions-Summary"] = quote(json.dumps(summary_payload, ensure_ascii=False))
         return response
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/misc/ai-code-warning")
@@ -2238,14 +2243,14 @@ def api_misc_ai_code_warning():
         source_zips: list[Path] = []
         if uploaded and uploaded.filename:
             if Path(uploaded.filename).suffix.lower() != ".zip":
-                return jsonify({"error": "File data phải là .zip."}), 400
+                return api_response.api_error("File data phải là .zip.")
             input_zip = job_root / safe_output_part(Path(uploaded.filename).name)
             uploaded.save(input_zip)
             source_zips = [input_zip]
         else:
             folder_path = (request.form.get("folder_path") or "").strip()
             if not folder_path:
-                return jsonify({"error": "Hãy chọn file zip hoặc nhập folder chứa các zip contest."}), 400
+                return api_response.api_error("Hãy chọn file zip hoặc nhập folder chứa các zip contest.")
             folder = Path(folder_path)
             if not folder.exists() or not folder.is_dir():
                 return jsonify({"error": f"Folder không tồn tại: {folder_path}"}), 400
@@ -2263,7 +2268,7 @@ def api_misc_ai_code_warning():
         response.headers["X-AI-Warning-Summary"] = quote(json.dumps(summary, ensure_ascii=False))
         return response
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/tinhoctre-browser/start")
@@ -2292,7 +2297,7 @@ def api_tinhoctre_browser_start():
             }
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/tinhoctre-browser/cookie")
@@ -2306,7 +2311,7 @@ def api_tinhoctre_browser_cookie():
             raise RuntimeError(tinhoctre_admin_cookie_error(check.url))
         return jsonify({"ok": True, "cookie": cookie, "message": "Đã lấy Cookie TinHocTre từ Edge và kiểm tra mở được form admin tạo bài."})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/tinhoctre-browser/quick-cookie")
@@ -2339,7 +2344,7 @@ def api_tinhoctre_browser_quick_cookie():
             raise RuntimeError(tinhoctre_admin_cookie_error(check.url))
         return jsonify({"ok": True, "cookie": cookie, "message": "Đã tự đóng/mở Edge, lấy Cookie TinHocTre và kiểm tra mở được form admin tạo bài."})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/prepare-upload")
@@ -2554,10 +2559,10 @@ def api_prepare_single_upload():
             "solutions": {code: solution_path},
         }
         progress_finish(progress_id, True, "Đã chuẩn bị 1/1 bài")
-        return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
+        return api_response.api_success(message="Đã chuẩn bị dữ liệu", rows=rows, log="\n".join(log_lines), prepare_id=prepare_id)
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 def infer_statement_title(statement: str) -> tuple[str, str]:
@@ -2591,7 +2596,7 @@ def api_confirm_single_upload():
     try:
         prepare_id = payload.get("prepare_id")
         if not prepare_id or prepare_id not in prepared_single_uploads:
-            return jsonify({"ok": False, "error": "Dữ liệu Up 1 bài đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+            return api_response.api_error("Dữ liệu Up 1 bài đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
         settings = dict(payload.get("settings") or {})
         rows = payload.get("rows") or []
         target = settings.get("target") or "hncode"
@@ -2600,10 +2605,10 @@ def api_confirm_single_upload():
         append_single_solution_uploads(target, settings, result_rows, state, log_lines)
         ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
         progress_finish(progress_id, ok, "Đã hoàn tất Up 1 bài")
-        return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
+        return api_response.api_success(message="Đã hoàn tất" if ok else "Có lỗi trong quá trình xử lý", rows=result_rows, log="\n".join(log_lines), ok=ok)
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 def append_single_solution_uploads(target: str, settings: dict, rows: list[dict], state: dict, log_lines: list[str]) -> None:
@@ -2667,10 +2672,10 @@ def api_confirm_upload():
         append_single_solution_uploads(target, payload["settings"], result_rows, state, log_lines)
         ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
         progress_finish(progress_id, ok, "Đã hoàn tất up bài")
-        return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
+        return api_response.api_success(message="Đã hoàn tất" if ok else "Có lỗi trong quá trình xử lý", rows=result_rows, log="\n".join(log_lines), ok=ok)
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, progress_id: str | None = None) -> tuple[list[dict], list[str]]:
@@ -4608,9 +4613,9 @@ def api_prepare_contest_transfer():
     dest = payload["dest"]
     codes = [code.strip() for code in payload.get("codes", []) if code.strip()]
     if not codes:
-        return jsonify({"error": "Chưa nhập mã contest cần chuyển."}), 400
+        return api_response.api_error("Chưa nhập mã contest cần chuyển.")
     if source == dest:
-        return jsonify({"error": "Nguồn và đích đang trùng nhau."}), 400
+        return api_response.api_error("Nguồn và đích đang trùng nhau.")
     try:
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / ("contest_transfer_" + prepare_id)
@@ -4662,10 +4667,10 @@ def api_prepare_contest_transfer():
         prepared_contest_transfers[prepare_id] = state
         save_prepared_contest_transfer(prepare_id, state)
         progress_finish(progress_id, True, f"Đã đọc {len(rows)}/{len(codes)} contest")
-        return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
+        return api_response.api_success(message="Đã chuẩn bị dữ liệu", rows=rows, log="\n".join(log_lines), prepare_id=prepare_id)
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/confirm-contest-transfer")
@@ -4673,10 +4678,13 @@ def api_confirm_contest_transfer():
     payload = request.get_json(force=True)
     progress_id = payload.get("progress_id")
     prepare_id = payload.get("prepare_id")
-    state = load_prepared_contest_transfer(prepare_id) if prepare_id else None
+    try:
+        state = load_prepared_contest_transfer(prepare_id) if prepare_id else None
+    except Exception:
+        state = None
     if not state:
         progress_finish(progress_id, False, "Dữ liệu chuẩn bị chuyển contest đã hết hạn")
-        return jsonify({"error": "Dữ liệu chuẩn bị chuyển contest đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+        return api_response.api_error("Dữ liệu chuẩn bị chuyển contest đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
     source = payload["source"]
     dest = payload["dest"]
     settings = payload.get("settings", {})
@@ -4756,10 +4764,10 @@ def api_confirm_contest_transfer():
             progress_update(progress_id, phase="confirm-contest-transfer", done=done, total=total, rows=result_rows, message=f"{row.get('key')}: {row.get('status')}")
         ok = all((not row.get("selected")) or row.get("status", "").startswith("✓") for row in result_rows)
         progress_finish(progress_id, ok, "Đã hoàn tất chuyển contest")
-        return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
+        return api_response.api_success(message="Đã hoàn tất" if ok else "Có lỗi trong quá trình xử lý", rows=result_rows, log="\n".join(log_lines), ok=ok)
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/create-contest")
@@ -4770,7 +4778,7 @@ def api_create_contest():
     name = payload.get("name", "").strip()
     problems = [code.strip() for code in payload.get("problems", []) if code.strip()]
     if not key or not name or not problems:
-        return jsonify({"error": "Cần nhập mã contest, tên contest và danh sách mã bài."}), 400
+        return api_response.api_error("Cần nhập mã contest, tên contest và danh sách mã bài.")
     try:
         account = payload["account"]
         dst = login_upload_target(target, TARGETS[target], account)
@@ -4797,7 +4805,7 @@ def api_create_contest():
         link = contest_url(TARGETS[target]["base_url"], key)
         return jsonify({"ok": True, "log": f"✓ Đã tạo/cập nhật contest {key}\nLink: {link}", "link": link})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/prepare-transfer")
@@ -4808,9 +4816,9 @@ def api_prepare_transfer():
     dest = payload["dest"]
     codes = [code.strip() for code in payload.get("codes", []) if code.strip()]
     if not codes:
-        return jsonify({"error": "Chưa nhập mã bài cần chuyển."}), 400
+        return api_response.api_error("Chưa nhập mã bài cần chuyển.")
     if source == dest:
-        return jsonify({"error": "Nguồn và đích đang trùng nhau."}), 400
+        return api_response.api_error("Nguồn và đích đang trùng nhau.")
     try:
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / ("transfer_" + prepare_id)
@@ -4852,10 +4860,10 @@ def api_prepare_transfer():
             progress_update(progress_id, phase="prepare-transfer", done=index, total=len(codes), rows=rows, message=f"{code}: {rows[-1]['status']}")
         prepared_transfers[prepare_id] = {"root": root, "source": source, "dest": dest, "items": state_items}
         progress_finish(progress_id, True, f"Đã đọc {len(rows)}/{len(codes)} bài")
-        return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
+        return api_response.api_success(message="Đã chuẩn bị dữ liệu", rows=rows, log="\n".join(log_lines), prepare_id=prepare_id)
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/confirm-transfer")
@@ -4877,18 +4885,13 @@ def api_confirm_transfer():
             result_rows.append(row)
         log_lines.append("Nguồn và đích đang trùng nhau, không thực hiện chuyển.")
         progress_finish(progress_id, False, "Nguồn và đích đang trùng nhau")
-        return jsonify({"ok": False, "rows": result_rows, "log": "\n".join(log_lines)})
+        return api_response.api_error("Nguồn và đích đang trùng nhau", rows=result_rows, log="\n".join(log_lines), status=200)
 
     try:
         dest_account = payload["dest_account"]
         prepare_id = payload.get("prepare_id")
         if not prepare_id or prepare_id not in prepared_transfers:
-            return jsonify(
-                {
-                    "ok": False,
-                    "error": "Dữ liệu chuẩn bị chuyển bài đã hết hạn hoặc server vừa khởi động lại. Hãy bấm Chuẩn bị dữ liệu lại rồi mới Xác nhận chuyển bài.",
-                }
-            ), 400
+            return api_response.api_error("Dữ liệu chuẩn bị chuyển bài đã hết hạn hoặc server vừa khởi động lại. Hãy bấm Chuẩn bị dữ liệu lại rồi mới Xác nhận chuyển bài.")
         state = prepared_transfers[prepare_id]
         dst = login_hncode(TARGETS[dest]["base_url"], dest_account["username"], dest_account["password"])
         out_dir = state["root"]
@@ -4934,10 +4937,10 @@ def api_confirm_transfer():
             progress_update(progress_id, phase="confirm-transfer", done=done, total=total, rows=result_rows, message=f"{row.get('code')}: {row.get('status')}")
         ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
         progress_finish(progress_id, ok, "Đã hoàn tất chuyển bài")
-        return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
+        return api_response.api_success(message="Đã hoàn tất" if ok else "Có lỗi trong quá trình xử lý", rows=result_rows, log="\n".join(log_lines), ok=ok)
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 def upload_transfer_to_dmoj(session, dest: str, dest_code: str, info: ProblemInfo, zip_path: Path, cases, row: dict, language_ids: list[str], log_lines: list[str]) -> None:

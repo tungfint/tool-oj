@@ -7,6 +7,7 @@ Tài liệu này mô tả các endpoint đang có trong `web_app.py`. Mục tiê
 - Hầu hết endpoint trả JSON.
 - Response mới nên có đủ `ok`, `message`, `rows`, `log`, `errors`, `meta`.
 - Trong giai đoạn chuyển tiếp, endpoint vẫn có thể giữ field cũ như `error`, `prepare_id`, `download_url`, `codes_text` để giao diện hiện tại không hỏng.
+- Các nhóm đã được gom về helper `services/api_response.py`: chuyển bài, chuyển contest, Contest → Lesson, Clone Course, Chấm bài HNCode, một số endpoint upload/misc nền.
 - Luồng dài thường có `progress_id`; client đọc tiến độ qua `GET /api/progress/<progress_id>`.
 - Các endpoint `prepare-*` tạo `prepare_id` và dữ liệu tạm trong bộ nhớ/thư mục `.runtime/`.
 - Các endpoint `confirm-*` nhận lại `prepare_id`, danh sách dòng đã chọn, tài khoản và cấu hình để thực hiện thật.

@@ -578,6 +578,22 @@ Lệnh test riêng cho chặng này:
 python -m unittest tests.test_grading -v
 ```
 
+## VII.F. Chặng 4: Chuẩn hóa response API
+
+Trạng thái hiện tại:
+
+- Đã dùng `services/api_response.py` cho các nhóm endpoint ưu tiên: `prepare/confirm-transfer`, `prepare/confirm-contest-transfer`, `prepare/confirm-contest-to-lesson`, `prepare/confirm-course-clone`, `prepare/confirm-hncode-grading`.
+- Response mới có đủ các field nền: `ok`, `message`, `rows`, `log`, `errors`, `meta`.
+- Vẫn giữ các field cũ mà frontend đang dùng như `error`, `prepare_id`, `download_url`, `problems`, `accounts`, `lesson_link`, `course_link`, `link`.
+- Đã sửa thêm lỗi phụ ở `/api/confirm-contest-transfer`: `prepare_id` không hợp lệ không còn gây HTTP 500, mà trả lỗi chuẩn HTTP 400.
+- Đã thêm/cập nhật test Flask không cần login thật cho lỗi validate, dữ liệu chuẩn bị hết hạn, response chuẩn của Contest → Lesson và Clone Course mock.
+
+Lệnh test liên quan:
+
+```powershell
+python -m unittest tests.test_api tests.test_contest_lesson tests.test_course_clone -v
+```
+
 ## VIII. Việc chưa nên làm ngay
 
 Chưa nên làm ngay:

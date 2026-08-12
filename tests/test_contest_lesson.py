@@ -108,6 +108,8 @@ class ContestLessonTests(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["ok"])
+        for key in ["message", "rows", "log", "errors", "meta"]:
+            self.assertIn(key, data)
         self.assertTrue(data["can_copy"])
         self.assertEqual(data["rows"][0]["status"], "✓ Sẵn sàng")
         self.assertEqual(data["rows"][1]["status"], "Đã có trong lesson")
