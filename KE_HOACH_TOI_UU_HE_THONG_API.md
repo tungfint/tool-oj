@@ -562,6 +562,22 @@ Lệnh test riêng cho chặng này:
 python -m unittest tests.test_course_clone -v
 ```
 
+## VII.E. Chặng 3: Refactor Chấm bài HNCode
+
+Trạng thái hiện tại:
+
+- Đã tách phần xử lý dữ liệu chấm bài HNCode sang `services/grading.py`.
+- `services/grading.py` hiện có các helper: `read_accounts`, `normalize_key`, `source_root`, `map_problem_code`, `collect_submission_files`, `build_prepare_row`, `merge_requested_rows`, `parse_ranking_table`, `write_excel`.
+- `web_app.py` vẫn giữ endpoint `/api/prepare-hncode-grading`, `/api/confirm-hncode-grading`, `/api/download-hncode-grading/<prepare_id>` để không đổi giao diện/API hiện tại.
+- Phần test không submit live, chỉ kiểm tra đọc CSV, chuẩn hóa tên, map file vào bài contest, build rows chuẩn bị chấm, merge lựa chọn và xuất Excel mẫu.
+- Phần live login/join/submit/poll vẫn giữ callback hiện tại trong `web_app.py`; có thể tách tiếp ở chặng sau khi có fixture form submit riêng.
+
+Lệnh test riêng cho chặng này:
+
+```powershell
+python -m unittest tests.test_grading -v
+```
+
 ## VIII. Việc chưa nên làm ngay
 
 Chưa nên làm ngay:

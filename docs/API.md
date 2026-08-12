@@ -246,6 +246,10 @@ Nhận zip bài làm, CSV tài khoản, URL contest. Tool đọc danh sách bài
 
 Tải file Excel kết quả chấm.
 
+Service nền:
+
+- `services/grading.py`: đọc CSV tài khoản, chuẩn hóa tên học sinh/tên file, map file bài làm vào mã bài contest, build/merge rows chuẩn bị chấm, parse bảng rank và xuất Excel kết quả.
+
 ## Tool lẻ
 
 ### `POST /api/misc/last-submissions`

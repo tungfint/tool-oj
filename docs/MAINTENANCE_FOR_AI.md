@@ -94,6 +94,7 @@ Test nền hiện có:
 ```powershell
 python -m unittest tests.test_contest_lesson -v
 python -m unittest tests.test_course_clone -v
+python -m unittest tests.test_grading -v
 ```
 
 ## Khi chuyển bài hoặc upload test lỗi
@@ -187,7 +188,7 @@ Local:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile web_app.py services\api_response.py services\contest.py services\lesson.py services\course.py services\hncode.py services\hnoj.py services\problem_bundle.py services\problem_upload.py services\problem_transfer.py services\jobs.py
+python -m py_compile web_app.py services\api_response.py services\contest.py services\lesson.py services\course.py services\grading.py services\hncode.py services\hnoj.py services\problem_bundle.py services\problem_upload.py services\problem_transfer.py services\jobs.py
 node --check static\api.js
 node --check static\progress.js
 node --check static\app.js
@@ -209,7 +210,7 @@ VPS:
 ```bash
 cd /opt/tool-oj
 python3 -m unittest discover -s tests -v
-python3 -m py_compile web_app.py services/api_response.py services/contest.py services/lesson.py services/course.py services/hncode.py services/hnoj.py services/problem_bundle.py services/problem_upload.py services/problem_transfer.py services/jobs.py
+python3 -m py_compile web_app.py services/api_response.py services/contest.py services/lesson.py services/course.py services/grading.py services/hncode.py services/hnoj.py services/problem_bundle.py services/problem_upload.py services/problem_transfer.py services/jobs.py
 systemctl restart tool-oj.service
 systemctl is-active tool-oj.service
 ```

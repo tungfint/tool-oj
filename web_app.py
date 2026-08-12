@@ -30,6 +30,7 @@ from flask import Flask, Response, jsonify, render_template, request, send_file
 from services import api_response
 from services import contest as contest_service
 from services import course as course_service
+from services import grading as grading_service
 from services import hncode as hncode_service
 from services import jobs as job_service
 from services import lesson as lesson_service
@@ -1915,86 +1916,23 @@ def parse_hncode_contest_problems(session: requests.Session, contest_key: str) -
 
 
 def read_hncode_grading_accounts(csv_path: Path) -> list[dict]:
-    reader = csv.DictReader(decode_text_smart(csv_path.read_bytes()).splitlines())
-    missing = {"username", "password", "name"} - set(reader.fieldnames or [])
-    if missing:
-        raise RuntimeError("File tài khoản thiếu cột: " + ", ".join(sorted(missing)))
-    accounts = []
-    for index, row in enumerate(reader, 1):
-        username = (row.get("username") or "").strip()
-        password = (row.get("password") or "").strip()
-        name = (row.get("name") or "").strip()
-        if username and password and name:
-            accounts.append({"index": index, "username": username, "password": password, "name": name})
-    if not accounts:
-        raise RuntimeError("Không đọc được tài khoản hợp lệ nào trong file CSV.")
-    return accounts
+    return grading_service.read_accounts(csv_path, decode_text_smart)
 
 
 def normalize_grading_key(value: str) -> str:
-    text = unicodedata.normalize("NFKD", str(value or ""))
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    return re.sub(r"[^a-z0-9]+", "", text.lower())
+    return grading_service.normalize_key(value)
 
 
 def grading_source_root(extract_root: Path) -> Path:
-    dirs = [item for item in extract_root.iterdir() if item.is_dir()]
-    return dirs[0] if len(dirs) == 1 and any(path.is_file() for path in dirs[0].rglob("*")) else extract_root
+    return grading_service.source_root(extract_root)
 
 
 def map_grading_problem_code(stem: str, contest_problems: list[dict]) -> str:
-    raw = re.sub(r"[^A-Za-z0-9_]+", "", stem).lower()
-    codes = [problem["code"] for problem in contest_problems]
-    if raw in codes:
-        return raw
-    for code in codes:
-        if code.startswith(raw + "_") or code.split("_", 1)[0] == raw:
-            return code
-    for code in codes:
-        if raw in code.replace("_", "") or code.replace("_", "") in raw:
-            return code
-    return raw
+    return grading_service.map_problem_code(stem, contest_problems)
 
 
 def collect_hncode_grading_files(source_root: Path, accounts: list[dict], contest_problems: list[dict]) -> tuple[list[dict], list[str]]:
-    account_by_key = {normalize_grading_key(account["name"]): account for account in accounts}
-    problem_by_code = {problem["code"]: problem for problem in contest_problems}
-    allowed_suffixes = {".cpp", ".cc", ".cxx", ".c", ".py", ".pas"}
-    rows: list[dict] = []
-    warnings: list[str] = []
-    for student_dir in sorted((item for item in source_root.iterdir() if item.is_dir()), key=lambda path: path.name.lower()):
-        account = account_by_key.get(normalize_grading_key(student_dir.name))
-        if not account:
-            warnings.append(f"Không tìm thấy tài khoản CSV cho thư mục {student_dir.name}.")
-            continue
-        files = sorted((path for path in student_dir.rglob("*") if path.is_file() and path.suffix.lower() in allowed_suffixes), key=lambda path: path.name.lower())
-        if not files:
-            warnings.append(f"Thư mục {student_dir.name} không có file code.")
-            continue
-        for path in files:
-            code = map_grading_problem_code(path.stem, contest_problems)
-            problem = problem_by_code.get(code)
-            rows.append({
-                "original_key": f"{account['username']}::{path.relative_to(source_root).as_posix()}",
-                "selected": bool(problem),
-                "student": account["name"],
-                "username": account["username"],
-                "problem": code,
-                "problem_title": problem["title"] if problem else "",
-                "contest_points": problem["points"] if problem else 0,
-                "language": path.suffix.lower().lstrip("."),
-                "file": path.name,
-                "relative_path": path.relative_to(source_root).as_posix(),
-                "local_path": str(path),
-                "status": "Đã chuẩn bị" if problem else "Không khớp bài trong contest",
-                "submission_url": "",
-                "percent": "",
-                "score": "",
-                "message": "",
-            })
-    if not rows:
-        raise RuntimeError("Không tìm thấy file bài làm nào khớp tài khoản trong zip.")
-    return rows, warnings
+    return grading_service.collect_submission_files(source_root, accounts, contest_problems)
 
 
 def join_hncode_contest_if_needed(session: requests.Session, contest_key: str, contest_password: str) -> str:
@@ -2090,68 +2028,15 @@ def poll_hncode_submission(session: requests.Session, submission_url: str) -> di
 
 
 def html_cell_text(fragment: str) -> str:
-    text = html.unescape(re.sub(r"<[^>]+>", " ", fragment))
-    return re.sub(r"\s+", " ", text).strip()
+    return grading_service.html_cell_text(fragment)
 
 
 def number_from_rank_text(value: str) -> float | str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    normalized = text.replace(".", "").replace(",", ".") if "," in text else text
-    try:
-        return round(float(normalized), 2)
-    except ValueError:
-        return text
+    return grading_service.number_from_rank_text(value)
 
 
 def parse_hncode_ranking_table(page: str) -> tuple[list[dict], list[str]]:
-    table_match = re.search(r'<table\b[^>]*id=["\']users-table["\'][^>]*>([\s\S]*?)</table>', page, re.I)
-    if not table_match:
-        return [], []
-    table = table_match.group(1)
-    thead = re.search(r"<thead\b[^>]*>([\s\S]*?)</thead>", table, re.I)
-    problem_codes = []
-    if thead:
-        for th in re.findall(r"<th\b[^>]*problem-score-col[^>]*>([\s\S]*?)</th>", thead.group(1), re.I):
-            code_match = re.search(r'class=["\']problem-code["\'][^>]*>([\s\S]*?)</div>', th, re.I)
-            if code_match:
-                problem_codes.append(html_cell_text(code_match.group(1)))
-    tbody = re.search(r"<tbody\b[^>]*>([\s\S]*?)</tbody>", table, re.I)
-    if not tbody:
-        return [], problem_codes
-    ranking_rows = []
-    for tr in re.findall(r"<tr\b[^>]*>([\s\S]*?)</tr>", tbody.group(1), re.I):
-        cells = re.findall(r"<td\b([^>]*)>([\s\S]*?)</td>", tr, re.I)
-        if len(cells) < 3:
-            continue
-        rank = html_cell_text(cells[0][1])
-        user_cell = cells[1][1]
-        username_match = re.search(r'<a\b[^>]*href=["\']/user/[^"\']+["\'][^>]*>([\s\S]*?)</a>', user_cell, re.I)
-        fullname_match = re.search(r'class=["\'][^"\']*\bfullname\b[^"\']*["\'][^>]*>([\s\S]*?)</div>', user_cell, re.I)
-        participation_match = re.search(r"<sub\b[^>]*>\s*\[([0-9]+)\]\s*</sub>", user_cell, re.I)
-        total_cell = cells[2][1]
-        total_score = html_cell_text(re.sub(r'<div\b[^>]*class=["\']solving-time["\'][\s\S]*?</div>', "", total_cell, flags=re.I))
-        total_time_match = re.search(r'class=["\']solving-time["\'][^>]*>([\s\S]*?)</div>', total_cell, re.I)
-        item = {
-            "rank": number_from_rank_text(rank),
-            "username": html_cell_text(username_match.group(1)) if username_match else html_cell_text(user_cell),
-            "fullname": html_cell_text(fullname_match.group(1)) if fullname_match else "",
-            "participation": participation_match.group(1) if participation_match else "",
-            "total": number_from_rank_text(total_score),
-            "time": html_cell_text(total_time_match.group(1)) if total_time_match else "",
-            "scores": {},
-            "times": {},
-        }
-        problem_cells = [cell for attrs, cell in cells[3:] if "problem-score-col" in attrs]
-        for code, cell in zip(problem_codes, problem_cells):
-            score_match = re.search(r"<span\b[^>]*>([\s\S]*?)</span>", cell, re.I)
-            time_match = re.search(r'class=["\']solving-time["\'][^>]*>([\s\S]*?)</div>', cell, re.I)
-            score_text = html_cell_text(score_match.group(1)) if score_match else html_cell_text(cell)
-            item["scores"][code] = number_from_rank_text(score_text)
-            item["times"][code] = html_cell_text(time_match.group(1)) if time_match else ""
-        ranking_rows.append(item)
-    return ranking_rows, problem_codes
+    return grading_service.parse_ranking_table(page)
 
 
 def fetch_hncode_contest_ranking(session: requests.Session, contest_key: str) -> tuple[list[dict], list[str]]:
@@ -2184,70 +2069,7 @@ def fetch_hncode_contest_ranking(session: requests.Session, contest_key: str) ->
 
 
 def write_hncode_grading_excel(rows: list[dict], contest_problems: list[dict], accounts: list[dict], output_path: Path, ranking_rows: list[dict] | None = None, ranking_problem_codes: list[str] | None = None) -> None:
-    from openpyxl import Workbook
-    from copy import copy
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Bang diem"
-    problem_codes = list(ranking_problem_codes or []) or [problem["code"] for problem in contest_problems]
-    if ranking_rows:
-        ws.append(["Rank", "Username", "Họ tên", "Lượt ảo", "Tổng điểm", "Thời gian", *problem_codes])
-        for item in ranking_rows:
-            ws.append([
-                item.get("rank", ""),
-                item.get("username", ""),
-                item.get("fullname", ""),
-                item.get("participation", ""),
-                item.get("total", ""),
-                item.get("time", ""),
-                *[item.get("scores", {}).get(code, "") for code in problem_codes],
-            ])
-    else:
-        ws.append(["STT", "Học sinh", "Username", *problem_codes, "Tổng điểm", "Số bài đã nộp"])
-        by_student_problem: dict[tuple[str, str], dict] = {}
-        for row in rows:
-            key = (row.get("username", ""), row.get("problem", ""))
-            current = by_student_problem.get(key)
-            if current is None or float(row.get("score") or 0) > float(current.get("score") or 0):
-                by_student_problem[key] = row
-        for account in accounts:
-            total = 0.0
-            count = 0
-            values = [account["index"], account["name"], account["username"]]
-            for code in problem_codes:
-                row = by_student_problem.get((account["username"], code))
-                score = float(row.get("score") or 0) if row else 0.0
-                total += score
-                if row and row.get("submission_url"):
-                    count += 1
-                values.append(round(score, 2))
-            values.extend([round(total, 2), count])
-            ws.append(values)
-    for cell in ws[1]:
-        cell.font = copy(cell.font)
-        cell.font = cell.font.copy(bold=True)
-    ws.freeze_panes = "D2"
-    autosize_worksheet(ws)
-    ws = wb.create_sheet("Chi tiet nop bai")
-    ws.append(["Học sinh", "Username", "Mã bài", "Tên bài", "Điểm bài", "%", "Điểm quy đổi", "File", "Trạng thái", "Submission", "Thông báo"])
-    for row in rows:
-        ws.append([row.get("student"), row.get("username"), row.get("problem"), row.get("problem_title"), row.get("contest_points"), row.get("percent"), row.get("score"), row.get("relative_path"), row.get("status"), "Mở submission" if row.get("submission_url") else "", row.get("message")])
-        if row.get("submission_url"):
-            ws.cell(ws.max_row, 10).hyperlink = row["submission_url"]
-            ws.cell(ws.max_row, 10).style = "Hyperlink"
-    for cell in ws[1]:
-        cell.font = cell.font.copy(bold=True)
-    ws.freeze_panes = "A2"
-    autosize_worksheet(ws)
-    ws = wb.create_sheet("Danh sach bai")
-    ws.append(["Thứ tự", "Mã bài", "Tên bài", "Điểm contest"])
-    for problem in contest_problems:
-        ws.append([problem["order"], problem["code"], problem["title"], problem["points"]])
-    for cell in ws[1]:
-        cell.font = cell.font.copy(bold=True)
-    autosize_worksheet(ws)
-    wb.save(output_path)
+    grading_service.write_excel(rows, contest_problems, accounts, output_path, ranking_rows, ranking_problem_codes)
 
 
 @app.post("/api/prepare-hncode-grading")
@@ -2296,13 +2118,7 @@ def api_confirm_hncode_grading():
         progress_finish(progress_id, False, "Dữ liệu chuẩn bị chấm đã hết hạn")
         return jsonify({"error": "Dữ liệu chuẩn bị chấm đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
     try:
-        requested = {row.get("original_key"): row for row in payload.get("rows", [])}
-        rows = []
-        for base in state["rows"]:
-            row = dict(base)
-            if row["original_key"] in requested:
-                row["selected"] = bool(requested[row["original_key"]].get("selected"))
-            rows.append(row)
+        rows = grading_service.merge_requested_rows(state["rows"], payload.get("rows", []))
         selected_rows = [row for row in rows if row.get("selected")]
         if not selected_rows:
             raise RuntimeError("Chưa chọn bài nào để nộp chấm.")
