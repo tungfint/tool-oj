@@ -28,6 +28,7 @@ from http.cookies import SimpleCookie
 from flask import Flask, Response, jsonify, render_template_string, request, send_file
 
 from services import hncode as hncode_service
+from services import jobs as job_service
 from services import problem_bundle as bundle_service
 from services import problem_upload as upload_service
 
@@ -523,36 +524,16 @@ def create_quiz_question(session, question: dict, *, shuffle_choices: bool, is_p
 
 
 def valid_progress_id(progress_id: str | None) -> str | None:
-    if progress_id and re.fullmatch(r"[0-9a-f]{32}", progress_id):
-        return progress_id
-    return None
-
+    return job_service.valid_job_id(progress_id)
 
 def progress_path(progress_id: str) -> Path:
-    return PROGRESS_DIR / f"{progress_id}.json"
-
+    return job_service.job_path(PROGRESS_DIR, progress_id)
 
 def progress_update(progress_id: str | None, **payload) -> None:
-    progress_id = valid_progress_id(progress_id)
-    if not progress_id:
-        return
-    PROGRESS_DIR.mkdir(parents=True, exist_ok=True)
-    path = progress_path(progress_id)
-    current = {}
-    if path.exists():
-        try:
-            current = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            current = {}
-    current.update(payload)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(current, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(path)
-
+    job_service.update_job(PROGRESS_DIR, progress_id, **payload)
 
 def progress_finish(progress_id: str | None, ok: bool, message: str = "") -> None:
-    progress_update(progress_id, finished=True, ok=ok, message=message)
-
+    job_service.finish_job(PROGRESS_DIR, progress_id, ok, message)
 
 def safe_extract_zip(zip_path: Path, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
@@ -4417,12 +4398,8 @@ def api_download_hncode_grading(prepare_id: str):
 @app.get("/api/progress/<progress_id>")
 def api_progress(progress_id: str):
     if not valid_progress_id(progress_id):
-        return jsonify({"error": "progress_id không hợp lệ"}), 400
-    path = progress_path(progress_id)
-    if not path.exists():
-        return jsonify({"phase": "waiting", "done": 0, "total": 0, "message": ""})
-    return jsonify(json.loads(path.read_text(encoding="utf-8")))
-
+        return jsonify({"error": "invalid progress_id"}), 400
+    return jsonify(job_service.read_job(PROGRESS_DIR, progress_id))
 
 @app.post("/api/misc/last-submissions")
 def api_misc_last_submissions():

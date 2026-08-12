@@ -262,12 +262,12 @@ find_problem_admin_id(session, code)
 
 Nên làm trước vì đây là chỗ vừa phát sinh lỗi thật.
 
-Tr?ng th?i hi?n t?i:
+Trạng thái hiện tại:
 
-- ?? t?o `services/hncode.py` ?? gom parser/link helper c?a HNCode.
-- `web_app.py` ?? chuy?n c?c h?m ??c contest/lesson/admin problem ID sang g?i service chung, gi? wrapper c? ?? c?c API hi?n c? kh?ng ??i contract.
-- Parser contest HNCode ?? h? tr? ranking/header m?i v? link d?ng `/contest/<contest>/problems/<ma_bai>` ho?c `/problem/<ma_bai>`.
-- ?? test v?i `https://hncode.edu.vn/contest/nt26exam01`: l?y ???c 14 b?i, ??ng t?n b?i v? ?i?m.
+- Đã tạo `services/hncode.py` để gom parser/link helper của HNCode.
+- `web_app.py` đã chuyển các hàm đọc contest/lesson/admin problem ID sang gọi service chung, giữ wrapper cũ để các API hiện có không đổi contract.
+- Parser contest HNCode đã hỗ trợ ranking/header mới và link dạng `/contest/<contest>/problems/<ma_bai>` hoặc `/problem/<ma_bai>`.
+- Đã test với `https://hncode.edu.vn/contest/nt26exam01`: lấy được 14 bài, đúng tên bài và điểm.
 
 ## Giai đoạn 2: Tách phần upload/chuyển bài
 
@@ -295,13 +295,13 @@ submit_trial_solution(target, code, solution_file)
 
 Làm sau giai đoạn 1 vì phần này rộng, dễ đụng nhiều chức năng.
 
-Tr?ng th?i hi?n t?i:
+Trạng thái hiện tại:
 
-- ?? t?o `services/problem_bundle.py` ?? gom ph?n ??c b? b?i, t?ch Markdown t?ng h?p, ??c metadata `T?n b?i | M? b?i | ?i?m | Tags`, ch?y gentest/zip test cho lu?ng up b?i.
-- ?? t?o `services/problem_upload.py` cho helper upload d?ng chung HNCode/HNOJ: chu?n h?a m? b?i, memory limit, link b?i/test, upload test, n?p th?, ch?n language submit.
-- `web_app.py` ?? gi? c?c h?m wrapper c? nh?ng chuy?n helper HNCode/HNOJ sang g?i service m?i, ?? UI/API hi?n t?i kh?ng ??i contract.
-- ?? test `services/problem_bundle.py` v?i `samples/bo_mau_1_bai_tonghaiso.zip`: ??c ???c 1 b?i, 10 test, ??ng ?i?m/tags.
-- Ph?m vi l?n n?y ch? ?p d?ng HNCode v? HNOJ; TinHocTre gi? nguy?n lu?ng c? v? c?n ph? thu?c cookie/WAF ri?ng.
+- Đã tạo `services/problem_bundle.py` để gom phần đọc bộ bài, tách Markdown tổng hợp, đọc metadata `Tên bài | Mã bài | Điểm | Tags`, chạy gentest/zip test cho luồng up bài.
+- Đã tạo `services/problem_upload.py` cho helper upload dùng chung HNCode/HNOJ: chuẩn hóa mã bài, memory limit, link bài/test, upload test, nộp thử, chọn language submit.
+- `web_app.py` đã giữ các hàm wrapper cũ nhưng chuyển helper HNCode/HNOJ sang gọi service mới, để UI/API hiện tại không đổi contract.
+- Đã test `services/problem_bundle.py` với `samples/bo_mau_1_bai_tonghaiso.zip`: đọc được 1 bài, 10 test, đúng điểm/tags.
+- Phạm vi lần này chỉ áp dụng HNCode và HNOJ; TinHocTre giữ nguyên luồng cũ vì còn phụ thuộc cookie/WAF riêng.
 
 ## Giai đoạn 3: Chuẩn hóa job/progress
 
@@ -335,6 +335,13 @@ Job chuẩn:
 - Chấm bài
 - Cảnh báo AI code
 - Clone course
+
+Trạng thái hiện tại:
+
+- Đã tạo `services/jobs.py` để chuẩn hóa ghi/đọc tiến độ theo `job_id`, `phase`, `done`, `total`, `rows`, `log`, `message`, `status`.
+- `web_app.py` đã chuyển `progress_update`, `progress_finish`, `valid_progress_id`, `progress_path` sang wrapper gọi service mới.
+- Endpoint `/api/progress/<progress_id>` vẫn giữ nguyên cho giao diện hiện tại, nhưng dữ liệu trả về có thêm `job_id`, `status`, `created_at`, `updated_at`.
+- Service vẫn tương thích các trường cũ `finished` và `ok`, nên JS hiện tại không cần đổi.
 
 ## Giai đoạn 4: Tách giao diện thành client sạch
 
