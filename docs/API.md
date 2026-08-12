@@ -156,6 +156,12 @@ Nguồn/đích thường dùng:
 
 Tạo/cập nhật bài ở đích, upload statement/test, metadata, nộp thử nếu được chọn.
 
+Service liên quan:
+
+- `services/problem_transfer.py`: build bảng chuẩn bị, áp override từ bảng xuống `ProblemInfo`, wrapper upload transfer theo target.
+- `services/problem_upload.py`: normalize mã bài, URL bài/test, ngôn ngữ, statement theo target.
+- `transfer_tinhoctre_to_hncode.py` và các hàm form trong `web_app.py`: fetch source problem và submit form cụ thể.
+
 Lưu ý:
 
 - HNCode dùng `$` cho công thức.
@@ -266,4 +272,3 @@ Response thường có:
   "ok": true
 }
 ```
-

@@ -82,15 +82,18 @@ POST /api/prepare-course-clone
 POST /api/confirm-course-clone
 ```
 
-## Khi upload test lỗi
+## Khi chuyển bài hoặc upload test lỗi
 
 Kiểm tra:
 
 ```text
 services/problem_bundle.py
 services/problem_upload.py
+services/problem_transfer.py
 web_app.py: upload_hncode_tests
 web_app.py: upload_hnoj_tests
+web_app.py: upload_transfer_to_dmoj
+web_app.py: upload_transfer_to_tinhoctre
 ```
 
 Các lỗi hay gặp:
@@ -178,4 +181,3 @@ systemctl is-active tool-oj.service
 - Không có file runtime/debug/log lớn bị add nhầm.
 - Tài liệu cập nhật nếu đổi API/format.
 - Giao diện local vẫn HTTP 200.
-

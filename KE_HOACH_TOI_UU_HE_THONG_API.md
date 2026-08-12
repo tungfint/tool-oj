@@ -476,17 +476,30 @@ Trạng thái hiện tại:
 - Đã tạo `docs/DATA_FORMATS.md` ghi format zip bộ bài, Markdown, gentest, test zip, quiz, tài khoản chấm bài và data contest.
 - Đã tạo `docs/MAINTENANCE_FOR_AI.md` ghi checklist sửa parser/upload/lesson, lệnh test và quy tắc commit/deploy.
 
-## VII. Việc nên làm ngay tiếp theo
+## VII. Vi?c n?n l?m ngay ti?p theo
 
-Nên làm theo thứ tự:
+Checklist n?y ?? ho?n t?t ? c?c giai ?o?n 1 ??n 5 v? ph?n b? sung sau ??:
 
-1. Tạo thư mục `services/`.
-2. Tách HNCode parser đầu tiên.
-3. Tạo `docs/API.md`.
-4. Tạo `docs/HNCODE_NOTES.md`.
-5. Đổi các chức năng đang đọc contest HNCode sang service chung.
-6. Viết test fixtures cho HNCode contest cũ/mới.
-7. Sau khi ổn mới tách upload/chuyển bài.
+1. T?o th? m?c `services/`: ?? l?m.
+2. T?ch HNCode parser ??u ti?n: ?? l?m trong `services/hncode.py`.
+3. T?o `docs/API.md`: ?? l?m.
+4. T?o `docs/HNCODE_NOTES.md`: ?? l?m.
+5. ??i c?c ch?c n?ng ?ang ??c contest HNCode sang service chung: ?? l?m ph?n ch?nh qua `services/hncode.py`.
+6. Vi?t test fixtures cho HNCode contest c?/m?i: ?? l?m trong `tests/fixtures/` v? `tests/test_parsers.py`.
+7. Sau khi ?n m?i t?ch upload/chuy?n b?i: ?? t?ch c?c ph?n n?n sang:
+
+```text
+services/problem_bundle.py
+services/problem_upload.py
+services/problem_transfer.py
+```
+
+Tr?ng th?i hi?n t?i:
+
+- `services/problem_transfer.py` ?? gom ph?n build row chu?n b? chuy?n b?i, row l?i, ?p th?ng tin b?ng xu?ng `ProblemInfo`, v? wrapper upload transfer cho DMOJ/HNCode/HNOJ/TinHocTre qua callback.
+- `web_app.py` v?n gi? route Flask v? callback form c? th? ?? kh?ng ??i contract giao di?n/API.
+- ?? th?m `tests/test_problem_transfer.py` ?? ki?m tra service chuy?n b?i.
+- L?nh `python -m unittest discover -s tests -v` hi?n c? 8 test pass.
 
 ## VIII. Việc chưa nên làm ngay
 

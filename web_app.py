@@ -30,6 +30,7 @@ from flask import Flask, Response, jsonify, render_template, request, send_file
 from services import hncode as hncode_service
 from services import jobs as job_service
 from services import problem_bundle as bundle_service
+from services import problem_transfer as transfer_service
 from services import problem_upload as upload_service
 
 from transfer_tinhoctre_to_hncode import (
@@ -5169,39 +5170,28 @@ def api_prepare_transfer():
             try:
                 info, zip_path, cases, zip_url = fetch_source_problem(src, TARGETS[source]["base_url"], code, root)
                 state_items[code] = {"info": info, "zip_path": zip_path, "cases": cases, "zip_url": zip_url}
-                source_code = info.code or code
-                dest_code = normalize_problem_code_for_target(source_code, dest)
                 rows.append(
-                    {
-                        "original_code": code,
-                        "code": dest_code,
-                        "name": info.name,
-                        "time_limit": info.time_limit or payload.get("settings", {}).get("time_limit") or "1.0",
-                        "memory_limit": info.memory_limit or payload.get("settings", {}).get("memory_limit") or "1048576",
-                        "source_time_limit": info.time_limit or "1.0",
-                        "source_memory_limit": info.memory_limit or "1048576",
-                        "test_file": zip_path.name,
-                        "test_link": test_data_url(TARGETS[source]["base_url"], code),
-                        "test_count": len(cases),
-                        "status": "Đã đọc",
-                    }
+                    transfer_service.make_prepare_transfer_row(
+                        original_code=code,
+                        info=info,
+                        zip_path=zip_path,
+                        cases=cases,
+                        source_base_url=TARGETS[source]["base_url"],
+                        dest=dest,
+                        settings=payload.get("settings", {}),
+                        normalize_problem_code_for_target=normalize_problem_code_for_target,
+                        test_data_url=test_data_url,
+                    )
                 )
                 log_lines.append(f"- {code}: {info.name}, {len(cases)} test, bộ test {test_data_url(TARGETS[source]['base_url'], code)}")
             except Exception as exc:
                 rows.append(
-                    {
-                        "original_code": code,
-                        "code": code,
-                        "name": "",
-                        "time_limit": payload.get("settings", {}).get("time_limit") or "1.0",
-                        "memory_limit": payload.get("settings", {}).get("memory_limit") or "1048576",
-                        "source_time_limit": "1.0",
-                        "source_memory_limit": "1048576",
-                        "test_file": "Lỗi khi đọc nguồn",
-                        "test_link": test_data_url(TARGETS[source]["base_url"], code),
-                        "test_count": 0,
-                        "status": "✗ Lỗi đọc nguồn",
-                    }
+                    transfer_service.make_failed_prepare_transfer_row(
+                        code=code,
+                        source_base_url=TARGETS[source]["base_url"],
+                        settings=payload.get("settings", {}),
+                        test_data_url=test_data_url,
+                    )
                 )
                 log_lines.append(f"✗ {code}: {exc}")
             progress_update(progress_id, phase="prepare-transfer", done=index, total=len(codes), rows=rows, message=f"{code}: {rows[-1]['status']}")
@@ -5249,7 +5239,7 @@ def api_confirm_transfer():
         out_dir = state["root"]
         language_ids = language_ids_for_target(dest, settings.get("languages", []))
 
-        total = len([row for row in rows if row.get("selected")])
+        total = transfer_service.selected_count(rows)
         done = 0
         progress_update(progress_id, phase="confirm-transfer", done=done, total=total, rows=result_rows, message="Bắt đầu chuyển bài")
         for row in rows:
@@ -5271,10 +5261,7 @@ def api_confirm_transfer():
                 if dest_code != raw_dest_code:
                     row["code"] = dest_code
                     log_lines.append(f"{raw_dest_code}: mã đích {TARGETS[dest]['label']} được đổi thành {dest_code}")
-                if row.get("name"):
-                    info.name = row["name"]
-                info.time_limit = row.get("time_limit") or settings.get("time_limit") or info.time_limit or "1.0"
-                info.memory_limit = row.get("memory_limit") or settings.get("memory_limit") or info.memory_limit or "1048576"
+                transfer_service.apply_transfer_row_to_info(info, row, settings)
                 if dest == "tinhoctre":
                     upload_transfer_to_tinhoctre(dst, dest, dest_code, info, zip_path, cases, row, out_dir, language_ids, log_lines)
                 else:
@@ -5299,65 +5286,50 @@ def api_confirm_transfer():
 
 
 def upload_transfer_to_dmoj(session, dest: str, dest_code: str, info: ProblemInfo, zip_path: Path, cases, row: dict, language_ids: list[str], log_lines: list[str]) -> None:
-    base_url = TARGETS[dest]["base_url"]
-    exists = destination_problem_exists(session, base_url, dest_code)
-    if exists:
-        raise ProblemAlreadyExists(f"Mã bài {dest_code} đã tồn tại tại {problem_url(base_url, dest_code)}")
-    if row.get("upload_statement") and not exists:
-        dest_info = problem_info_for_target(info, dest)
-        create_hncode_problem(
-            session,
-            base_url,
-            dest_info,
-            dest_code=dest_code,
-            type_id=TARGETS[dest]["type_id"],
-            group_id=TARGETS[dest]["group_id"],
-            public=False,
-            allow_all_languages=False,
-            allowed_language_ids=language_ids,
-        )
-        log_lines.append(f"{dest_code}: đã tạo đề.")
-    else:
-        log_lines.append(f"{dest_code}: bỏ qua tạo đề.")
-    if row.get("upload_tests"):
-        if dest == "hnoj":
-            tests = GeneratedTests(zip_path, [case.input_file for case in cases], [case.output_file for case in cases])
-            upload_tinhoctre_tests(session, base_url, dest_code, tests)
-        else:
-            upload_hncode_tests(session, base_url, dest_code, zip_path, cases)
-        log_lines.append(f"{dest_code}: đã upload test.")
-    else:
-        log_lines.append(f"{dest_code}: không upload test.")
+    transfer_service.upload_transfer_to_dmoj(
+        session=session,
+        dest=dest,
+        dest_code=dest_code,
+        info=info,
+        zip_path=zip_path,
+        cases=cases,
+        row=row,
+        language_ids=language_ids,
+        log_lines=log_lines,
+        target_info=TARGETS[dest],
+        problem_info_for_target=problem_info_for_target,
+        destination_problem_exists=destination_problem_exists,
+        problem_url=problem_url,
+        create_problem=create_hncode_problem,
+        upload_hncode_tests=upload_hncode_tests,
+        upload_hnoj_tests=upload_tinhoctre_tests,
+        generated_tests_cls=GeneratedTests,
+        problem_already_exists_cls=ProblemAlreadyExists,
+    )
 
 
 def upload_transfer_to_tinhoctre(session, dest: str, dest_code: str, info: ProblemInfo, zip_path: Path, cases, row: dict, out_dir: Path, language_ids: list[str], log_lines: list[str]) -> None:
-    base_url = TARGETS[dest]["base_url"]
-    statement = out_dir / f"{dest_code}.md"
-    dest_info = problem_info_for_target(info, dest)
-    statement.write_text(dest_info.description, encoding="utf-8")
-    bundle = ProblemBundle(0, dest_code, info.name, statement, None, zip_path, None)
-    tests = GeneratedTests(zip_path, [case.input_file for case in cases], [case.output_file for case in cases])
-    exists = tinhoctre_problem_exists(session, base_url, dest_code)
-    if exists:
-        raise ProblemAlreadyExists(f"Mã bài {dest_code} đã tồn tại tại {problem_url(base_url, dest_code)}")
-    if row.get("upload_statement") and not exists:
-        create_tinhoctre_admin_problem(
-            session,
-            base_url,
-            dest_info,
-            dest_code=dest_code,
-            type_id=TARGETS[dest]["type_id"],
-            group_id=TARGETS[dest]["group_id"],
-            allowed_language_ids=language_ids,
-        )
-        log_lines.append(f"{dest_code}: đã tạo đề.")
-    else:
-        log_lines.append(f"{dest_code}: bỏ qua tạo đề.")
-    if row.get("upload_tests"):
-        upload_tinhoctre_tests(session, base_url, dest_code, tests)
-        log_lines.append(f"{dest_code}: đã upload test.")
-    else:
-        log_lines.append(f"{dest_code}: không upload test.")
+    transfer_service.upload_transfer_to_tinhoctre(
+        session=session,
+        dest=dest,
+        dest_code=dest_code,
+        info=info,
+        zip_path=zip_path,
+        cases=cases,
+        row=row,
+        out_dir=out_dir,
+        language_ids=language_ids,
+        log_lines=log_lines,
+        target_info=TARGETS[dest],
+        problem_info_for_target=problem_info_for_target,
+        problem_exists=tinhoctre_problem_exists,
+        problem_url=problem_url,
+        create_problem=create_tinhoctre_admin_problem,
+        upload_tests=upload_tinhoctre_tests,
+        generated_tests_cls=GeneratedTests,
+        problem_bundle_cls=ProblemBundle,
+        problem_already_exists_cls=ProblemAlreadyExists,
+    )
 
 
 if __name__ == "__main__":
