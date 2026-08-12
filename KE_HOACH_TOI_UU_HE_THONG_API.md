@@ -476,17 +476,17 @@ Trạng thái hiện tại:
 - Đã tạo `docs/DATA_FORMATS.md` ghi format zip bộ bài, Markdown, gentest, test zip, quiz, tài khoản chấm bài và data contest.
 - Đã tạo `docs/MAINTENANCE_FOR_AI.md` ghi checklist sửa parser/upload/lesson, lệnh test và quy tắc commit/deploy.
 
-## VII. Vi?c n?n l?m ngay ti?p theo
+## VII. Việc nên làm ngay tiếp theo
 
-Checklist n?y ?? ho?n t?t ? c?c giai ?o?n 1 ??n 5 v? ph?n b? sung sau ??:
+Checklist này đã hoàn tất ở các giai đoạn 1 đến 5 và phần bổ sung sau đó:
 
-1. T?o th? m?c `services/`: ?? l?m.
-2. T?ch HNCode parser ??u ti?n: ?? l?m trong `services/hncode.py`.
-3. T?o `docs/API.md`: ?? l?m.
-4. T?o `docs/HNCODE_NOTES.md`: ?? l?m.
-5. ??i c?c ch?c n?ng ?ang ??c contest HNCode sang service chung: ?? l?m ph?n ch?nh qua `services/hncode.py`.
-6. Vi?t test fixtures cho HNCode contest c?/m?i: ?? l?m trong `tests/fixtures/` v? `tests/test_parsers.py`.
-7. Sau khi ?n m?i t?ch upload/chuy?n b?i: ?? t?ch c?c ph?n n?n sang:
+1. Tạo thư mục `services/`: đã làm.
+2. Tách HNCode parser đầu tiên: đã làm trong `services/hncode.py`.
+3. Tạo `docs/API.md`: đã làm.
+4. Tạo `docs/HNCODE_NOTES.md`: đã làm.
+5. Đổi các chức năng đang đọc contest HNCode sang service chung: đã làm phần chính qua `services/hncode.py`.
+6. Viết test fixtures cho HNCode contest cũ/mới: đã làm trong `tests/fixtures/` và `tests/test_parsers.py`.
+7. Sau khi ổn mới tách upload/chuyển bài: đã tách các phần nền sang:
 
 ```text
 services/problem_bundle.py
@@ -494,12 +494,20 @@ services/problem_upload.py
 services/problem_transfer.py
 ```
 
-Tr?ng th?i hi?n t?i:
+Trạng thái hiện tại:
 
-- `services/problem_transfer.py` ?? gom ph?n build row chu?n b? chuy?n b?i, row l?i, ?p th?ng tin b?ng xu?ng `ProblemInfo`, v? wrapper upload transfer cho DMOJ/HNCode/HNOJ/TinHocTre qua callback.
-- `web_app.py` v?n gi? route Flask v? callback form c? th? ?? kh?ng ??i contract giao di?n/API.
-- ?? th?m `tests/test_problem_transfer.py` ?? ki?m tra service chuy?n b?i.
-- L?nh `python -m unittest discover -s tests -v` hi?n c? 8 test pass.
+- `services/problem_transfer.py` đã gom phần build row chuẩn bị chuyển bài, row lỗi, áp thông tin bảng xuống `ProblemInfo`, và wrapper upload transfer cho DMOJ/HNCode/HNOJ/TinHocTre qua callback.
+- `web_app.py` vẫn giữ route Flask và callback form cụ thể để không đổi contract giao diện/API.
+- Đã thêm `tests/test_problem_transfer.py` để kiểm tra service chuyển bài.
+- Lệnh `python -m unittest discover -s tests -v` hiện có 8 test pass.
+
+Phần nên làm tiếp theo sau checklist này:
+
+1. Chuẩn hóa response API: gom dần các endpoint về dạng `ok/message/rows/log/errors/meta` thay vì lúc thì `error`, lúc thì `ok=false`.
+2. Tách tiếp logic contest/lesson/course khỏi `web_app.py` sang `services/contest.py`, `services/lesson.py`, `services/course.py`.
+3. Tách `static/app.js` thành module nhỏ: `api.js`, `progress.js`, `upload.js`, `transfer.js`, `contest.js`, `lesson.js`, `misc.js`.
+4. Thêm test API Flask cho các endpoint không cần đăng nhập thật: `/`, `/api/prepare-upload`, parser list problem code với fixture.
+5. Sau khi có test nền, mới refactor các luồng live như Clone Course, Contest -> Lesson, Chấm bài.
 
 ## VIII. Việc chưa nên làm ngay
 
