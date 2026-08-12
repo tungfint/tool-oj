@@ -26,9 +26,12 @@ services/
   hnoj.py
   jobs.py
   lesson.py
+  misc.py
   problem_bundle.py
   problem_transfer.py
   problem_upload.py
+  quiz.py
+  tinhoctre.py
 tests/
   fixtures/
   test_api.py
@@ -105,6 +108,7 @@ Kiểm tra:
 services/problem_bundle.py
 services/problem_upload.py
 services/problem_transfer.py
+services/tinhoctre.py
 web_app.py: upload_hncode_tests
 web_app.py: upload_hnoj_tests
 web_app.py: upload_transfer_to_dmoj
@@ -122,7 +126,7 @@ Test nhanh:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile web_app.py services\hncode.py services\hnoj.py services\problem_bundle.py services\problem_upload.py services\jobs.py
+python -m py_compile web_app.py services\hncode.py services\hnoj.py services\tinhoctre.py services\problem_bundle.py services\problem_upload.py services\jobs.py
 ```
 
 ## Khi điểm/tags không lưu
@@ -146,6 +150,13 @@ Nếu chỉ tạo bài qua admin form mà chưa save metadata public edit page, 
 
 TinHocTre có thể bật WAF/challenge nên tool không lấy được CSRF bằng `requests`.
 
+Khi sửa TinHocTre, ưu tiên sửa:
+
+```text
+services/tinhoctre.py
+tests/test_tinhoctre.py
+```
+
 Luồng xử lý:
 
 1. Dùng browser local/Edge để đăng nhập.
@@ -153,6 +164,13 @@ Luồng xử lý:
 3. Dùng endpoint cookie TinHocTre trong tool.
 
 Không nên hard-code cookie vào repo.
+
+Test nhanh:
+
+```powershell
+python -m unittest tests.test_tinhoctre -v
+python -m py_compile web_app.py services\tinhoctre.py
+```
 
 ## Khi thêm endpoint mới
 
@@ -188,7 +206,7 @@ Local:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile web_app.py services\api_response.py services\contest.py services\lesson.py services\course.py services\grading.py services\quiz.py services\misc.py services\hncode.py services\hnoj.py services\problem_bundle.py services\problem_upload.py services\problem_transfer.py services\jobs.py
+python -m py_compile web_app.py services\api_response.py services\contest.py services\lesson.py services\course.py services\grading.py services\quiz.py services\misc.py services\hncode.py services\hnoj.py services\tinhoctre.py services\problem_bundle.py services\problem_upload.py services\problem_transfer.py services\jobs.py
 node --check static\api.js
 node --check static\progress.js
 node --check static\app.js
@@ -210,7 +228,7 @@ VPS:
 ```bash
 cd /opt/tool-oj
 python3 -m unittest discover -s tests -v
-python3 -m py_compile web_app.py services/api_response.py services/contest.py services/lesson.py services/course.py services/grading.py services/quiz.py services/misc.py services/hncode.py services/hnoj.py services/problem_bundle.py services/problem_upload.py services/problem_transfer.py services/jobs.py
+python3 -m py_compile web_app.py services/api_response.py services/contest.py services/lesson.py services/course.py services/grading.py services/quiz.py services/misc.py services/hncode.py services/hnoj.py services/tinhoctre.py services/problem_bundle.py services/problem_upload.py services/problem_transfer.py services/jobs.py
 systemctl restart tool-oj.service
 systemctl is-active tool-oj.service
 ```

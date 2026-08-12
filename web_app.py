@@ -23,7 +23,6 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote, urljoin
 from urllib.request import urlopen
-from http.cookies import SimpleCookie
 
 from flask import Flask, Response, jsonify, render_template, request, send_file
 
@@ -39,6 +38,7 @@ from services import problem_bundle as bundle_service
 from services import problem_transfer as transfer_service
 from services import problem_upload as upload_service
 from services import quiz as quiz_service
+from services import tinhoctre as tinhoctre_service
 
 from transfer_tinhoctre_to_hncode import (
     ProblemInfo,
@@ -1264,11 +1264,11 @@ def api_check_login():
                 session = session_from_cookie(cookie_header)
                 probe_url = f"/problem/{probe_code}/edit" if probe_code else "/problems/create"
                 page = session.get(urljoin(TARGETS[target]["base_url"], probe_url), timeout=30)
-                if page.status_code == 202 or page.headers.get("x-amzn-waf-action"):
+                if tinhoctre_service.is_waf_challenge_response(page):
                     return jsonify({"ok": False, "message": "WAF/challenge"})
                 if probe_code and not (f'name="code"' in page.text or "name='code'" in page.text):
                     return jsonify({"ok": False, "message": "Cookie không mở được trang sửa bài"})
-                if "/accounts/login" in page.url or "/accounts/login" in page.text:
+                if tinhoctre_service.is_login_redirect(page):
                     return jsonify({"ok": False, "message": "Cookie hết hạn"})
                 return jsonify({"ok": True, "message": "Đăng nhập OK"})
             login_tinhoctre_public(TARGETS[target]["base_url"], account.get("username", ""), account.get("password", ""), "/problems/create")
@@ -2102,7 +2102,7 @@ def api_tinhoctre_browser_start():
     try:
         browser = find_edge_executable()
         port = int(os.getenv("TINHOCTRE_CHROME_DEBUG_PORT", "9223"))
-        url = "https://tinhoctre.vn/admin/judge/problem/add/"
+        url = tinhoctre_service.admin_problem_add_url()
         subprocess.Popen(
             [
                 str(browser),
@@ -2132,7 +2132,7 @@ def api_tinhoctre_browser_cookie():
         cookie = cookie_from_tinhoctre_debug_browser()
         save_tinhoctre_cookie(cookie)
         s = session_from_cookie(cookie)
-        check = s.get("https://tinhoctre.vn/admin/judge/problem/add/", timeout=30)
+        check = s.get(tinhoctre_service.admin_problem_add_url(), timeout=30)
         if not check.ok or not is_problem_add_form(check.text):
             raise RuntimeError(tinhoctre_admin_cookie_error(check.url))
         return jsonify({"ok": True, "cookie": cookie, "message": "Đã lấy Cookie TinHocTre từ Edge và kiểm tra mở được form admin tạo bài."})
@@ -2147,7 +2147,7 @@ def api_tinhoctre_browser_quick_cookie():
         time.sleep(1)
         chrome = find_edge_executable()
         port = int(os.getenv("TINHOCTRE_CHROME_DEBUG_PORT", "9223"))
-        url = "https://tinhoctre.vn/admin/judge/problem/add/"
+        url = tinhoctre_service.admin_problem_add_url()
         subprocess.Popen(
             [
                 str(chrome),
@@ -2551,7 +2551,7 @@ def login_upload_target(target: str, target_info: dict, settings: dict):
     saved_cookie = (settings.get("cookie") or "").strip() or (load_tinhoctre_cookie() if target == "tinhoctre" else "")
     if target == "tinhoctre" and saved_cookie:
         s = session_from_cookie(saved_cookie)
-        check = s.get(urljoin(target_info["base_url"], "/admin/judge/problem/add/"), timeout=30)
+        check = s.get(tinhoctre_service.admin_problem_add_url(target_info["base_url"]), timeout=30)
         if check.ok and is_problem_add_form(check.text):
             return s
         raise RuntimeError(
@@ -2571,22 +2571,11 @@ def login_upload_target(target: str, target_info: dict, settings: dict):
 
 
 def is_problem_add_form(page: str) -> bool:
-    return bool(
-        re.search(r"<input\b[^>]*name=[\"']code[\"']", page, re.S)
-        and re.search(r"<textarea\b[^>]*name=[\"']description[\"']", page, re.S)
-    )
+    return tinhoctre_service.is_problem_add_form(page)
 
 
 def tinhoctre_admin_cookie_error(final_url: str = "") -> str:
-    suffix = f" URL hiện tại: {final_url}" if final_url else ""
-    return (
-        "Cookie TinHocTre chưa vào được form admin tạo bài. "
-        "Có thể bạn copy cookie khi chưa đăng nhập admin, cookie đã hết hạn, hoặc tài khoản không có quyền staff/admin. "
-        "Hãy mở https://tinhoctre.vn/admin/judge/problem/add/ trên cùng trình duyệt, đảm bảo thấy form tạo bài, "
-        "rồi copy lại Request Header Cookie và dán vào tab Tài khoản."
-        + suffix
-    )
-
+    return tinhoctre_service.admin_cookie_error(final_url)
 
 def collect_problem_edit_form_data(page: str) -> list[tuple[str, str]]:
     parser = FormDataParser()
@@ -3025,6 +3014,8 @@ def resolve_problem_code_for_upload(session, target: str, base_url: str, raw_cod
     return upload_service.resolve_problem_code_for_upload(session, target, base_url, raw_code)
 
 def statement_for_target(target: str, statement: str, *, skip_title_line: bool = False) -> str:
+    if target == "tinhoctre":
+        return tinhoctre_service.statement_for_tinhoctre(statement, skip_title_line=skip_title_line)
     return upload_service.statement_for_target(target, statement, skip_title_line=skip_title_line)
 
 def problem_info_for_target(info: ProblemInfo, target: str) -> ProblemInfo:
@@ -3041,7 +3032,7 @@ def create_tinhoctre_admin_problem(
     group_id: str,
     allowed_language_ids: list[str],
 ) -> str:
-    add_url = urljoin(base_url, "/admin/judge/problem/add/")
+    add_url = tinhoctre_service.admin_problem_add_url(base_url)
     page = session.get(add_url, timeout=30)
     if not page.ok:
         raise RuntimeError(f"TinHocTre add page failed: HTTP {page.status_code}")
@@ -3213,28 +3204,19 @@ def test_data_url(base_url: str, code: str) -> str:
 
 def session_from_cookie(cookie_header: str):
     s = tinhoctre_session()
-    parsed = SimpleCookie()
-    parsed.load(cookie_header)
-    for key, morsel in parsed.items():
-        s.cookies.set(key, morsel.value, domain=".tinhoctre.vn")
-        s.cookies.set(key, morsel.value, domain="tinhoctre.vn")
-    return s
+    return tinhoctre_service.apply_cookie_header(s, cookie_header)
 
 
 def tinhoctre_cookie_file() -> Path:
-    return RUNTIME / "tinhoctre_cookie.txt"
+    return tinhoctre_service.cookie_file(RUNTIME)
 
 
 def save_tinhoctre_cookie(cookie_header: str) -> None:
-    RUNTIME.mkdir(parents=True, exist_ok=True)
-    tinhoctre_cookie_file().write_text(cookie_header, encoding="utf-8")
+    tinhoctre_service.save_cookie(RUNTIME, cookie_header)
 
 
 def load_tinhoctre_cookie() -> str:
-    path = tinhoctre_cookie_file()
-    if path.exists():
-        return path.read_text(encoding="utf-8").strip()
-    return ""
+    return tinhoctre_service.load_cookie(RUNTIME)
 
 
 def find_edge_executable() -> Path:

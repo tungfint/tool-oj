@@ -271,6 +271,10 @@ Service nền:
 
 ## Cookie TinHocTre
 
+Service nền:
+
+- `services/tinhoctre.py`: build URL TinHocTre, normalize đề bài `$` -> `~`, nhận diện WAF/challenge, parse lỗi form đơn giản, lưu/đọc cookie tạm và apply cookie vào session. Cookie vẫn lấy từ browser/người dùng, không hard-code trong code.
+
 ### `POST /api/tinhoctre-browser/start`
 
 Mở browser local để lấy cookie TinHocTre khi bị WAF/challenge.

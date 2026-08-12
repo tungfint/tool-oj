@@ -624,6 +624,21 @@ Lệnh test riêng:
 python -m unittest tests.test_quiz_misc -v
 ```
 
+## VII.I. Chặng 7: Tách TinHocTre riêng
+
+Trạng thái hiện tại:
+
+- Đã thêm `services/tinhoctre.py` để gom helper riêng của TinHocTre: build URL admin/bài/test, normalize đề bài `$` -> `~`, nhận diện WAF/challenge, nhận diện redirect login, parse lỗi form cơ bản, lưu/đọc cookie tạm và apply cookie vào session.
+- `web_app.py` vẫn giữ endpoint/giao diện/cơ chế Edge-cookie hiện tại. Các hàm TinHocTre trong `web_app.py` chuyển thành wrapper gọi service để không đổi hành vi API.
+- Không hard-code cookie. Cookie vẫn lấy từ ô Cookie TinHocTre hoặc browser local/Edge như trước.
+- Đã thêm `tests/test_tinhoctre.py` cho các phần không cần login thật: normalize statement, build URL, detect WAF/challenge, detect login redirect, parse lỗi form, lưu/đọc/apply cookie và nhận diện form admin tạo bài.
+
+Lệnh test riêng:
+
+```powershell
+python -m unittest tests.test_tinhoctre -v
+```
+
 ## VIII. Việc chưa nên làm ngay
 
 Chưa nên làm ngay:
