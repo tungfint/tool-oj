@@ -270,3 +270,18 @@ systemctl is-active tool-oj.service
 - Không có file runtime/debug/log lớn bị add nhầm.
 - Tài liệu cập nhật nếu đổi API/format.
 - Giao diện local vẫn HTTP 200.
+
+### Cập nhật 2026-08-13: nút Chuẩn hóa ghi lên HNCode
+
+Panel AI có ba bước:
+
+1. `Chuẩn bị dữ liệu`: đọc bài hoặc file nguồn, tạo bảng và link mở file `.md` tạm.
+2. `Chuẩn hóa bằng AI`: gọi Google AI API bằng API key người dùng nhập, cập nhật bảng và file `.md` kết quả.
+3. `Chuẩn hoá`: nếu chưa chuẩn bị/chưa gọi AI thì tự chạy các bước trước, sau đó gọi `/api/ai/apply-normalize` để cập nhật HNCode.
+
+Khi sửa phần này cần nhớ:
+
+- Không lưu Google AI API key vào repo; UI chỉ lưu tạm trong `localStorage` theo lựa chọn của người dùng.
+- Không dùng mật khẩu Google/Gemini web để tự động đăng nhập.
+- Endpoint apply chỉ nên cập nhật live sau khi người dùng bấm nút xác nhận riêng.
+- Test phải mock `login_hncode`, `update_hncode_statement_markdown`, `update_hncode_problem_metadata`, `update_problem_solution_markdown`.

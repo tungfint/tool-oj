@@ -12,28 +12,56 @@ function syncAiSourceMode() {
   document.getElementById("aiCodesBox").classList.toggle("hidden", mode !== "codes");
   document.getElementById("aiFileBox").classList.toggle("hidden", mode !== "file");
 }
+const AI_TEXT = {
+  selectAll: "Ch\u1ecdn t\u1ea5t c\u1ea3",
+  unselectAll: "B\u1ecf ch\u1ecdn t\u1ea5t c\u1ea3",
+  selected: "Ch\u1ecdn",
+  code: "M\u00e3 b\u00e0i",
+  name: "T\u00ean b\u00e0i",
+  statement: "\u0110\u1ec1 b\u00e0i",
+  status: "Tr\u1ea1ng th\u00e1i",
+  result: "K\u1ebft qu\u1ea3",
+  openMd: "M\u1edf md",
+  saveKey: "\u0110\u00e3 l\u01b0u API key Google AI t\u1ea1m tr\u00ean tr\u00ecnh duy\u1ec7t m\u00e1y n\u00e0y.",
+  fileRead: "\u0110\u00e3 \u0111\u1ecdc file.",
+  preparing: "\u0110ang chu\u1ea9n b\u1ecb d\u1eef li\u1ec7u AI...",
+  needApiKey: "H\u00e3y nh\u1eadp Google AI API key.",
+  callingAi: "\u0110ang g\u1ecdi AI...",
+  callingAiLog: "\u0110ang g\u1ecdi Google AI \u0111\u1ec3 chu\u1ea9n h\u00f3a...",
+  applying: "\u0110ang c\u1eadp nh\u1eadt web...",
+  applyingLog: "\u0110ang c\u1eadp nh\u1eadt k\u1ebft qu\u1ea3 chu\u1ea9n h\u00f3a l\u00ean HNCode...",
+  testReview: "Nh\u1eadn x\u00e9t test",
+  issues: "V\u1ea5n \u0111\u1ec1 c\u1ea7n ki\u1ec3m tra",
+  checks: "Ki\u1ec3m tra format",
+};
 function renderAiNormalizeTable(rows) {
   aiNormalizeRows = rows || [];
   document.getElementById("aiNormalizeTable").innerHTML = `<div class="table-tools">
-    <button class="action" type="button" onclick="setRowSelection('#aiNormalizeTable', true)">Chọn tất cả</button>
-    <button class="action" type="button" onclick="setRowSelection('#aiNormalizeTable', false)">Bỏ chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#aiNormalizeTable', true)">${AI_TEXT.selectAll}</button>
+    <button class="action" type="button" onclick="setRowSelection('#aiNormalizeTable', false)">${AI_TEXT.unselectAll}</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài</th><th>Điểm</th><th>Tags</th><th>Test</th><th>Trạng thái</th><th>Kết quả</th></tr></thead>
+    <thead><tr><th>${AI_TEXT.selected}</th><th>${AI_TEXT.code}</th><th>${AI_TEXT.name}</th><th>${AI_TEXT.statement}</th><th>Solution</th><th>Point</th><th>${AI_TEXT.status}</th><th>${AI_TEXT.result}</th></tr></thead>
     <tbody>${aiNormalizeRows.map((row, index) => `<tr data-index="${index}" data-original="${escapeHtml(row.original_code || row.code || "")}">
       <td><input type="checkbox" class="row-selected" ${row.can_normalize === false ? "" : "checked"} ${row.can_normalize === false ? "disabled" : ""}></td>
-      <td><code>${escapeHtml(row.code || "")}</code></td>
-      <td>${escapeHtml(row.name || "")}</td>
-      <td>${escapeHtml(row.points || "")}</td>
-      <td>${escapeHtml(row.tags || "")}</td>
-      <td>${escapeHtml(row.test_count || "")}</td>
-      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}</td>
-      <td><button class="action" type="button" onclick="selectAiResult(${index})">Xem</button></td>
+      <td><input class="mini-input row-code" value="${escapeHtml(row.code || "")}"></td>
+      <td><input class="mini-input row-name" value="${escapeHtml(row.name || "")}"></td>
+      <td>${row.statement_link ? `<a href="${escapeHtml(row.statement_link)}" target="_blank" rel="noopener">${AI_TEXT.openMd}</a>` : ""}</td>
+      <td>${row.solution_link ? `<a href="${escapeHtml(row.solution_link)}" target="_blank" rel="noopener">${AI_TEXT.openMd}</a>` : ""}</td>
+      <td><input class="mini-input row-points" value="${escapeHtml(row.points || "")}"></td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.link ? ` <a class="problem-link" href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : ""}</td>
+      <td><button class="action" type="button" onclick="selectAiResult(${index})">Xem</button>${row.link ? ` <a class="problem-link" href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : ""}</td>
     </tr>`).join("")}</tbody></table>`;
 }
 function collectAiRows() {
   return [...document.querySelectorAll("#aiNormalizeTable tbody tr")].map(tr => {
     const row = aiNormalizeRows[Number(tr.dataset.index)] || {};
-    return {...row, selected: tr.querySelector(".row-selected").checked};
+    return {
+      ...row,
+      selected: tr.querySelector(".row-selected").checked,
+      code: tr.querySelector(".row-code")?.value.trim() || row.code || "",
+      name: tr.querySelector(".row-name")?.value.trim() || row.name || "",
+      points: tr.querySelector(".row-points")?.value.trim() || row.points || "",
+    };
   });
 }
 function selectAiResult(index) {
@@ -41,9 +69,9 @@ function selectAiResult(index) {
   document.getElementById("aiResultStatement").value = selectedAiResult?.statement_markdown || "";
   const details = [];
   if (selectedAiResult?.solution_markdown) details.push("## Solutions\n" + selectedAiResult.solution_markdown);
-  if (selectedAiResult?.test_review) details.push("## Nhận xét test\n" + selectedAiResult.test_review);
-  if (selectedAiResult?.issues?.length) details.push("## Vấn đề cần kiểm tra\n" + selectedAiResult.issues.map(item => "- " + item).join("\n"));
-  if (selectedAiResult?.checks?.length) details.push("## Kiểm tra format\n" + selectedAiResult.checks.map(item => `${item.status} ${item.name}: ${item.message}`).join("\n"));
+  if (selectedAiResult?.test_review) details.push(`## ${AI_TEXT.testReview}\n` + selectedAiResult.test_review);
+  if (selectedAiResult?.issues?.length) details.push(`## ${AI_TEXT.issues}\n` + selectedAiResult.issues.map(item => "- " + item).join("\n"));
+  if (selectedAiResult?.checks?.length) details.push(`## ${AI_TEXT.checks}\n` + selectedAiResult.checks.map(item => `${item.status} ${item.name}: ${item.message}`).join("\n"));
   document.getElementById("aiResultDetails").value = details.join("\n\n");
 }
 function applyAiRows(rows) {
@@ -57,10 +85,13 @@ document.getElementById("aiHncodeUserMirror").value = accountFields.hncode_user.
 document.getElementById("saveAiKey").onclick = () => {
   localStorage.setItem("chuyenbai.google_ai_key", document.getElementById("aiApiKey").value);
   localStorage.setItem("chuyenbai.google_ai_model", document.getElementById("aiModel").value);
-  append("Đã lưu API key Google AI tạm trên trình duyệt máy này.");
+  append(AI_TEXT.saveKey);
 };
 document.getElementById("aiApiKey").value = localStorage.getItem("chuyenbai.google_ai_key") || "";
 document.getElementById("aiModel").value = localStorage.getItem("chuyenbai.google_ai_model") || document.getElementById("aiModel").value;
+if (!document.getElementById("aiModel").value || document.getElementById("aiModel").value.startsWith("gemini-2.")) {
+  document.getElementById("aiModel").value = "gemini-3.5-flash";
+}
 document.getElementById("chooseAiSourceFile").onclick = () => document.getElementById("aiSourceFile").click();
 document.getElementById("aiSourceFile").addEventListener("change", async event => {
   selectedAiSourceFile = event.target.files && event.target.files[0] || null;
@@ -76,41 +107,80 @@ document.getElementById("aiSourceFile").addEventListener("change", async event =
     document.getElementById("aiSourceText").value = data.source_text || "";
     aiSourceFileBase64 = data.file_base64 || "";
     aiSourceFileMimeType = data.mime_type || "";
-    append(data.message || "Đã đọc file.");
+    append(data.message || AI_TEXT.fileRead);
     status("ready", "ok");
   } catch (err) {
     log(String(err));
     status("failed", "err");
   }
 });
+async function prepareAiNormalizeFlow() {
+  status("running");
+  saveAccounts();
+  document.getElementById("aiHncodeUserMirror").value = accountFields.hncode_user.value || "hncode";
+  const sourceMode = document.getElementById("aiSourceMode").value;
+  log(AI_TEXT.preparing);
+  const payload = {
+    source_mode: sourceMode,
+    target: document.getElementById("aiTarget").value,
+    codes: document.getElementById("aiProblemCodes").value,
+    source_text: document.getElementById("aiSourceText").value,
+    filename: document.getElementById("aiSourceFileName").value,
+    problem_code: document.getElementById("aiFileCode").value.trim(),
+    problem_name: document.getElementById("aiFileName").value.trim(),
+    points: document.getElementById("aiFilePoints").value.trim() || "100",
+    tags: document.getElementById("aiFileTags").value.trim(),
+    file_base64: aiSourceFileBase64,
+    mime_type: aiSourceFileMimeType,
+    account: accountPayload("hncode"),
+  };
+  const data = await postJson("/api/ai/prepare-normalize", payload);
+  preparedAiNormalize = data.prepare_id;
+  renderAiNormalizeTable(data.rows || []);
+  document.getElementById("runAiNormalize").disabled = false;
+  log(data.log);
+  status("ready", "ok");
+  return data;
+}
+async function runAiNormalizeFlow() {
+  if (!preparedAiNormalize) await prepareAiNormalizeFlow();
+  if (!document.getElementById("aiApiKey").value.trim()) throw new Error(AI_TEXT.needApiKey);
+  status("running");
+  markRowsProcessing("#aiNormalizeTable", AI_TEXT.callingAi);
+  log(AI_TEXT.callingAiLog);
+  const data = await postJson("/api/ai/normalize", {
+    prepare_id: preparedAiNormalize,
+    api_key: document.getElementById("aiApiKey").value.trim(),
+    model: document.getElementById("aiModel").value.trim(),
+    options: aiOptions(),
+    rows: collectAiRows(),
+  });
+  applyAiRows(data.rows || []);
+  log(data.log);
+  status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  return data;
+}
+async function applyAiNormalizeFlow() {
+  if (!preparedAiNormalize) await prepareAiNormalizeFlow();
+  if (!aiNormalizeRows.some(row => row.statement_markdown)) await runAiNormalizeFlow();
+  status("running");
+  markRowsProcessing("#aiNormalizeTable", AI_TEXT.applying);
+  log(AI_TEXT.applyingLog);
+  const data = await postJson("/api/ai/apply-normalize", {
+    prepare_id: preparedAiNormalize,
+    target: document.getElementById("aiTarget").value,
+    options: aiOptions(),
+    rows: collectAiRows(),
+    account: accountPayload("hncode"),
+  });
+  applyAiRows(data.rows || []);
+  log(data.log);
+  status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  return data;
+}
 document.getElementById("prepareAiNormalize").onclick = async () => {
-  try {
-    status("running");
-    saveAccounts();
-    document.getElementById("aiHncodeUserMirror").value = accountFields.hncode_user.value || "hncode";
-    const sourceMode = document.getElementById("aiSourceMode").value;
-    log("Đang chuẩn bị dữ liệu AI...");
-    const payload = {
-      source_mode: sourceMode,
-      target: document.getElementById("aiTarget").value,
-      codes: document.getElementById("aiProblemCodes").value,
-      source_text: document.getElementById("aiSourceText").value,
-      filename: document.getElementById("aiSourceFileName").value,
-      problem_code: document.getElementById("aiFileCode").value.trim(),
-      problem_name: document.getElementById("aiFileName").value.trim(),
-      points: document.getElementById("aiFilePoints").value.trim() || "100",
-      tags: document.getElementById("aiFileTags").value.trim(),
-      file_base64: aiSourceFileBase64,
-      mime_type: aiSourceFileMimeType,
-      account: accountPayload("hncode"),
-    };
-    const data = await postJson("/api/ai/prepare-normalize", payload);
-    preparedAiNormalize = data.prepare_id;
-    renderAiNormalizeTable(data.rows || []);
-    document.getElementById("runAiNormalize").disabled = false;
-    log(data.log);
-    status("ready", "ok");
-  } catch (err) {
+  try { await prepareAiNormalizeFlow(); }
+  catch (err) {
     preparedAiNormalize = null;
     document.getElementById("runAiNormalize").disabled = true;
     log(String(err));
@@ -118,23 +188,15 @@ document.getElementById("prepareAiNormalize").onclick = async () => {
   }
 };
 document.getElementById("runAiNormalize").onclick = async () => {
-  try {
-    if (!preparedAiNormalize) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước.");
-    if (!document.getElementById("aiApiKey").value.trim()) throw new Error("Hãy nhập Google AI API key.");
-    status("running");
-    markRowsProcessing("#aiNormalizeTable", "Đang gọi AI...");
-    log("Đang gọi Google AI để chuẩn hóa...");
-    const data = await postJson("/api/ai/normalize", {
-      prepare_id: preparedAiNormalize,
-      api_key: document.getElementById("aiApiKey").value.trim(),
-      model: document.getElementById("aiModel").value.trim(),
-      options: aiOptions(),
-      rows: collectAiRows(),
-    });
-    applyAiRows(data.rows || []);
-    log(data.log);
-    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
-  } catch (err) {
+  try { await runAiNormalizeFlow(); }
+  catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+document.getElementById("applyAiNormalize").onclick = async () => {
+  try { await applyAiNormalizeFlow(); }
+  catch (err) {
     log(String(err));
     status("failed", "err");
   }

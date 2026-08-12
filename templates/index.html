@@ -49,9 +49,9 @@
           <div><label>TinHocTre user</label><input id="acct_tinhoctre_user" type="text" value="admin"><span id="login_tinhoctre" class="login-badge">Chưa kiểm tra</span></div>
         </div>
         <div class="grid-3">
-          <div><label>HNOJ password</label><input id="acct_hnoj_pass" type="password"></div>
-          <div><label>HNCode password</label><input id="acct_hncode_pass" type="password"></div>
-          <div><label>TinHocTre password</label><input id="acct_tinhoctre_pass" type="password"></div>
+          <div><label>HNOJ password</label><input id="acct_hnoj_pass" type="password" class="secret-input"></div>
+          <div><label>HNCode password</label><input id="acct_hncode_pass" type="password" class="secret-input"></div>
+          <div><label>TinHocTre password</label><input id="acct_tinhoctre_pass" type="password" class="secret-input"></div>
         </div>
         <label>Cookie TinHocTre nếu bị WAF/challenge</label>
         <textarea id="acct_tinhoctre_cookie" placeholder="Dán nguyên dòng Cookie của tinhoctre.vn sau khi đăng nhập, ví dụ: sessionid=...; csrftoken=...; ..."></textarea>
@@ -63,7 +63,7 @@
         </div>
         <div class="grid-2">
           <div><label>HNOJ Contest user</label><input id="acct_contest_hnoj_user" type="text" value="admin"><span id="login_contest_hnoj" class="login-badge">Chưa kiểm tra</span></div>
-          <div><label>HNOJ Contest password</label><input id="acct_contest_hnoj_pass" type="password"></div>
+          <div><label>HNOJ Contest password</label><input id="acct_contest_hnoj_pass" type="password" class="secret-input"></div>
         </div>
         <div class="actions">
           <button class="action primary" type="button" id="saveAccounts">Lưu tạm</button>
@@ -390,10 +390,10 @@
 
       <div class="panel" id="panel-ai-normalize">
         <h2>AI chuẩn hóa đề bài</h2>
-        <p>Dùng Google AI API key để đọc bài HNCode hoặc nội dung file rời, sau đó chuẩn hóa đề theo format HNCode/HNOJ. Tool chỉ chuẩn bị kết quả để kiểm tra, chưa tự ghi đè lên web.</p>
+        <p>Dùng Google AI API key để đọc bài HNCode hoặc nội dung file rời, sau đó chuẩn hóa đề theo format HNCode/HNOJ. Có thể kiểm tra kết quả trong bảng trước khi bấm Chuẩn hoá để cập nhật lên HNCode.</p>
         <div class="grid-3">
-          <div><label>Google AI API key</label><input id="aiApiKey" type="password" placeholder="AIza..."></div>
-          <div><label>Model</label><input id="aiModel" type="text" value="gemini-2.5-flash"></div>
+          <div><label>Google AI API key</label><input id="aiApiKey" type="password" class="secret-input" placeholder="AIza..."></div>
+          <div><label>Model</label><select id="aiModel"><option value="gemini-3.5-flash">gemini-3.5-flash</option><option value="gemini-3.6-flash">gemini-3.6-flash</option><option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option><option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option><option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option><option value="gemini-2.5-flash">gemini-2.5-flash (cũ, có thể lỗi 404)</option><option value="gemini-2.5-pro">gemini-2.5-pro (cũ, có thể lỗi 404)</option></select></div>
           <div><label>Đích format</label><select id="aiTarget"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select></div>
         </div>
         <div class="grid-2">
@@ -434,6 +434,7 @@
           <button class="action" type="button" id="saveAiKey">Lưu API key tạm trên máy này</button>
           <button class="action primary" type="button" id="prepareAiNormalize">Chuẩn bị dữ liệu</button>
           <button class="action primary" type="button" id="runAiNormalize" disabled>Chuẩn hóa bằng AI</button>
+          <button class="action primary" type="button" id="applyAiNormalize">Chuẩn hoá</button>
         </div>
         <div id="aiNormalizeTable"></div>
         <div class="grid-2">
@@ -504,7 +505,7 @@
           </div>
           <div class="grid-2">
             <div><label>URL contest HNCode</label><input id="gradingContestUrl" type="text" value="https://hncode.edu.vn/contest/_nt26tst"></div>
-            <div><label>Mật khẩu contest nếu có</label><input id="gradingContestPassword" type="password" value="amsvodich*8*^^"></div>
+            <div><label>Mật khẩu contest nếu có</label><input id="gradingContestPassword" type="password" placeholder="Nhập nếu contest có mật khẩu"></div>
           </div>
           <div class="grid-2">
             <div><label>Thời gian chờ mỗi submission</label><input id="gradingPollSeconds" type="text" value="Đến khi chấm xong" readonly></div>

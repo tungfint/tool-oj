@@ -23,6 +23,25 @@ const logEl = document.getElementById("log");
 const statusEl = document.getElementById("jobStatus");
 let logText = "Sẵn sàng.";
 const progressTimers = new Map();
+function setupSecretToggles() {
+  for (const input of document.querySelectorAll("input.secret-input, input[type='password']")) {
+    if (input.dataset.eyeReady) continue;
+    input.dataset.eyeReady = "1";
+    const wrap = document.createElement("div");
+    wrap.className = "secret-wrap";
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "eye-btn";
+    button.title = "An / hien";
+    button.textContent = "\u{1F441}";
+    button.addEventListener("click", () => {
+      input.type = input.type === "password" ? "text" : "password";
+    });
+    wrap.appendChild(button);
+  }
+}
 function colorizeLog(text) {
   return String(text).split("\n").map(line => {
     const trimmed = line.trim();
@@ -39,6 +58,7 @@ function renderLog() { logEl.innerHTML = colorizeLog(logText); logEl.scrollTop =
 function log(text) { logText = String(text); renderLog(); }
 function append(text) { logText += "\n" + String(text); renderLog(); }
 function status(text, cls="") { statusEl.textContent = text; statusEl.className = "status " + cls; }
+setupSecretToggles();
 
 for (const button of document.querySelectorAll(".nav button")) {
   button.addEventListener("click", () => {

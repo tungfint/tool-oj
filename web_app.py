@@ -48,8 +48,10 @@ from transfer_tinhoctre_to_hncode import (
     create_hncode_problem,
     destination_problem_exists,
     fetch_source_problem,
+    infer_cases_from_zip_paths,
     input_value,
     login_hncode,
+    parse_source_cases,
     selected_option,
     textarea_value,
     upload_hncode_tests,
@@ -1254,6 +1256,43 @@ def first_markdown_header_parts(text: str) -> list[str]:
     return []
 
 
+def ai_safe_key(value: str) -> str:
+    key = re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or "")).strip("_")
+    return key or "item"
+
+
+def ai_normalize_root(prepare_id: str) -> Path:
+    return RUNTIME / "ai_normalize" / prepare_id
+
+
+def write_ai_markdown_files(prepare_id: str, code: str, statement: str = "", solution: str = "") -> dict:
+    root = ai_normalize_root(prepare_id)
+    root.mkdir(parents=True, exist_ok=True)
+    key = ai_safe_key(code)
+    links = {}
+    statement_path = root / f"{key}_statement.md"
+    statement_path.write_text(statement or "", encoding="utf-8")
+    links["statement_path"] = str(statement_path)
+    links["statement_link"] = f"/api/ai/file/{prepare_id}/{key}/statement"
+    solution_path = root / f"{key}_solution.md"
+    solution_path.write_text(solution or "", encoding="utf-8")
+    links["solution_path"] = str(solution_path)
+    links["solution_link"] = f"/api/ai/file/{prepare_id}/{key}/solution"
+    return links
+
+
+@app.get("/api/ai/file/<prepare_id>/<code>/<kind>")
+def api_ai_file(prepare_id: str, code: str, kind: str):
+    if prepare_id not in prepared_ai_normalize:
+        return api_response.api_error("Dữ liệu AI đã hết hạn.", status=404)
+    if kind not in {"statement", "solution"}:
+        return api_response.api_error("Loại file không hợp lệ.", status=404)
+    path = ai_normalize_root(prepare_id) / f"{ai_safe_key(code)}_{kind}.md"
+    if not path.exists():
+        return api_response.api_error("Không tìm thấy file Markdown.", status=404)
+    return send_file(path, mimetype="text/markdown; charset=utf-8", as_attachment=False, download_name=path.name)
+
+
 def read_normalize_reference() -> str:
     candidates = [
         ROOT / "MO_TA_CHUAN_HOA_BAI_HNCODE_CHO_AI.md",
@@ -1355,7 +1394,8 @@ def api_ai_prepare_normalize():
                 "test_summary": "Nguồn là file/nội dung rời, chưa có test_data.",
                 "solution": "",
             }
-            rows.append({"original_code": code, "code": code, "name": name, "points": snapshot["points"], "tags": snapshot["tags"], "test_count": "", "status": "Đã chuẩn bị", "can_normalize": True})
+            file_links = write_ai_markdown_files(prepare_id, code, snapshot["statement"], snapshot["solution"])
+            rows.append({"original_code": code, "code": code, "name": name, "points": snapshot["points"], "tags": snapshot["tags"], "test_count": "", "status": "Đã chuẩn bị", "can_normalize": True, **file_links})
             snapshots[code] = snapshot
             if payload.get("file_base64") and payload.get("mime_type"):
                 files[code] = [{"mime_type": payload.get("mime_type"), "data": base64.b64decode(payload.get("file_base64"))}]
@@ -1371,7 +1411,8 @@ def api_ai_prepare_normalize():
                     snapshot = hncode_problem_snapshot(session, code)
                     key = snapshot["code"] or code
                     snapshots[key] = snapshot
-                    rows.append({"original_code": key, "code": key, "name": snapshot["name"], "points": snapshot["points"], "tags": ", ".join(snapshot.get("tags") or []), "test_count": snapshot["test_count"], "status": "Đã đọc dữ liệu", "can_normalize": True})
+                    file_links = write_ai_markdown_files(prepare_id, key, snapshot["statement"], snapshot["solution"])
+                    rows.append({"original_code": key, "code": key, "name": snapshot["name"], "points": snapshot["points"], "tags": ", ".join(snapshot.get("tags") or []), "test_count": snapshot["test_count"], "status": "Đã đọc dữ liệu", "can_normalize": True, **file_links})
                     log_lines.append(f"✓ {key}: {snapshot['name']}, {snapshot['test_count']} test.")
                 except Exception as exc:
                     rows.append({"original_code": code, "code": code, "name": "", "points": "", "tags": "", "test_count": "", "status": f"✗ {exc}", "can_normalize": False})
@@ -1410,20 +1451,37 @@ def api_ai_normalize():
                     raise RuntimeError("Không tìm thấy snapshot bài đã chuẩn bị.")
                 prompt = ai_service.build_hncode_normalization_prompt(state["reference"], snapshot, {**options, "target": target})
                 raw = ai_service.gemini_generate(api_key=api_key, model=model, prompt=prompt, files=state.get("files", {}).get(original) or state.get("files", {}).get(row.get("code")))
-                parsed = ai_service.parse_ai_json(raw)
-                statement = ai_service.normalize_statement_for_target(parsed.get("statement_markdown") or "", target)
+                try:
+                    parsed = ai_service.parse_ai_json(raw)
+                except Exception as parse_exc:
+                    debug_dir = RUNTIME / "debug_ai_normalize"
+                    debug_dir.mkdir(parents=True, exist_ok=True)
+                    debug_path = debug_dir / f"{ai_safe_key(original or row.get('code'))}_raw.txt"
+                    debug_path.write_text(raw or "", encoding="utf-8", errors="replace")
+                    raise RuntimeError(f"{parse_exc}. Đã lưu raw AI tại {debug_path}") from parse_exc
+                statement = ai_service.ensure_statement_header(
+                    parsed.get("statement_markdown") or "",
+                    name=parsed.get("name") or result.get("name") or snapshot.get("name"),
+                    code=parsed.get("code") or result.get("code") or snapshot.get("code") or original,
+                    points=parsed.get("points") or result.get("points") or snapshot.get("points") or "100",
+                    tags=parsed.get("tags") or result.get("tags") or snapshot.get("tags") or "",
+                )
+                statement = ai_service.normalize_statement_for_target(statement, target)
                 checks, meta = ai_service.validate_statement_markdown(statement, target)
+                solution_markdown = parsed.get("solution_markdown") or ""
+                file_links = write_ai_markdown_files(prepare_id, result.get("code") or original, statement, solution_markdown)
                 result.update({
                     "status": "✓ Đã chuẩn hóa" if meta["valid"] else "⚠ Cần kiểm tra",
                     "name": parsed.get("name") or result.get("name") or meta.get("name"),
                     "points": str(parsed.get("points") or result.get("points") or meta.get("points") or ""),
                     "tags": ", ".join(parsed.get("tags") or []),
                     "statement_markdown": statement,
-                    "solution_markdown": parsed.get("solution_markdown") or "",
+                    "solution_markdown": solution_markdown,
                     "test_review": parsed.get("test_review") or "",
                     "issues": parsed.get("issues") or [],
                     "confidence": parsed.get("confidence") or "",
                     "checks": checks,
+                    **file_links,
                 })
                 log_lines.append(f"✓ {result.get('code')}: {result['status']}, confidence {result.get('confidence') or 'N/A'}.")
             except Exception as exc:
@@ -1432,6 +1490,7 @@ def api_ai_normalize():
                 log_lines.append(f"✗ {row.get('code')}: {exc}")
             result_rows.append(result)
         ok = all(not str(row.get("status", "")).startswith("✗") for row in result_rows)
+        state["rows"] = result_rows
         return api_response.api_success(message="Đã chạy chuẩn hóa AI", rows=result_rows, log="\n".join(log_lines), ok=ok)
     except Exception as exc:
         return api_response.api_error(str(exc))
@@ -1444,6 +1503,106 @@ def api_ai_validate_statement():
         target = payload.get("target") or "hncode"
         checks, meta = ai_service.validate_statement_markdown(payload.get("markdown") or "", target)
         return api_response.api_success(message="Đã kiểm tra Markdown", rows=checks, meta=meta, ok=meta["valid"])
+    except Exception as exc:
+        return api_response.api_error(str(exc))
+
+
+def update_hncode_statement_markdown(session, code: str, name: str, markdown: str) -> str:
+    base_url = TARGETS["hncode"]["base_url"]
+    edit_url = urljoin(base_url, f"/problem/{code}/edit")
+    page = session.get(edit_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được form sửa bài HNCode {code}: HTTP {page.status_code}")
+    data = collect_problem_edit_form_data(page.text)
+    if not data:
+        raise RuntimeError(f"Không tìm thấy form sửa đề bài HNCode cho {code}.")
+    description = statement_body_text(markdown, skip_title_line=True).replace("~", "$")
+    data = set_single_form_fields(data, {"code": code, "name": name, "description": description})
+    result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=30)
+    if not result.ok:
+        raise RuntimeError(f"Cập nhật đề bài HNCode {code} lỗi HTTP {result.status_code}")
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if errors:
+        raise RuntimeError(f"HNCode form đề bài {code} báo lỗi:\n" + "\n".join(errors))
+    if "/accounts/login" in result.url or "/admin/login" in result.url:
+        raise RuntimeError(f"Cập nhật đề bài HNCode {code} bị chuyển về trang đăng nhập: {result.url}")
+    return result.url
+
+
+@app.post("/api/ai/apply-normalize")
+def api_ai_apply_normalize():
+    try:
+        payload = request.get_json(force=True)
+        prepare_id = payload.get("prepare_id")
+        if not prepare_id or prepare_id not in prepared_ai_normalize:
+            return api_response.api_error("Dữ liệu chuẩn bị AI đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
+        state = prepared_ai_normalize[prepare_id]
+        target = payload.get("target") or state.get("target") or "hncode"
+        if target != "hncode":
+            return api_response.api_error("Hiện chỉ hỗ trợ cập nhật trực tiếp lên HNCode. HNOJ/TinHocTre nên đưa sang Up 1 bài để kiểm tra trước.")
+        account = payload.get("account") or {}
+        session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+        options = payload.get("options") or {}
+        rows = payload.get("rows") or state.get("rows") or []
+        state_rows_by_original = {row.get("original_code") or row.get("code"): row for row in state.get("rows") or []}
+        result_rows: list[dict] = []
+        log_lines = ["Cập nhật kết quả chuẩn hóa AI lên HNCode."]
+        for row in rows:
+            result = dict(row)
+            original = row.get("original_code") or row.get("code")
+            if not row.get("selected", True) or not row.get("can_normalize", True):
+                result["status"] = "Bỏ qua"
+                result_rows.append(result)
+                continue
+            prepared_row = state_rows_by_original.get(original) or {}
+            code = (row.get("code") or prepared_row.get("code") or original or "").strip()
+            name = (row.get("name") or prepared_row.get("name") or code).strip()
+            points = str(row.get("points") or prepared_row.get("points") or "100").strip()
+            tags = row.get("tags") if row.get("tags") is not None else prepared_row.get("tags", "")
+            statement = row.get("statement_markdown") or prepared_row.get("statement_markdown") or ""
+            solution = row.get("solution_markdown") or prepared_row.get("solution_markdown") or ""
+            try:
+                if not code:
+                    raise RuntimeError("Thiếu mã bài.")
+                if options.get("statement", True):
+                    if not statement.strip():
+                        raise RuntimeError("Thiếu Markdown đề bài đã chuẩn hóa.")
+                    update_hncode_statement_markdown(session, code, name, statement)
+                if options.get("metadata", True):
+                    update_hncode_problem_metadata(
+                        session,
+                        TARGETS["hncode"]["base_url"],
+                        code,
+                        name=name,
+                        points=points,
+                        partial=True,
+                        time_limit=row.get("time_limit") or prepared_row.get("time_limit") or "1.0",
+                        memory_limit=row.get("memory_limit") or prepared_row.get("memory_limit") or "1024M",
+                        type_ids=type_ids_from_tags(tags, "hncode") or [TARGETS["hncode"]["type_id"]],
+                        group_id=TARGETS["hncode"]["group_id"],
+                        tags_text=tags,
+                    )
+                if options.get("solution", True) and solution.strip():
+                    update_problem_solution_markdown(session, TARGETS["hncode"]["base_url"], code, solution)
+                file_links = write_ai_markdown_files(prepare_id, code, statement, solution)
+                result.update({
+                    "code": code,
+                    "name": name,
+                    "points": points,
+                    "tags": tags,
+                    "status": "✓ Đã cập nhật web",
+                    "link": f"{TARGETS['hncode']['base_url']}/problem/{code}",
+                    **file_links,
+                })
+                log_lines.append(f"✓ {code}: Đã cập nhật HNCode. Link: {result['link']}")
+            except Exception as exc:
+                result["status"] = f"✗ {exc}"
+                result["error"] = str(exc)
+                log_lines.append(f"✗ {code or original}: {exc}")
+            result_rows.append(result)
+        state["rows"] = result_rows
+        ok = all(not str(row.get("status", "")).startswith("✗") for row in result_rows)
+        return api_response.api_success(message="Đã cập nhật web từ kết quả AI", rows=result_rows, log="\n".join(log_lines), ok=ok)
     except Exception as exc:
         return api_response.api_error(str(exc))
 

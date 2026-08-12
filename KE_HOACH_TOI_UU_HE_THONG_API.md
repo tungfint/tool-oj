@@ -703,3 +703,15 @@ Mục tiêu cuối cùng:
 - API gọi được tự động.
 - Code dễ đọc cho AI.
 - Khi HNCode/HNOJ/TinHocTre đổi giao diện, chỉ sửa đúng một service.
+
+## VII.L. Bổ sung: hoàn thiện AI chuẩn hóa và cập nhật HNCode
+
+Trạng thái hiện tại:
+
+- Đã thêm nút mắt ẩn/hiện cho các ô mật khẩu và Google AI API key.
+- Model Google AI chuyển sang danh sách chọn cố định để tránh gõ sai tên model.
+- Bảng chuẩn bị AI hiển thị checkbox, mã bài, tên bài, link đề bài `.md`, link solution `.md`, point và trạng thái.
+- Mã bài, tên bài, point có thể sửa trực tiếp trước khi chạy AI hoặc cập nhật web.
+- Đã thêm endpoint `/api/ai/apply-normalize` để ghi kết quả AI lên HNCode sau khi xác nhận.
+- Nút `Chuẩn hoá` trên UI tự chạy đủ chuỗi chuẩn bị dữ liệu, chuẩn hóa bằng AI, rồi cập nhật web nếu người dùng bấm trực tiếp.
+- Đã bổ sung test mock cho endpoint apply, không gọi live HNCode thật.

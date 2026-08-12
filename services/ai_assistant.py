@@ -21,7 +21,14 @@ import requests
 
 TEXT_SUFFIXES = {".txt", ".md", ".markdown"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_FALLBACK_MODELS = [
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3.1-pro-preview",
+]
 
 
 def read_text_smart_bytes(data: bytes) -> str:
@@ -88,6 +95,41 @@ def normalize_statement_for_target(statement: str, target: str) -> str:
     if target == "hncode":
         return text.replace("~", "$")
     return text.replace("$", "~")
+
+
+def strip_markdown_fence(text: str) -> str:
+    value = str(text or "").strip()
+    if value.startswith("```"):
+        lines = value.splitlines()
+        if lines:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        value = "\n".join(lines).strip()
+    return value
+
+
+def ensure_statement_header(
+    markdown: str,
+    *,
+    name: str = "",
+    code: str = "",
+    points: str = "",
+    tags: object = "",
+) -> str:
+    text = strip_markdown_fence(markdown)
+    header = parse_statement_header(text)
+    code_ok = bool(re.fullmatch(r"[A-Za-z0-9_\-]+", header.get("code") or ""))
+    if len(header.get("parts") or []) >= 2 and header.get("name") and code_ok:
+        return text
+    tag_text = ", ".join(str(item).strip() for item in tags if str(item).strip()) if isinstance(tags, list) else str(tags or "").strip()
+    header_name = str(name or header.get("name") or code or "Bai").strip()
+    header_code = str(code or header.get("code") or "bai").strip()
+    header_points = str(points or header.get("points") or "100").strip()
+    first_line = f"{header_name} | {header_code} | {header_points}"
+    if tag_text:
+        first_line += f" | {tag_text}"
+    return (first_line + "\n\n" + text).strip()
 
 
 def target_math_note(target: str) -> str:
@@ -228,6 +270,8 @@ Phần cần làm:
 
 Yêu cầu trả về:
 - Chỉ trả về JSON hợp lệ, không bọc ```json.
+- Không bọc `statement_markdown` trong ```markdown.
+- Nếu có LaTeX/backslash trong JSON string thì phải escape đúng JSON, ví dụ dùng `\\leq`, `\\times`, `\\n`.
 - JSON có đúng các field:
   - `code`: mã bài.
   - `name`: tên bài chuẩn.
@@ -279,9 +323,8 @@ def gemini_generate(
 ) -> str:
     key = (api_key or "").strip()
     if not key:
-        raise RuntimeError("Chưa nhập Google AI API key.")
-    model_name = (model or DEFAULT_GEMINI_MODEL).strip()
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+        raise RuntimeError("Ch?a nh?p Google AI API key.")
+    model_name = (model or DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
     parts = [{"text": prompt}]
     for item in files or []:
         data = item.get("data") or b""
@@ -297,18 +340,38 @@ def gemini_generate(
             "responseMimeType": "application/json",
         },
     }
-    response = requests.post(url, params={"key": key}, json=payload, timeout=timeout)
-    if not response.ok:
+    models_to_try: list[str] = []
+    for candidate in [model_name, *GEMINI_FALLBACK_MODELS]:
+        candidate = (candidate or "").strip()
+        if candidate and candidate not in models_to_try:
+            models_to_try.append(candidate)
+    attempts: list[str] = []
+    response = None
+    for candidate in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate}:generateContent"
+        response = requests.post(url, params={"key": key}, json=payload, timeout=timeout)
+        if response.ok:
+            break
         detail = response.text[:800]
-        raise RuntimeError(f"Google AI API lỗi HTTP {response.status_code}: {detail}")
+        attempts.append(f"{candidate}: HTTP {response.status_code}: {detail}")
+        lower_detail = detail.lower()
+        retryable_404 = response.status_code == 404 and (
+            "no longer available" in lower_detail
+            or "not found" in lower_detail
+            or "not_found" in lower_detail
+        )
+        if not retryable_404:
+            raise RuntimeError(f"Google AI API l?i HTTP {response.status_code}: {detail}")
+    if response is None or not response.ok:
+        raise RuntimeError("Google AI API khong dung duoc cac model da thu:\n" + "\n".join(attempts))
     data = response.json()
     candidates = data.get("candidates") or []
     if not candidates:
-        raise RuntimeError("Google AI không trả candidate nào.")
+        raise RuntimeError("Google AI kh?ng tr? candidate n?o.")
     parts = candidates[0].get("content", {}).get("parts", [])
     text = "".join(part.get("text", "") for part in parts).strip()
     if not text:
-        raise RuntimeError("Google AI trả nội dung rỗng.")
+        raise RuntimeError("Google AI tr? n?i dung r?ng.")
     return text
 
 
@@ -316,15 +379,82 @@ def parse_ai_json(text: str) -> dict:
     raw = (text or "").strip()
     raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.I).strip()
     raw = re.sub(r"\s*```$", "", raw).strip()
+    latex_commands = {
+        "alpha", "beta", "gamma", "delta", "epsilon", "theta", "lambda", "mu", "pi", "sigma", "phi", "omega",
+        "le", "leq", "ge", "geq", "neq", "ne", "times", "cdot", "div", "pm", "mp",
+        "frac", "sqrt", "text", "mathrm", "mathbf", "mathit", "underline", "overline",
+        "left", "right", "lfloor", "rfloor", "lceil", "rceil", "infty",
+        "sum", "prod", "min", "max", "log", "ln", "mod", "bmod", "pmod",
+        "in", "notin", "subset", "supset", "cup", "cap", "to", "rightarrow", "leftarrow",
+        "ldots", "cdots", "dots", "nabla",
+    }
+
+    def repair_json_string_escapes(value: str) -> str:
+        result: list[str] = []
+        in_string = False
+        escaped = False
+        index = 0
+        while index < len(value):
+            char = value[index]
+            if not in_string:
+                result.append(char)
+                if char == '"':
+                    in_string = True
+                index += 1
+                continue
+            if escaped:
+                result.append(char)
+                escaped = False
+                index += 1
+                continue
+            if char == '"':
+                result.append(char)
+                in_string = False
+                index += 1
+                continue
+            if char == "\\":
+                command = re.match(r"\\([A-Za-z]+)", value[index:])
+                if command and command.group(1) in latex_commands:
+                    result.append("\\\\")
+                    index += 1
+                    continue
+                next_char = value[index + 1] if index + 1 < len(value) else ""
+                if next_char in {'"', "\\", "/", "b", "f", "n", "r", "t"}:
+                    result.append(char)
+                    escaped = True
+                    index += 1
+                    continue
+                if next_char == "u" and re.fullmatch(r"[0-9a-fA-F]{4}", value[index + 2 : index + 6] or ""):
+                    result.append(char)
+                    escaped = True
+                    index += 1
+                    continue
+                result.append("\\\\")
+                index += 1
+                continue
+            result.append(char)
+            index += 1
+        return "".join(result)
+
+    def loads_tolerant(value: str) -> dict:
+        value = repair_json_string_escapes(value)
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            # Gemini sometimes returns LaTeX commands with a single backslash.
+            # Those are invalid JSON escapes unless the backslash is doubled.
+            repaired = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", value)
+            return json.loads(repaired)
+
     try:
-        data = json.loads(raw)
+        data = loads_tolerant(raw)
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", raw, re.S)
         if not match:
-            raise RuntimeError("AI không trả JSON hợp lệ.")
-        data = json.loads(match.group(0))
+            raise RuntimeError("AI kh?ng tr? JSON h?p l?.")
+        data = loads_tolerant(match.group(0))
     if not isinstance(data, dict):
-        raise RuntimeError("JSON AI trả về phải là object.")
+        raise RuntimeError("JSON AI tr? v? ph?i l? object.")
     tags = data.get("tags")
     if isinstance(tags, str):
         data["tags"] = [item.strip() for item in re.split(r"[,;|]", tags) if item.strip()]

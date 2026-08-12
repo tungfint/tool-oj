@@ -337,3 +337,24 @@ Response thường có:
   "ok": true
 }
 ```
+
+### `POST /api/ai/apply-normalize`
+
+Cập nhật kết quả chuẩn hóa AI lên HNCode sau khi giáo viên đã kiểm tra bảng dữ liệu.
+
+Payload chính:
+
+- `prepare_id`: mã phiên chuẩn bị từ `/api/ai/prepare-normalize`.
+- `target`: hiện hỗ trợ ghi trực tiếp `hncode`.
+- `rows`: các dòng đã chọn; UI cho sửa `code`, `name`, `points` trước khi gửi.
+- `options`: bật/tắt cập nhật `statement`, `metadata`, `solution`.
+- `account`: tài khoản HNCode đang lưu ở trình duyệt.
+
+Response dùng dạng chuẩn `ok/message/rows/log/errors/meta`, vẫn có `rows[].status`, `rows[].link`, `statement_link`, `solution_link` để frontend hiển thị.
+
+Ghi chú flow AI mới:
+
+- `/api/ai/prepare-normalize` tạo file Markdown tạm cho từng bài và trả `statement_link`, `solution_link`.
+- `/api/ai/normalize` ghi lại file Markdown đã chuẩn hóa vào cùng phiên `prepare_id`.
+- `/api/ai/apply-normalize` mới thực hiện cập nhật live lên HNCode. Test tự động phải mock các hàm login/update, không gọi admin thật.
+- Model mặc định hiện dùng `gemini-3.5-flash`. Nếu người dùng còn lưu model 2.5 cũ và Google trả 404 `no longer available`, backend tự thử các model fallback Gemini 3 trước khi báo lỗi.
