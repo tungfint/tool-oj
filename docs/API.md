@@ -233,6 +233,10 @@ Parse nội dung quiz, kiểm tra từng câu và trả bảng trạng thái.
 
 Tạo câu hỏi tại HNCode OJ quiz form.
 
+Service nền:
+
+- `services/quiz.py`: parse Markdown quiz, validate câu hỏi, build rows chuẩn bị upload.
+
 ## Chấm bài HNCode
 
 ### `POST /api/prepare-hncode-grading`
@@ -260,6 +264,10 @@ Nhận zip/folder data contest, trả zip chứa lần nộp cuối.
 ### `POST /api/misc/ai-code-warning`
 
 Nhận folder hoặc zip data contest, phân tích dấu hiệu AI code và chép code, trả Excel báo cáo.
+
+Service nền:
+
+- `services/misc.py`: chọn last submission Scratch, phân tích input code zip, chuẩn hóa token/code fingerprint phục vụ cảnh báo AI và chép code.
 
 ## Cookie TinHocTre
 

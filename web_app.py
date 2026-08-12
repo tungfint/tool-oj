@@ -34,9 +34,11 @@ from services import grading as grading_service
 from services import hncode as hncode_service
 from services import jobs as job_service
 from services import lesson as lesson_service
+from services import misc as misc_service
 from services import problem_bundle as bundle_service
 from services import problem_transfer as transfer_service
 from services import problem_upload as upload_service
+from services import quiz as quiz_service
 
 from transfer_tinhoctre_to_hncode import (
     ProblemInfo,
@@ -334,167 +336,31 @@ QUIZ_FIELD_ALIASES = {
 
 
 def normalize_key_text(value: str) -> str:
-    value = value.strip().lower()
-    replacements = {
-        "áàảãạăắằẳẵặâấầẩẫậ": "a",
-        "éèẻẽẹêếềểễệ": "e",
-        "íìỉĩị": "i",
-        "óòỏõọôốồổỗộơớờởỡợ": "o",
-        "úùủũụưứừửữự": "u",
-        "ýỳỷỹỵ": "y",
-        "đ": "d",
-    }
-    for chars, repl in replacements.items():
-        for ch in chars:
-            value = value.replace(ch, repl)
-    value = re.sub(r"\s+", " ", value)
-    return value
+    return quiz_service.normalize_key_text(value)
 
 
 def quiz_field_from_line(line: str) -> tuple[str, str] | None:
-    match = re.match(r"^\s*([^:：]{1,40})\s*[:：]\s*(.*)$", line)
-    if not match:
-        return None
-    raw_key = match.group(1).strip()
-    key = QUIZ_FIELD_ALIASES.get(raw_key.lower()) or QUIZ_FIELD_ALIASES.get(normalize_key_text(raw_key))
-    if not key:
-        return None
-    return key, match.group(2).strip()
+    return quiz_service.quiz_field_from_line(line)
 
 
 def split_quiz_blocks(text: str) -> list[str]:
-    blocks: list[list[str]] = [[]]
-    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        if line.strip() == "---":
-            if blocks[-1]:
-                blocks.append([])
-            continue
-        blocks[-1].append(line)
-    return ["\n".join(block).strip() for block in blocks if "\n".join(block).strip()]
+    return quiz_service.split_quiz_blocks(text)
 
 
 def parse_choice_lines(text: str) -> list[dict]:
-    choices = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        match = re.match(r"^(?:[-*]\s*)?([A-Za-z0-9]+)\s*[\.\):：-]\s*(.+)$", line)
-        if not match:
-            raise RuntimeError(f"Lựa chọn không đúng dạng `- A. Nội dung`: {line}")
-        choices.append({"id": match.group(1).strip(), "text": match.group(2).strip()})
-    return choices
+    return quiz_service.parse_choice_lines(text)
 
 
 def split_answers(text: str) -> list[str]:
-    parts: list[str] = []
-    for line in text.splitlines():
-        line = re.sub(r"^\s*[-*]\s*", "", line).strip()
-        if not line:
-            continue
-        if "," in line or ";" in line or "|" in line:
-            parts.extend(item.strip() for item in re.split(r"[,;|]", line) if item.strip())
-        else:
-            parts.append(line)
-    return parts
+    return quiz_service.split_answers(text)
 
 
 def parse_quiz_markdown(text: str) -> list[dict]:
-    items = []
-    for index, block in enumerate(split_quiz_blocks(text), 1):
-        fields = {"type": "", "title": "", "content": "", "choices": "", "answer": "", "explanation": ""}
-        current: str | None = None
-        for line in block.splitlines():
-            parsed = quiz_field_from_line(line)
-            if parsed:
-                current, value = parsed
-                fields[current] = value
-                continue
-            if current:
-                fields[current] = (fields[current] + "\n" + line).strip("\n")
-        qtype = QUESTION_TYPE_ALIASES.get(fields["type"].strip().lower()) or QUESTION_TYPE_ALIASES.get(normalize_key_text(fields["type"]))
-        if not qtype:
-            raise RuntimeError(f"Câu {index}: Loại câu hỏi không hợp lệ: {fields['type']!r}")
-        content = fields["content"].strip()
-        if not content:
-            raise RuntimeError(f"Câu {index}: thiếu Nội dung.")
-        title = fields["title"].strip() or re.sub(r"\s+", " ", content)[:80] or f"Câu hỏi {index}"
-        choices = parse_choice_lines(fields["choices"]) if fields["choices"].strip() else []
-        answers = split_answers(fields["answer"])
-        if qtype in {"MC", "MA"}:
-            if not choices:
-                raise RuntimeError(f"Câu {index}: câu trắc nghiệm cần có Lựa chọn.")
-            if not answers:
-                raise RuntimeError(f"Câu {index}: câu trắc nghiệm cần có Đáp án.")
-            valid_ids = {choice["id"] for choice in choices}
-            missing = [answer for answer in answers if answer not in valid_ids]
-            if missing:
-                raise RuntimeError(f"Câu {index}: đáp án {', '.join(missing)} không có trong lựa chọn.")
-            correct = {"answers": answers if qtype == "MA" else (answers[0] if answers else "")}
-        elif qtype == "SA":
-            if not answers:
-                raise RuntimeError(f"Câu {index}: câu trả lời ngắn cần có ít nhất một Đáp án.")
-            choices = []
-            correct = {"type": "exact", "answers": answers, "case_sensitive": False}
-        else:
-            if not choices:
-                choices = [{"id": "T", "text": "Đúng"}, {"id": "F", "text": "Sai"}]
-            if not answers:
-                raise RuntimeError(f"Câu {index}: câu Đúng/Sai cần có Đáp án.")
-            raw = normalize_key_text(answers[0] if answers else "")
-            correct_id = "T" if raw in {"dung", "true", "t", "1", "yes"} else "F" if raw in {"sai", "false", "f", "0", "no"} else answers[0] if answers else ""
-            if correct_id not in {choice["id"] for choice in choices}:
-                raise RuntimeError(f"Câu {index}: đáp án Đúng/Sai phải là Đúng hoặc Sai.")
-            correct = {"answers": correct_id}
-        items.append(
-            {
-                "index": index,
-                "type": qtype,
-                "title": title,
-                "content": content,
-                "choices": choices,
-                "correct_answers": correct,
-                "explanation": fields["explanation"].strip(),
-            }
-        )
-    if not items:
-        raise RuntimeError("Chưa có câu hỏi nào trong nội dung quiz.")
-    return items
+    return quiz_service.parse_quiz_markdown(text)
 
 
 def prepare_quiz_items(text: str) -> tuple[list[dict], list[dict]]:
-    rows = []
-    valid_questions = []
-    blocks = split_quiz_blocks(text)
-    if not blocks:
-        raise RuntimeError("Chưa có câu hỏi nào trong nội dung quiz.")
-    for index, block in enumerate(blocks, 1):
-        try:
-            question = parse_quiz_markdown(block)[0]
-            question["index"] = index
-            valid_questions.append(question)
-            rows.append(
-                {
-                    "index": index,
-                    "title": question["title"],
-                    "type": question["type"],
-                    "status": "✓ Hợp lệ",
-                    "error": "",
-                    "can_upload": True,
-                }
-            )
-        except Exception as exc:
-            rows.append(
-                {
-                    "index": index,
-                    "title": f"Câu {index}",
-                    "type": "",
-                    "status": "✗ Lỗi",
-                    "error": str(exc),
-                    "can_upload": False,
-                }
-            )
-    return valid_questions, rows
+    return quiz_service.prepare_quiz_items(text)
 
 
 def create_quiz_question(session, question: dict, *, shuffle_choices: bool, is_public: bool) -> str:
@@ -553,63 +419,23 @@ def safe_extract_zip(zip_path: Path, dest: Path) -> None:
 
 
 def scratch_submission_score(student_dir: Path) -> int:
-    history = student_dir / "$History"
-    score = 0
-    if history.is_dir():
-        score += sum(1 for item in history.iterdir() if item.is_file() and item.suffix.lower() == ".sb3") * 2
-    score += sum(1 for item in student_dir.iterdir() if item.is_file() and item.suffix.lower() == ".sb3")
-    return score
+    return misc_service.scratch_submission_score(student_dir)
 
 
 def find_scratch_data_root(extract_root: Path) -> Path:
-    candidates = [extract_root]
-    candidates.extend(item for item in extract_root.iterdir() if item.is_dir())
-    best = extract_root
-    best_score = -1
-    for candidate in candidates:
-        score = sum(1 for child in candidate.iterdir() if child.is_dir() and scratch_submission_score(child) > 0)
-        if score > best_score:
-            best = candidate
-            best_score = score
-    return best
+    return misc_service.find_scratch_data_root(extract_root)
 
 
 def history_version(path: Path) -> int:
-    match = re.search(r"_(\d+)\.sb3$", path.name, re.IGNORECASE)
-    return int(match.group(1)) if match else -1
+    return misc_service.history_version(path)
 
 
 def get_last_scratch_submission(student_dir: Path) -> Path | None:
-    history = student_dir / "$History"
-    if history.is_dir():
-        history_files = [item for item in history.iterdir() if item.is_file() and item.suffix.lower() == ".sb3"]
-        if history_files:
-            return max(history_files, key=history_version)
-    root_files = [item for item in student_dir.iterdir() if item.is_file() and item.suffix.lower() == ".sb3"]
-    if root_files:
-        return sorted(root_files, key=lambda item: item.name.lower())[0]
-    return None
+    return misc_service.get_last_scratch_submission(student_dir)
 
 
 def collect_last_scratch_submissions(data_root: Path, output_dir: Path) -> dict:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    rows = []
-    for student_dir in sorted((item for item in data_root.iterdir() if item.is_dir()), key=lambda item: item.name.lower()):
-        last_file = get_last_scratch_submission(student_dir)
-        row = {"student_id": student_dir.name, "source": "", "output": "", "status": "missing"}
-        if last_file:
-            output_name = f"{student_dir.name}.sb3"
-            output_path = output_dir / output_name
-            shutil.copy2(last_file, output_path)
-            row.update({"source": last_file.relative_to(data_root).as_posix(), "output": output_name, "status": "ok"})
-        rows.append(row)
-    report_lines = [
-        "student_id\tstatus\toutput_file\tsource_file",
-        *[f"{row['student_id']}\t{row['status']}\t{row['output']}\t{row['source']}" for row in rows],
-    ]
-    (output_dir / "report.txt").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
-    found = sum(1 for row in rows if row["status"] == "ok")
-    return {"rows": rows, "total": len(rows), "found": found, "missing": len(rows) - found}
+    return misc_service.collect_last_scratch_submissions(data_root, output_dir)
 
 
 CODE_EXTENSIONS = {".py", ".cpp", ".cc", ".cxx", ".c", ".pas", ".java"}

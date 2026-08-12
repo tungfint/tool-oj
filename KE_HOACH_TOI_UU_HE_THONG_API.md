@@ -609,6 +609,21 @@ Lệnh test riêng:
 python -m unittest tests.test_problem_bundle -v
 ```
 
+## VII.H. Chặng 6: Tách Quiz và Tool lẻ
+
+Trạng thái hiện tại:
+
+- Đã thêm `services/quiz.py` để parse Markdown quiz, validate câu hỏi và build rows chuẩn bị upload.
+- Đã thêm `services/misc.py` cho các helper offline của Tool lẻ: chọn last submission Scratch, phân tích code zip, token/fingerprint phục vụ cảnh báo AI và chép code.
+- `web_app.py` vẫn giữ endpoint/giao diện hiện tại, các hàm cũ chuyển dần thành wrapper gọi service để giảm rủi ro.
+- Đã thêm `tests/test_quiz_misc.py` cho parse quiz markdown, validate lỗi quiz, chuẩn bị rows quiz, chọn last submissions và phân tích input code zip không cần live data.
+
+Lệnh test riêng:
+
+```powershell
+python -m unittest tests.test_quiz_misc -v
+```
+
 ## VIII. Việc chưa nên làm ngay
 
 Chưa nên làm ngay:
