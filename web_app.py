@@ -27,8 +27,12 @@ from http.cookies import SimpleCookie
 
 from flask import Flask, Response, jsonify, render_template, request, send_file
 
+from services import api_response
+from services import contest as contest_service
+from services import course as course_service
 from services import hncode as hncode_service
 from services import jobs as job_service
+from services import lesson as lesson_service
 from services import problem_bundle as bundle_service
 from services import problem_transfer as transfer_service
 from services import problem_upload as upload_service
@@ -1372,7 +1376,7 @@ def index():
 @app.get("/samples/bo_mau_1_bai_tonghaiso.zip")
 def sample_tonghaiso_zip():
     if not SAMPLE_TONGHAISO_ZIP.exists():
-        return jsonify({"error": "Không tìm thấy file mẫu."}), 404
+        return api_response.api_error("Không tìm thấy file mẫu.", status=404)
     return send_file(SAMPLE_TONGHAISO_ZIP, as_attachment=True, download_name=SAMPLE_TONGHAISO_ZIP.name)
 
 
@@ -1386,20 +1390,20 @@ def api_sample_tonghaiso():
             generator = read_zip_member_text(archive, "gentest_tonghaiso.py")
             solution_md = read_zip_member_text(archive, "sol_tonghaiso.md")
         parts = first_markdown_header_parts(statement)
-        return jsonify(
-            {
-                "zip_path": str(SAMPLE_TONGHAISO_ZIP),
-                "code": parts[1] if len(parts) > 1 else "tonghaiso",
-                "name": parts[0] if parts else "Tổng hai số",
-                "points": parts[2] if len(parts) > 2 else "800",
-                "tags": parts[3] if len(parts) > 3 else "implementation, math",
-                "statement": statement,
-                "generator": generator,
-                "solution_md": solution_md,
-            }
+        return api_response.api_success(
+            message="Đã đọc bộ mẫu Tổng hai số.",
+            meta={"sample": "tonghaiso"},
+            zip_path=str(SAMPLE_TONGHAISO_ZIP),
+            code=parts[1] if len(parts) > 1 else "tonghaiso",
+            name=parts[0] if parts else "Tổng hai số",
+            points=parts[2] if len(parts) > 2 else "800",
+            tags=parts[3] if len(parts) > 3 else "implementation, math",
+            statement=statement,
+            generator=generator,
+            solution_md=solution_md,
         )
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 def read_zip_member_text(archive: zipfile.ZipFile, name: str) -> str:
@@ -1492,9 +1496,16 @@ def api_misc_list_problem_codes():
             "Danh sách mã bài:",
             codes_text,
         ]
-        return jsonify({"ok": True, "rows": rows, "codes_text": codes_text, "compact_text": compact_text, "log": "\n".join(log_lines)})
+        return api_response.api_success(
+            message=f"Đã lấy {len(rows)} mã bài.",
+            rows=rows,
+            log="\n".join(log_lines),
+            meta={"source": source_label, "count": len(rows)},
+            codes_text=codes_text,
+            compact_text=compact_text,
+        )
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/upload-quiz")
@@ -1901,11 +1912,7 @@ def decode_text_smart(raw: bytes) -> str:
 
 
 def extract_hncode_contest_key_any(value: str) -> str:
-    value = str(value or "").strip()
-    if not value:
-        raise RuntimeError("Chưa nhập URL hoặc mã contest.")
-    match = re.search(r"/contest/([^/?#\s]+)", value)
-    return match.group(1) if match else value.strip().strip("/")
+    return contest_service.extract_contest_key(str(value or ""), "contest")
 
 
 def hncode_student_session(username: str, password: str) -> requests.Session:
@@ -2641,10 +2648,16 @@ def api_prepare_upload():
             progress_update(progress_id, phase="prepare-upload", done=index, total=len(bundles), rows=rows, message=f"{bundle.code}: đã chuẩn bị {test_text}")
         prepared_uploads[prepare_id] = {"root": root, "bundles": {b.code: b for b in bundles}, "tests": tests, "solutions": solutions_md, "metadata": metadata}
         progress_finish(progress_id, True, f"Đã chuẩn bị {len(bundles)}/{len(bundles)} bài")
-        return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
+        return api_response.api_success(
+            message=f"Đã chuẩn bị {len(rows)} bài.",
+            rows=rows,
+            log="\n".join(log_lines),
+            meta={"source": source_name, "count": len(rows)},
+            prepare_id=prepare_id,
+        )
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
-        return jsonify({"error": str(exc)}), 400
+        return api_response.api_error(str(exc))
 
 
 def upload_payload() -> dict:
@@ -3776,7 +3789,7 @@ def login_problem_source(target: str, account: dict, first_code: str):
 
 
 def contest_url(base_url: str, key: str) -> str:
-    return urljoin(base_url, f"/contest/{key}")
+    return contest_service.contest_url(base_url, key)
 
 
 def admin_contest_change_url(session, base_url: str, key: str) -> str | None:
@@ -3975,19 +3988,11 @@ def compact_form_red_errors(page: str) -> list[str]:
 
 
 def extract_hncode_course_slug(value: str) -> str:
-    value = (value or "").strip()
-    if not value:
-        raise RuntimeError("Chưa nhập URL hoặc mã course HNCode.")
-    match = re.search(r"/course/([^/?#\s]+)", value)
-    if match:
-        return html.unescape(match.group(1)).strip("/")
-    if re.fullmatch(r"[A-Za-z0-9_-]+", value):
-        return value
-    raise RuntimeError("Không đọc được mã course. Hãy nhập URL dạng https://hncode.edu.vn/course/<ma_course>.")
+    return course_service.extract_course_slug(value)
 
 
 def hncode_course_page_url(course_slug: str, path: str = "") -> str:
-    return urljoin(TARGETS["hncode"]["base_url"], f"/course/{course_slug}{path}")
+    return course_service.course_page_url(TARGETS["hncode"]["base_url"], course_slug, path)
 
 
 def hncode_course_admin_id(session: requests.Session, course_slug: str) -> str:
@@ -4075,15 +4080,7 @@ def find_hncode_course_contest_url(session: requests.Session, course_slug: str, 
 
 
 def default_course_clone_contest_key(source_key: str, dest_slug: str, suffix: str = "") -> str:
-    suffix = (suffix or "").strip()
-    if not suffix:
-        suffix = "_" + dest_slug
-    if not suffix.startswith("_") and not suffix.startswith("-"):
-        suffix = "_" + suffix
-    raw = f"{source_key}{suffix}".lower()
-    raw = re.sub(r"[^a-z0-9_-]+", "_", raw)
-    raw = re.sub(r"_+", "_", raw).strip("_-")
-    return raw or source_key
+    return course_service.default_clone_contest_key(source_key, dest_slug, suffix)
 
 
 def collect_form_with_field(page: str, field_name: str) -> list[tuple[str, str]]:
@@ -4320,42 +4317,23 @@ def clone_hncode_contest_native(session: requests.Session, contest_key: str, new
 
 
 def extract_hncode_contest_key(value: str) -> str:
-    value = (value or "").strip()
-    if not value:
-        raise RuntimeError("Chưa nhập URL hoặc mã contest HNCode.")
-    match = re.search(r"/contest/([^/?#\s]+)", value)
-    if match:
-        return html.unescape(match.group(1)).strip("/")
-    if re.fullmatch(r"[A-Za-z0-9_-]+", value):
-        return value
-    raise RuntimeError("Không đọc được mã contest. Hãy nhập URL dạng https://oj.hncode.edu.vn/contest/<ma_contest>.")
+    return contest_service.extract_contest_key(value, "contest HNCode")
 
 
 def contest_lesson_source_from_url(source: str, contest_url_value: str) -> str:
-    text = (contest_url_value or "").strip().lower()
-    if "hnoj.edu.vn" in text:
-        return "hnoj"
-    if "hncode.edu.vn" in text or "oj.hncode.edu.vn" in text:
-        return "hncode"
-    return source if source in {"hncode", "hnoj"} else "hncode"
+    return contest_service.source_from_contest_url(source, contest_url_value)
 
 
 def extract_hncode_lesson_ref(value: str) -> tuple[str, str]:
-    value = (value or "").strip()
-    match = re.search(r"/course/([^/?#\s]+)/lesson/(\d+)", value)
-    if not match:
-        match = re.search(r"/course/([^/?#\s]+)/edit_lessons_new/(\d+)", value)
-    if not match:
-        raise RuntimeError("Không đọc được lesson. Hãy nhập URL dạng https://oj.hncode.edu.vn/course/<course>/lesson/<id>.")
-    return html.unescape(match.group(1)), match.group(2)
+    return lesson_service.extract_lesson_ref(value)
 
 
 def hncode_lesson_url(course_slug: str, lesson_id: str) -> str:
-    return urljoin(TARGETS["hncode"]["base_url"], f"/course/{course_slug}/lesson/{lesson_id}")
+    return lesson_service.lesson_url(TARGETS["hncode"]["base_url"], course_slug, lesson_id)
 
 
 def hncode_lesson_edit_url(course_slug: str, lesson_id: str) -> str:
-    return urljoin(TARGETS["hncode"]["base_url"], f"/course/{course_slug}/edit_lessons_new/{lesson_id}")
+    return lesson_service.lesson_edit_url(TARGETS["hncode"]["base_url"], course_slug, lesson_id)
 
 
 def contest_lesson_score(value: str, default: str = "100") -> str:

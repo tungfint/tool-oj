@@ -5,10 +5,18 @@ Tài liệu này mô tả các endpoint đang có trong `web_app.py`. Mục tiê
 ## Quy ước chung
 
 - Hầu hết endpoint trả JSON.
+- Response mới nên có đủ `ok`, `message`, `rows`, `log`, `errors`, `meta`.
+- Trong giai đoạn chuyển tiếp, endpoint vẫn có thể giữ field cũ như `error`, `prepare_id`, `download_url`, `codes_text` để giao diện hiện tại không hỏng.
 - Luồng dài thường có `progress_id`; client đọc tiến độ qua `GET /api/progress/<progress_id>`.
 - Các endpoint `prepare-*` tạo `prepare_id` và dữ liệu tạm trong bộ nhớ/thư mục `.runtime/`.
 - Các endpoint `confirm-*` nhận lại `prepare_id`, danh sách dòng đã chọn, tài khoản và cấu hình để thực hiện thật.
 - Khi lỗi, nhiều endpoint hiện trả `{"error": "..."}` hoặc `{"ok": false, "error": "..."}`. Đây là điểm nên chuẩn hóa dần về response chung.
+
+Helper response chung:
+
+```text
+services/api_response.py
+```
 
 ## Giao diện và mẫu
 
@@ -182,6 +190,10 @@ Chuyển contest sang đích; bài thiếu có thể được tạo trước r�
 
 Tạo contest từ danh sách mã bài. Nếu mã contest đã tồn tại, tool thêm bài vào contest hiện có.
 
+Service nền:
+
+- `services/contest.py`: parse mã contest, nhận diện nguồn HNCode/HNOJ từ URL, build URL contest.
+
 ## Contest sang Lesson
 
 ### `POST /api/prepare-contest-to-lesson`
@@ -192,6 +204,10 @@ Tạo contest từ danh sách mã bài. Nếu mã contest đã tồn tại, tool
 
 Thêm bài vào lesson HNCode. Nếu nguồn là HNOJ và bài chưa có ở HNCode, tool có thể chuyển bài trước.
 
+Service nền:
+
+- `services/lesson.py`: parse URL lesson và build URL lesson/edit lesson.
+
 ## Clone Course
 
 ### `POST /api/prepare-course-clone`
@@ -201,6 +217,10 @@ Thêm bài vào lesson HNCode. Nếu nguồn là HNOJ và bài chưa có ở HNC
 ### `POST /api/confirm-course-clone`
 
 Clone lesson và contest sang course đích.
+
+Service nền:
+
+- `services/course.py`: parse course slug, build course URL, chuẩn hóa mã contest clone mặc định.
 
 ## Quiz
 

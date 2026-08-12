@@ -509,6 +509,32 @@ Phần nên làm tiếp theo sau checklist này:
 4. Thêm test API Flask cho các endpoint không cần đăng nhập thật: `/`, `/api/prepare-upload`, parser list problem code với fixture.
 5. Sau khi có test nền, mới refactor các luồng live như Clone Course, Contest -> Lesson, Chấm bài.
 
+
+## VII.B. Các nhiệm vụ bổ sung sau mục VII
+
+Trạng thái hiện tại:
+
+1. Chuẩn hóa response API: đã thêm `services/api_response.py` với `api_success()` và `api_error()`. Một số endpoint nền đã chuyển sang response có `ok/message/rows/log/errors/meta` nhưng vẫn giữ field cũ như `error`, `prepare_id`, `codes_text` để không làm hỏng giao diện hiện tại.
+2. Tách contest/lesson/course: đã thêm `services/contest.py`, `services/lesson.py`, `services/course.py`; `web_app.py` đã chuyển các wrapper parse URL/link course/contest/lesson sang gọi service mới. Các luồng live lớn vẫn còn callback/form trong `web_app.py` để tránh đổi hành vi quá mạnh.
+3. Tách JS: đã tách `static/app.js` thành các file `api.js`, `progress.js`, `upload.js`, `transfer.js`, `contest.js`, `lesson.js`, `misc.js`; `templates/index.html` đã load các file này theo thứ tự.
+4. Test API Flask nền: đã thêm `tests/test_api.py` kiểm tra `/`, static modules, `/api/prepare-upload` với bộ mẫu và `/api/misc/list-problem-codes` bằng fixture/mock session, không cần login thật.
+5. Refactor live sau khi có test nền: chưa đụng sâu các luồng Clone Course, Contest -> Lesson, Chấm bài ngoài việc tách helper nền. Các luồng này nên được refactor từng phần tiếp theo sau khi thêm fixture/form test riêng.
+
+Lệnh kiểm tra hiện tại:
+
+```powershell
+python -m unittest discover -s tests -v
+python -m py_compile web_app.py services\api_response.py services\contest.py services\lesson.py services\course.py services\hncode.py services\hnoj.py services\problem_bundle.py services\problem_upload.py services\problem_transfer.py services\jobs.py
+node --check static\api.js
+node --check static\progress.js
+node --check static\app.js
+node --check static\upload.js
+node --check static\transfer.js
+node --check static\contest.js
+node --check static\lesson.js
+node --check static\misc.js
+```
+
 ## VIII. Việc chưa nên làm ngay
 
 Chưa nên làm ngay:

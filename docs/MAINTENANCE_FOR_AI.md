@@ -19,14 +19,21 @@ templates/index.html
 static/app.js
 static/styles.css
 services/
+  api_response.py
+  contest.py
+  course.py
   hncode.py
   hnoj.py
   jobs.py
+  lesson.py
   problem_bundle.py
+  problem_transfer.py
   problem_upload.py
 tests/
   fixtures/
+  test_api.py
   test_parsers.py
+  test_problem_transfer.py
 docs/
 ```
 
@@ -146,8 +153,26 @@ Nên làm theo mẫu:
 1. Tách logic chính vào `services/<module>.py` nếu có thể.
 2. Route Flask chỉ đọc request, gọi service, trả JSON.
 3. Nếu chạy lâu, dùng `progress_id`.
-4. Ghi endpoint vào `docs/API.md`.
-5. Thêm test parser/data nếu có xử lý HTML hoặc zip.
+4. Trả response qua `services/api_response.py` nếu endpoint không phải file download.
+5. Ghi endpoint vào `docs/API.md`.
+6. Thêm test parser/data nếu có xử lý HTML hoặc zip.
+
+## Khi sửa JS giao diện
+
+Các file JS đã tách theo vai trò:
+
+```text
+static/api.js
+static/progress.js
+static/app.js
+static/upload.js
+static/transfer.js
+static/contest.js
+static/lesson.js
+static/misc.js
+```
+
+Không có bundler. Các file được load bằng `<script>` thường trong `templates/index.html`, nên thứ tự load quan trọng.
 
 ## Lệnh test chuẩn
 
@@ -155,7 +180,15 @@ Local:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile web_app.py services\hncode.py services\hnoj.py services\problem_bundle.py services\problem_upload.py services\jobs.py
+python -m py_compile web_app.py services\api_response.py services\contest.py services\lesson.py services\course.py services\hncode.py services\hnoj.py services\problem_bundle.py services\problem_upload.py services\problem_transfer.py services\jobs.py
+node --check static\api.js
+node --check static\progress.js
+node --check static\app.js
+node --check static\upload.js
+node --check static\transfer.js
+node --check static\contest.js
+node --check static\lesson.js
+node --check static\misc.js
 ```
 
 Kiểm tra giao diện:
@@ -169,7 +202,7 @@ VPS:
 ```bash
 cd /opt/tool-oj
 python3 -m unittest discover -s tests -v
-python3 -m py_compile web_app.py services/hncode.py services/hnoj.py services/problem_bundle.py services/problem_upload.py services/jobs.py
+python3 -m py_compile web_app.py services/api_response.py services/contest.py services/lesson.py services/course.py services/hncode.py services/hnoj.py services/problem_bundle.py services/problem_upload.py services/problem_transfer.py services/jobs.py
 systemctl restart tool-oj.service
 systemctl is-active tool-oj.service
 ```
