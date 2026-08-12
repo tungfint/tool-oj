@@ -468,6 +468,14 @@ Khi upload test lỗi:
 - kiểm tra format zip test
 ```
 
+Trạng thái hiện tại:
+
+- Đã tạo thư mục `docs/`.
+- Đã tạo `docs/API.md` ghi các endpoint đang có, payload chính, response và service liên quan.
+- Đã tạo `docs/HNCODE_NOTES.md` ghi domain, login, link contest/lesson, upload test, metadata, quy tắc mã bài và cách xử lý khi HNCode đổi HTML.
+- Đã tạo `docs/DATA_FORMATS.md` ghi format zip bộ bài, Markdown, gentest, test zip, quiz, tài khoản chấm bài và data contest.
+- Đã tạo `docs/MAINTENANCE_FOR_AI.md` ghi checklist sửa parser/upload/lesson, lệnh test và quy tắc commit/deploy.
+
 ## VII. Việc nên làm ngay tiếp theo
 
 Nên làm theo thứ tự:
