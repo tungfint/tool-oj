@@ -257,6 +257,34 @@ Service nền:
 
 ## Tool lẻ
 
+## AI chuẩn hóa đề bài
+
+### `POST /api/ai/prepare-file`
+
+Nhận file đề bài rời (`.md`, `.txt`, `.pdf`, `.docx`, ảnh phổ biến), trích text nếu có và trả `source_text`, `mime_type`, `file_base64`.
+
+### `POST /api/ai/prepare-normalize`
+
+Chuẩn bị dữ liệu chuẩn hóa. Có 2 nguồn:
+
+- `source_mode=codes`: đọc danh sách mã bài HNCode bằng tài khoản đã lưu.
+- `source_mode=file`: dùng nội dung/file rời đã đưa lên.
+
+Trả `prepare_id` và bảng rows.
+
+### `POST /api/ai/normalize`
+
+Gọi Google AI bằng API key người dùng nhập, trả về Markdown đề bài, points, tags, solution, nhận xét test và issues theo từng bài. Test tự động mock endpoint này, không gọi mạng thật.
+
+### `POST /api/ai/validate-statement`
+
+Kiểm tra nhanh Markdown AI trả về: dòng đầu metadata, mã bài, điểm, ký hiệu công thức `$`/`~`, phần thân đề.
+
+Service nền:
+
+- `services/ai_assistant.py`: đọc file, build prompt theo tài liệu chuẩn hóa, gọi Gemini REST `generateContent`, parse JSON AI trả về và validate Markdown.
+- Tool dùng Google AI API key, không đăng nhập hoặc lưu mật khẩu Google/Gemini web.
+
 ### `POST /api/misc/last-submissions`
 
 Nhận zip/folder data contest, trả zip chứa lần nộp cuối.

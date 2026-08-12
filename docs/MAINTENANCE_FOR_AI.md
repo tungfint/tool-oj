@@ -20,6 +20,7 @@ static/app.js
 static/styles.css
 services/
   api_response.py
+  ai_assistant.py
   contest.py
   course.py
   hncode.py
@@ -95,10 +96,38 @@ POST /api/confirm-course-clone
 Test nền hiện có:
 
 ```powershell
+python -m unittest tests.test_ai_assistant -v
 python -m unittest tests.test_ui_smoke -v
 python -m unittest tests.test_contest_lesson -v
 python -m unittest tests.test_course_clone -v
 python -m unittest tests.test_grading -v
+```
+
+## Khi sửa AI chuẩn hóa đề bài
+
+Kiểm tra:
+
+```text
+services/ai_assistant.py
+web_app.py: /api/ai/prepare-file
+web_app.py: /api/ai/prepare-normalize
+web_app.py: /api/ai/normalize
+web_app.py: /api/ai/validate-statement
+static/misc.js
+templates/index.html: panel-ai-normalize
+```
+
+Nguyên tắc:
+
+- Chỉ dùng Google AI API key do người dùng nhập.
+- Không đăng nhập hoặc lưu mật khẩu Google/Gemini web.
+- Test tự động phải mock API, không gọi Google AI thật.
+- Kết quả AI chỉ nên đưa ra bảng để giáo viên kiểm tra trước; không tự ghi đè HNCode nếu chưa có nút xác nhận riêng.
+
+Test nhanh:
+
+```powershell
+python -m unittest tests.test_ai_assistant tests.test_ui_smoke -v
 ```
 
 ## Khi chuyển bài hoặc upload test lỗi
@@ -127,7 +156,7 @@ Test nhanh:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile web_app.py services\hncode.py services\hnoj.py services\tinhoctre.py services\problem_bundle.py services\problem_upload.py services\jobs.py
+python -m py_compile web_app.py services\ai_assistant.py services\hncode.py services\hnoj.py services\tinhoctre.py services\problem_bundle.py services\problem_upload.py services\jobs.py
 ```
 
 ## Khi điểm/tags không lưu
@@ -207,7 +236,7 @@ Local:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile web_app.py services\api_response.py services\contest.py services\lesson.py services\course.py services\grading.py services\quiz.py services\misc.py services\hncode.py services\hnoj.py services\tinhoctre.py services\problem_bundle.py services\problem_upload.py services\problem_transfer.py services\jobs.py
+python -m py_compile web_app.py services\api_response.py services\ai_assistant.py services\contest.py services\lesson.py services\course.py services\grading.py services\quiz.py services\misc.py services\hncode.py services\hnoj.py services\tinhoctre.py services\problem_bundle.py services\problem_upload.py services\problem_transfer.py services\jobs.py
 node --check static\api.js
 node --check static\progress.js
 node --check static\app.js
@@ -229,7 +258,7 @@ VPS:
 ```bash
 cd /opt/tool-oj
 python3 -m unittest discover -s tests -v
-python3 -m py_compile web_app.py services/api_response.py services/contest.py services/lesson.py services/course.py services/grading.py services/quiz.py services/misc.py services/hncode.py services/hnoj.py services/tinhoctre.py services/problem_bundle.py services/problem_upload.py services/problem_transfer.py services/jobs.py
+python3 -m py_compile web_app.py services/api_response.py services/ai_assistant.py services/contest.py services/lesson.py services/course.py services/grading.py services/quiz.py services/misc.py services/hncode.py services/hnoj.py services/tinhoctre.py services/problem_bundle.py services/problem_upload.py services/problem_transfer.py services/jobs.py
 systemctl restart tool-oj.service
 systemctl is-active tool-oj.service
 ```

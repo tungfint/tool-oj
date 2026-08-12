@@ -658,6 +658,28 @@ Lệnh test riêng:
 python -m unittest tests.test_ui_smoke -v
 ```
 
+## VII.K. Bổ sung: AI chuẩn hóa đề bài
+
+Trạng thái hiện tại:
+
+- Đã thêm `services/ai_assistant.py` để đọc file đề rời, build prompt chuẩn hóa theo tài liệu `MO_TA_CHUAN_HOA_BAI_HNCODE_CHO_AI.md`, gọi Google AI API bằng API key người dùng nhập, parse JSON AI trả về và validate Markdown.
+- Đã thêm panel `AI chuẩn hóa đề` trên giao diện:
+  - Nhập Google AI API key và model.
+  - Chọn format đích HNCode/HNOJ.
+  - Nhập danh sách mã bài HNCode để tool tự đọc đề hiện tại.
+  - Hoặc chọn file/nội dung rời: Markdown, TXT, PDF, DOCX, ảnh.
+  - Chọn phần cần chuẩn hóa: đề bài, metadata, solutions, nhận xét test.
+  - Bấm `Chuẩn bị dữ liệu`, sau đó `Chuẩn hóa bằng AI`.
+  - Xem Markdown/solutions/issues và đưa kết quả sang `Up 1 bài` để kiểm tra tiếp.
+- Không dùng mật khẩu Google/Gemini web. Tool chỉ dùng API key chính thức, không hard-code key vào repo.
+- Đã thêm `tests/test_ai_assistant.py`; các test mock lời gọi AI nên không tốn API thật.
+
+Lệnh test riêng:
+
+```powershell
+python -m unittest tests.test_ai_assistant tests.test_ui_smoke -v
+```
+
 ## VIII. Việc chưa nên làm ngay
 
 Chưa nên làm ngay:

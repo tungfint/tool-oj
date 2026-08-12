@@ -32,6 +32,7 @@
       <div class="nav-group">
         <span class="nav-label">Khác</span>
         <button type="button" data-panel="quiz-upload">Up Quiz</button>
+        <button type="button" data-panel="ai-normalize">AI chuẩn hóa đề</button>
         <button type="button" data-panel="misc-tools">Tool lẻ</button>
       </div>
     </div>
@@ -385,6 +386,70 @@
           <button class="action primary" type="button" id="uploadQuizButton">Up list quiz</button>
         </div>
         <div id="quizUploadSummary"></div>
+      </div>
+
+      <div class="panel" id="panel-ai-normalize">
+        <h2>AI chuẩn hóa đề bài</h2>
+        <p>Dùng Google AI API key để đọc bài HNCode hoặc nội dung file rời, sau đó chuẩn hóa đề theo format HNCode/HNOJ. Tool chỉ chuẩn bị kết quả để kiểm tra, chưa tự ghi đè lên web.</p>
+        <div class="grid-3">
+          <div><label>Google AI API key</label><input id="aiApiKey" type="password" placeholder="AIza..."></div>
+          <div><label>Model</label><input id="aiModel" type="text" value="gemini-2.5-flash"></div>
+          <div><label>Đích format</label><select id="aiTarget"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select></div>
+        </div>
+        <div class="grid-2">
+          <div>
+            <label>Nguồn dữ liệu</label>
+            <select id="aiSourceMode"><option value="codes">Danh sách mã bài HNCode</option><option value="file">File / nội dung rời</option></select>
+          </div>
+          <div><label>HNCode user</label><input id="aiHncodeUserMirror" type="text" value="hncode" readonly><span id="aiHncodeLogin" class="login-badge">Chưa kiểm tra</span></div>
+        </div>
+        <div id="aiCodesBox">
+          <label>Danh sách mã bài cần chuẩn hóa</label>
+          <textarea id="aiProblemCodes" rows="5" placeholder="Mỗi dòng một mã bài, ví dụ:&#10;tonghaiso&#10;phanloai"></textarea>
+        </div>
+        <div id="aiFileBox" class="hidden">
+          <label>File đề bài: ảnh / PDF / Word / Markdown / TXT</label>
+          <div class="row">
+            <div class="grow"><input id="aiSourceFileName" type="text" placeholder="Chưa chọn file" readonly></div>
+            <button class="action" type="button" id="chooseAiSourceFile">Chọn file</button>
+            <input id="aiSourceFile" class="hidden" type="file" accept=".md,.txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.bmp,.gif,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*">
+          </div>
+          <div class="grid-3">
+            <div><label>Mã bài gợi ý</label><input id="aiFileCode" type="text" placeholder="vd: tonghaiso"></div>
+            <div><label>Tên bài gợi ý</label><input id="aiFileName" type="text" placeholder="vd: Tổng hai số"></div>
+            <div><label>Điểm gợi ý</label><input id="aiFilePoints" type="text" value="100"></div>
+          </div>
+          <label>Tags gợi ý</label>
+          <input id="aiFileTags" type="text" placeholder="implementation, math">
+          <label>Nội dung đọc được / dán trực tiếp</label>
+          <textarea id="aiSourceText" rows="9" placeholder="Nếu không chọn file, có thể dán đề gốc vào đây. Với ảnh/PDF scan, tool sẽ gửi file trực tiếp cho Gemini nếu API hỗ trợ."></textarea>
+        </div>
+        <div class="grid-2" style="margin-top:12px">
+          <label class="check"><input type="checkbox" id="aiPartStatement" checked> Chuẩn hóa đề bài</label>
+          <label class="check"><input type="checkbox" id="aiPartMetadata" checked> Đề xuất Points / Tags / Metadata</label>
+          <label class="check"><input type="checkbox" id="aiPartSolution"> Viết Solutions</label>
+          <label class="check"><input type="checkbox" id="aiPartTestReview" checked> Nhận xét bộ test</label>
+        </div>
+        <div class="actions">
+          <button class="action" type="button" id="saveAiKey">Lưu API key tạm trên máy này</button>
+          <button class="action primary" type="button" id="prepareAiNormalize">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="runAiNormalize" disabled>Chuẩn hóa bằng AI</button>
+        </div>
+        <div id="aiNormalizeTable"></div>
+        <div class="grid-2">
+          <div>
+            <label>Kết quả đề bài Markdown</label>
+            <textarea id="aiResultStatement" rows="14" placeholder="Chọn một dòng kết quả để xem Markdown."></textarea>
+          </div>
+          <div>
+            <label>Solutions / Nhận xét / Vấn đề</label>
+            <textarea id="aiResultDetails" rows="14" placeholder="Solutions, nhận xét test và issues sẽ hiện ở đây."></textarea>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="action" type="button" id="validateAiStatement">Kiểm tra Markdown</button>
+          <button class="action primary" type="button" id="sendAiToSingleUpload">Đưa sang Up 1 bài</button>
+        </div>
       </div>
 
       <div class="panel" id="panel-misc-tools">

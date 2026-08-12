@@ -7,10 +7,16 @@ let preparedQuiz = null;
 let preparedContestLessonCopy = null;
 let preparedCourseClone = null;
 let preparedGrading = null;
+let preparedAiNormalize = null;
 let selectedZipFile = null;
 let selectedSingleTestZipFile = null;
 let selectedGradingZipFile = null;
 let selectedGradingCsvFile = null;
+let selectedAiSourceFile = null;
+let aiNormalizeRows = [];
+let selectedAiResult = null;
+let aiSourceFileBase64 = "";
+let aiSourceFileMimeType = "";
 const QUIZ_FORMAT_GUIDE = window.APP_CONFIG.quizFormatGuide;
 
 const logEl = document.getElementById("log");

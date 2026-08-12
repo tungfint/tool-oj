@@ -1,3 +1,173 @@
+function aiOptions() {
+  return {
+    target: document.getElementById("aiTarget").value,
+    statement: document.getElementById("aiPartStatement").checked,
+    metadata: document.getElementById("aiPartMetadata").checked,
+    solution: document.getElementById("aiPartSolution").checked,
+    test_review: document.getElementById("aiPartTestReview").checked,
+  };
+}
+function syncAiSourceMode() {
+  const mode = document.getElementById("aiSourceMode").value;
+  document.getElementById("aiCodesBox").classList.toggle("hidden", mode !== "codes");
+  document.getElementById("aiFileBox").classList.toggle("hidden", mode !== "file");
+}
+function renderAiNormalizeTable(rows) {
+  aiNormalizeRows = rows || [];
+  document.getElementById("aiNormalizeTable").innerHTML = `<div class="table-tools">
+    <button class="action" type="button" onclick="setRowSelection('#aiNormalizeTable', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#aiNormalizeTable', false)">Bỏ chọn tất cả</button>
+  </div><table>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài</th><th>Điểm</th><th>Tags</th><th>Test</th><th>Trạng thái</th><th>Kết quả</th></tr></thead>
+    <tbody>${aiNormalizeRows.map((row, index) => `<tr data-index="${index}" data-original="${escapeHtml(row.original_code || row.code || "")}">
+      <td><input type="checkbox" class="row-selected" ${row.can_normalize === false ? "" : "checked"} ${row.can_normalize === false ? "disabled" : ""}></td>
+      <td><code>${escapeHtml(row.code || "")}</code></td>
+      <td>${escapeHtml(row.name || "")}</td>
+      <td>${escapeHtml(row.points || "")}</td>
+      <td>${escapeHtml(row.tags || "")}</td>
+      <td>${escapeHtml(row.test_count || "")}</td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}</td>
+      <td><button class="action" type="button" onclick="selectAiResult(${index})">Xem</button></td>
+    </tr>`).join("")}</tbody></table>`;
+}
+function collectAiRows() {
+  return [...document.querySelectorAll("#aiNormalizeTable tbody tr")].map(tr => {
+    const row = aiNormalizeRows[Number(tr.dataset.index)] || {};
+    return {...row, selected: tr.querySelector(".row-selected").checked};
+  });
+}
+function selectAiResult(index) {
+  selectedAiResult = aiNormalizeRows[index] || null;
+  document.getElementById("aiResultStatement").value = selectedAiResult?.statement_markdown || "";
+  const details = [];
+  if (selectedAiResult?.solution_markdown) details.push("## Solutions\n" + selectedAiResult.solution_markdown);
+  if (selectedAiResult?.test_review) details.push("## Nhận xét test\n" + selectedAiResult.test_review);
+  if (selectedAiResult?.issues?.length) details.push("## Vấn đề cần kiểm tra\n" + selectedAiResult.issues.map(item => "- " + item).join("\n"));
+  if (selectedAiResult?.checks?.length) details.push("## Kiểm tra format\n" + selectedAiResult.checks.map(item => `${item.status} ${item.name}: ${item.message}`).join("\n"));
+  document.getElementById("aiResultDetails").value = details.join("\n\n");
+}
+function applyAiRows(rows) {
+  aiNormalizeRows = rows || [];
+  renderAiNormalizeTable(aiNormalizeRows);
+  if (aiNormalizeRows.length) selectAiResult(0);
+}
+document.getElementById("aiSourceMode").addEventListener("change", syncAiSourceMode);
+syncAiSourceMode();
+document.getElementById("aiHncodeUserMirror").value = accountFields.hncode_user.value || "hncode";
+document.getElementById("saveAiKey").onclick = () => {
+  localStorage.setItem("chuyenbai.google_ai_key", document.getElementById("aiApiKey").value);
+  localStorage.setItem("chuyenbai.google_ai_model", document.getElementById("aiModel").value);
+  append("Đã lưu API key Google AI tạm trên trình duyệt máy này.");
+};
+document.getElementById("aiApiKey").value = localStorage.getItem("chuyenbai.google_ai_key") || "";
+document.getElementById("aiModel").value = localStorage.getItem("chuyenbai.google_ai_model") || document.getElementById("aiModel").value;
+document.getElementById("chooseAiSourceFile").onclick = () => document.getElementById("aiSourceFile").click();
+document.getElementById("aiSourceFile").addEventListener("change", async event => {
+  selectedAiSourceFile = event.target.files && event.target.files[0] || null;
+  document.getElementById("aiSourceFileName").value = selectedAiSourceFile ? selectedAiSourceFile.name : "";
+  if (!selectedAiSourceFile) return;
+  try {
+    status("running");
+    const form = new FormData();
+    form.append("source_file", selectedAiSourceFile);
+    const res = await fetch("/api/ai/prepare-file", {method:"POST", body:form});
+    const data = await parseJsonResponse(res);
+    if (!res.ok) throw new Error(apiErrorMessage(data));
+    document.getElementById("aiSourceText").value = data.source_text || "";
+    aiSourceFileBase64 = data.file_base64 || "";
+    aiSourceFileMimeType = data.mime_type || "";
+    append(data.message || "Đã đọc file.");
+    status("ready", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+});
+document.getElementById("prepareAiNormalize").onclick = async () => {
+  try {
+    status("running");
+    saveAccounts();
+    document.getElementById("aiHncodeUserMirror").value = accountFields.hncode_user.value || "hncode";
+    const sourceMode = document.getElementById("aiSourceMode").value;
+    log("Đang chuẩn bị dữ liệu AI...");
+    const payload = {
+      source_mode: sourceMode,
+      target: document.getElementById("aiTarget").value,
+      codes: document.getElementById("aiProblemCodes").value,
+      source_text: document.getElementById("aiSourceText").value,
+      filename: document.getElementById("aiSourceFileName").value,
+      problem_code: document.getElementById("aiFileCode").value.trim(),
+      problem_name: document.getElementById("aiFileName").value.trim(),
+      points: document.getElementById("aiFilePoints").value.trim() || "100",
+      tags: document.getElementById("aiFileTags").value.trim(),
+      file_base64: aiSourceFileBase64,
+      mime_type: aiSourceFileMimeType,
+      account: accountPayload("hncode"),
+    };
+    const data = await postJson("/api/ai/prepare-normalize", payload);
+    preparedAiNormalize = data.prepare_id;
+    renderAiNormalizeTable(data.rows || []);
+    document.getElementById("runAiNormalize").disabled = false;
+    log(data.log);
+    status("ready", "ok");
+  } catch (err) {
+    preparedAiNormalize = null;
+    document.getElementById("runAiNormalize").disabled = true;
+    log(String(err));
+    status("failed", "err");
+  }
+};
+document.getElementById("runAiNormalize").onclick = async () => {
+  try {
+    if (!preparedAiNormalize) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước.");
+    if (!document.getElementById("aiApiKey").value.trim()) throw new Error("Hãy nhập Google AI API key.");
+    status("running");
+    markRowsProcessing("#aiNormalizeTable", "Đang gọi AI...");
+    log("Đang gọi Google AI để chuẩn hóa...");
+    const data = await postJson("/api/ai/normalize", {
+      prepare_id: preparedAiNormalize,
+      api_key: document.getElementById("aiApiKey").value.trim(),
+      model: document.getElementById("aiModel").value.trim(),
+      options: aiOptions(),
+      rows: collectAiRows(),
+    });
+    applyAiRows(data.rows || []);
+    log(data.log);
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+document.getElementById("validateAiStatement").onclick = async () => {
+  try {
+    const data = await postJson("/api/ai/validate-statement", {target: document.getElementById("aiTarget").value, markdown: document.getElementById("aiResultStatement").value});
+    document.getElementById("aiResultDetails").value = (data.rows || []).map(row => `${row.status} ${row.name}: ${row.message}`).join("\n");
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+document.getElementById("sendAiToSingleUpload").onclick = () => {
+  const statement = document.getElementById("aiResultStatement").value.trim();
+  if (!statement) {
+    log("Chưa có Markdown AI để đưa sang Up 1 bài.");
+    status("failed", "err");
+    return;
+  }
+  const row = selectedAiResult || {};
+  document.querySelector('[data-panel="single-upload"]').click();
+  document.getElementById("singleUploadTarget").value = document.getElementById("aiTarget").value;
+  document.getElementById("singleCode").value = row.code || "";
+  document.getElementById("singleName").value = row.name || "";
+  document.getElementById("singlePoints").value = row.points || "100";
+  document.getElementById("singleTags").value = row.tags || "";
+  document.getElementById("singleStatement").value = statement;
+  document.getElementById("singleSolution").value = row.solution_markdown || "";
+  append("Đã đưa đề AI sang Up 1 bài. Hãy kiểm tra lại rồi bấm Chuẩn bị dữ liệu.");
+};
+
 document.getElementById("chooseQuizFile").onclick = () => document.getElementById("quizFileInput").click();
 document.getElementById("quizFileInput").addEventListener("change", async event => {
   const file = event.target.files && event.target.files[0];

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import html
+import base64
 import csv
 import json
 import math
@@ -26,6 +27,7 @@ from urllib.request import urlopen
 
 from flask import Flask, Response, jsonify, render_template, request, send_file
 
+from services import ai_assistant as ai_service
 from services import api_response
 from services import contest as contest_service
 from services import course as course_service
@@ -254,6 +256,7 @@ prepared_quizzes: dict[str, dict] = {}
 prepared_lesson_copies: dict[str, dict] = {}
 prepared_course_clones: dict[str, dict] = {}
 prepared_hncode_grading: dict[str, dict] = {}
+prepared_ai_normalize: dict[str, dict] = {}
 
 
 class ProblemAlreadyExists(RuntimeError):
@@ -1249,6 +1252,200 @@ def first_markdown_header_parts(text: str) -> list[str]:
         if stripped:
             return [part.strip() for part in stripped.split("|")]
     return []
+
+
+def read_normalize_reference() -> str:
+    candidates = [
+        ROOT / "MO_TA_CHUAN_HOA_BAI_HNCODE_CHO_AI.md",
+        Path(r"C:\Users\Admin\Documents\ChuyenBai\MO_TA_CHUAN_HOA_BAI_HNCODE_CHO_AI.md"),
+        Path(r"E:\CodeX_Project\prompt_chuanhoa\MO_TA_CHUAN_HOA_BAI_HNCODE_CHO_AI.md"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return read_text_smart(path)
+    return (
+        "Chuẩn hóa đề bài HNCode: có **Yêu cầu:**, #### Input, #### Output, #### Example; "
+        "dùng `$...$` cho công thức, chọn tags/points hợp lý, bật partial points, memory 1024 MB."
+    )
+
+
+def hncode_problem_snapshot(session: requests.Session, code: str) -> dict:
+    base_url = TARGETS["hncode"]["base_url"]
+    edit_url = urljoin(base_url, f"/problem/{code}/edit")
+    edit = session.get(edit_url, timeout=30)
+    if not edit.ok:
+        raise RuntimeError(f"Không mở được trang edit bài {code}: HTTP {edit.status_code}")
+    if "/accounts/login" in edit.url or "/admin/login" in edit.url:
+        raise RuntimeError(f"Bị chuyển về trang đăng nhập khi đọc bài {code}: {edit.url}")
+    if not (f'name="code"' in edit.text or "name='code'" in edit.text):
+        raise RuntimeError(f"Không đọc được form edit bài {code}. Tài khoản có thể không có quyền sửa bài.")
+    test_url = urljoin(base_url, f"/problem/{code}/test_data")
+    solution_url = urljoin(base_url, f"/problem/{code}/edit/solutions")
+    test_page = session.get(test_url, timeout=30)
+    solution_page = session.get(solution_url, timeout=30)
+    test_count = len(parse_source_cases(test_page.text)) if test_page.ok else 0
+    if test_page.ok and not test_count:
+        test_count = len(infer_cases_from_zip_paths(test_page.text))
+    tags = [str(option["text"]) for option in select_options_with_text(edit.text, "types") if option.get("selected")]
+    return {
+        "code": input_value(edit.text, "code", code),
+        "name": input_value(edit.text, "name", code),
+        "statement": textarea_value(edit.text, "description").replace("~", "$"),
+        "points": input_value(edit.text, "points", ""),
+        "partial": checkbox_checked(edit.text, "partial"),
+        "time_limit": input_value(edit.text, "time_limit", ""),
+        "memory_limit": input_value(edit.text, "memory_limit", ""),
+        "memory_unit": selected_option(edit.text, "memory_unit", ""),
+        "tags": tags,
+        "test_count": test_count,
+        "test_summary": f"{test_count} test; test_data HTTP {test_page.status_code if test_page else 'N/A'}",
+        "solution": textarea_value(solution_page.text, "content") if solution_page.ok else "",
+        "edit_url": edit_url,
+        "test_url": test_url,
+        "solution_url": solution_url,
+    }
+
+
+@app.post("/api/ai/prepare-file")
+def api_ai_prepare_file():
+    try:
+        uploaded = request.files.get("source_file")
+        if not uploaded:
+            raise RuntimeError("Hãy chọn file đề bài.")
+        data = uploaded.read()
+        text, note = ai_service.extract_source_text(uploaded.filename or "source", data)
+        file_info = ai_service.file_payload(uploaded.filename or "source", data)
+        return api_response.api_success(
+            message=note,
+            log=note,
+            filename=uploaded.filename,
+            source_text=text,
+            mime_type=file_info["mime_type"],
+            file_base64=base64.b64encode(data).decode("ascii"),
+        )
+    except Exception as exc:
+        return api_response.api_error(str(exc))
+
+
+@app.post("/api/ai/prepare-normalize")
+def api_ai_prepare_normalize():
+    try:
+        payload = request.get_json(force=True)
+        source_mode = payload.get("source_mode") or "codes"
+        target = payload.get("target") or "hncode"
+        prepare_id = uuid.uuid4().hex
+        rows: list[dict] = []
+        snapshots: dict[str, dict] = {}
+        files: dict[str, list[dict]] = {}
+        log_lines: list[str] = []
+        if source_mode == "file":
+            code = (payload.get("problem_code") or "file_1").strip()
+            name = (payload.get("problem_name") or payload.get("filename") or code).strip()
+            snapshot = {
+                "code": code,
+                "name": name,
+                "statement": payload.get("source_text") or "",
+                "points": payload.get("points") or "100",
+                "partial": True,
+                "time_limit": "1.0",
+                "memory_limit": "1024",
+                "memory_unit": "MB",
+                "tags": payload.get("tags") or "",
+                "test_count": "",
+                "test_summary": "Nguồn là file/nội dung rời, chưa có test_data.",
+                "solution": "",
+            }
+            rows.append({"original_code": code, "code": code, "name": name, "points": snapshot["points"], "tags": snapshot["tags"], "test_count": "", "status": "Đã chuẩn bị", "can_normalize": True})
+            snapshots[code] = snapshot
+            if payload.get("file_base64") and payload.get("mime_type"):
+                files[code] = [{"mime_type": payload.get("mime_type"), "data": base64.b64decode(payload.get("file_base64"))}]
+            log_lines.append(f"Đã chuẩn bị nội dung rời: {name}.")
+        else:
+            codes = [item.strip() for item in re.split(r"[\s,;]+", payload.get("codes") or "") if item.strip()]
+            if not codes:
+                raise RuntimeError("Hãy nhập ít nhất một mã bài cần chuẩn hóa.")
+            account = payload.get("account") or {}
+            session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+            for code in codes:
+                try:
+                    snapshot = hncode_problem_snapshot(session, code)
+                    key = snapshot["code"] or code
+                    snapshots[key] = snapshot
+                    rows.append({"original_code": key, "code": key, "name": snapshot["name"], "points": snapshot["points"], "tags": ", ".join(snapshot.get("tags") or []), "test_count": snapshot["test_count"], "status": "Đã đọc dữ liệu", "can_normalize": True})
+                    log_lines.append(f"✓ {key}: {snapshot['name']}, {snapshot['test_count']} test.")
+                except Exception as exc:
+                    rows.append({"original_code": code, "code": code, "name": "", "points": "", "tags": "", "test_count": "", "status": f"✗ {exc}", "can_normalize": False})
+                    log_lines.append(f"✗ {code}: {exc}")
+        prepared_ai_normalize[prepare_id] = {"reference": read_normalize_reference(), "target": target, "snapshots": snapshots, "files": files, "rows": rows, "created_at": time.time()}
+        return api_response.api_success(message="Đã chuẩn bị dữ liệu AI", rows=rows, log="\n".join(log_lines), prepare_id=prepare_id)
+    except Exception as exc:
+        return api_response.api_error(str(exc))
+
+
+@app.post("/api/ai/normalize")
+def api_ai_normalize():
+    try:
+        payload = request.get_json(force=True)
+        prepare_id = payload.get("prepare_id")
+        if not prepare_id or prepare_id not in prepared_ai_normalize:
+            return api_response.api_error("Dữ liệu chuẩn bị AI đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
+        state = prepared_ai_normalize[prepare_id]
+        options = payload.get("options") or {}
+        target = options.get("target") or state.get("target") or "hncode"
+        rows = payload.get("rows") or state["rows"]
+        api_key = payload.get("api_key") or ""
+        model = payload.get("model") or ai_service.DEFAULT_GEMINI_MODEL
+        result_rows = []
+        log_lines = [f"Chuẩn hóa bằng Google AI model {model}."]
+        for row in rows:
+            result = dict(row)
+            original = row.get("original_code") or row.get("code")
+            if not row.get("selected", True) or not row.get("can_normalize", True):
+                result["status"] = "Bỏ qua"
+                result_rows.append(result)
+                continue
+            try:
+                snapshot = state["snapshots"].get(original) or state["snapshots"].get(row.get("code"))
+                if not snapshot:
+                    raise RuntimeError("Không tìm thấy snapshot bài đã chuẩn bị.")
+                prompt = ai_service.build_hncode_normalization_prompt(state["reference"], snapshot, {**options, "target": target})
+                raw = ai_service.gemini_generate(api_key=api_key, model=model, prompt=prompt, files=state.get("files", {}).get(original) or state.get("files", {}).get(row.get("code")))
+                parsed = ai_service.parse_ai_json(raw)
+                statement = ai_service.normalize_statement_for_target(parsed.get("statement_markdown") or "", target)
+                checks, meta = ai_service.validate_statement_markdown(statement, target)
+                result.update({
+                    "status": "✓ Đã chuẩn hóa" if meta["valid"] else "⚠ Cần kiểm tra",
+                    "name": parsed.get("name") or result.get("name") or meta.get("name"),
+                    "points": str(parsed.get("points") or result.get("points") or meta.get("points") or ""),
+                    "tags": ", ".join(parsed.get("tags") or []),
+                    "statement_markdown": statement,
+                    "solution_markdown": parsed.get("solution_markdown") or "",
+                    "test_review": parsed.get("test_review") or "",
+                    "issues": parsed.get("issues") or [],
+                    "confidence": parsed.get("confidence") or "",
+                    "checks": checks,
+                })
+                log_lines.append(f"✓ {result.get('code')}: {result['status']}, confidence {result.get('confidence') or 'N/A'}.")
+            except Exception as exc:
+                result["status"] = f"✗ {exc}"
+                result["error"] = str(exc)
+                log_lines.append(f"✗ {row.get('code')}: {exc}")
+            result_rows.append(result)
+        ok = all(not str(row.get("status", "")).startswith("✗") for row in result_rows)
+        return api_response.api_success(message="Đã chạy chuẩn hóa AI", rows=result_rows, log="\n".join(log_lines), ok=ok)
+    except Exception as exc:
+        return api_response.api_error(str(exc))
+
+
+@app.post("/api/ai/validate-statement")
+def api_ai_validate_statement():
+    try:
+        payload = request.get_json(force=True)
+        target = payload.get("target") or "hncode"
+        checks, meta = ai_service.validate_statement_markdown(payload.get("markdown") or "", target)
+        return api_response.api_success(message="Đã kiểm tra Markdown", rows=checks, meta=meta, ok=meta["valid"])
+    except Exception as exc:
+        return api_response.api_error(str(exc))
 
 
 @app.post("/api/check-login")
