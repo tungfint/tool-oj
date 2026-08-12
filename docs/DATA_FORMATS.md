@@ -26,6 +26,13 @@ Trong đó:
 
 Thông tin nào thiếu thì tool dùng mặc định hoặc bỏ qua phần đó.
 
+Ghi chú xử lý:
+
+- Thiếu `sol_<ma_bai>.md`, `sol_<ma_bai>.cpp`, `sol_<ma_bai>.py` vẫn chuẩn bị được; tool chỉ không bật mặc định phần upload lời giải/nộp thử tương ứng.
+- Với file zip nhiều bài, mỗi bài cần có ít nhất một nguồn test: `gentest_<ma_bai>.py` hoặc `<ma_bai>.zip`.
+- Nếu thiếu cả generator và zip test sẵn, tool báo lỗi rõ dạng `Missing test source for <ma_bai>`.
+- Nếu zip test có `.inp` nhưng thiếu `.out` tương ứng, tool báo lỗi danh sách output bị thiếu.
+
 ## Dòng đầu file Markdown
 
 Nên dùng:
@@ -41,6 +48,16 @@ Tổng hai số | tonghaiso | 100 | nhập xuất, toán học
 ```
 
 Sau dòng đầu là nội dung đề bài.
+
+File Markdown tổng hợp nhiều bài cũng dùng metadata này ở từng heading:
+
+```text
+# Bài 1. Tên bài | ma_bai | Điểm | Tags
+Nội dung bài 1
+
+# Bài 2. Tên bài khác | ma_bai_khac | Điểm | Tags
+Nội dung bài 2
+```
 
 Nếu đề bài không muốn lấy dòng đầu, bật tùy chọn:
 
@@ -196,4 +213,3 @@ Output thường là:
 
 - Zip chứa last submissions.
 - Excel cảnh báo AI/chép code, có sheet tổng quan và sheet chi tiết.
-

@@ -594,6 +594,21 @@ Lệnh test liên quan:
 python -m unittest tests.test_api tests.test_contest_lesson tests.test_course_clone -v
 ```
 
+## VII.G. Chặng 5: Test format dữ liệu Up bài
+
+Trạng thái hiện tại:
+
+- Đã thêm `tests/test_problem_bundle.py`.
+- Test offline các format: zip 1 bài chuẩn, zip nhiều bài, Markdown tổng hợp nhiều bài, metadata dòng đầu `Tên bài | Mã bài | Điểm | Tags`, `gentest_<ma_bai>.py`, `<ma_bai>.zip` test sẵn, thiếu solution vẫn chuẩn bị được, thiếu test/thiếu output báo lỗi rõ.
+- Đã sửa `services/problem_bundle.py` để Markdown tổng hợp giữ lại metadata `Điểm | Tags` khi tách thành từng file bài.
+- Đã cập nhật `docs/DATA_FORMATS.md` về hành vi thiếu solution, thiếu test và format Markdown tổng hợp.
+
+Lệnh test riêng:
+
+```powershell
+python -m unittest tests.test_problem_bundle -v
+```
+
 ## VIII. Việc chưa nên làm ngay
 
 Chưa nên làm ngay:
