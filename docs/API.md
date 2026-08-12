@@ -206,7 +206,7 @@ Thêm bài vào lesson HNCode. Nếu nguồn là HNOJ và bài chưa có ở HNC
 
 Service nền:
 
-- `services/lesson.py`: parse URL lesson và build URL lesson/edit lesson.
+- `services/lesson.py`: parse URL lesson, build URL lesson/edit lesson, parse/build formset lesson, build bảng chuẩn bị Contest -> Lesson và merge dòng xác nhận.
 
 ## Clone Course
 

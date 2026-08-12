@@ -535,6 +535,17 @@ node --check static\lesson.js
 node --check static\misc.js
 ```
 
+
+## VII.C. Chặng 1: Refactor Contest -> Lesson
+
+Trạng thái hiện tại:
+
+- Đã tách phần parse/build dữ liệu Contest -> Lesson sang `services/lesson.py`.
+- `services/lesson.py` hiện có các helper: `parse_lesson_problem_rows`, `append_lesson_problem_formset`, `remove_lesson_item_fields`, `build_contest_to_lesson_rows`, `merge_requested_lesson_copy_rows`.
+- `web_app.py` vẫn giữ route `/api/prepare-contest-to-lesson` và `/api/confirm-contest-to-lesson`, nhưng đã gọi service để build bảng/merge dữ liệu. Phần live chuyển bài HNOJ sang HNCode và POST form lesson vẫn giữ callback hiện tại để không đổi hành vi admin form.
+- Đã thêm `tests/test_contest_lesson.py` để test parse lesson form, build rows, merge rows và API prepare bằng mock session, không cần login thật.
+- Test hiện tại: 16/16 pass.
+
 ## VIII. Việc chưa nên làm ngay
 
 Chưa nên làm ngay:

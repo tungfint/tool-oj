@@ -1745,37 +1745,20 @@ def api_prepare_contest_to_lesson():
         if not lesson_page.ok:
             raise RuntimeError(f"Không mở được lesson đích: HTTP {lesson_page.status_code}")
         existing_ids = {row["problem"] for row in lesson_problem_rows_from_page(lesson_page.text, lesson_id)}
-        rows = []
         log_lines = [
             f"Chuẩn bị sao chép bài {source_label} Contest → Lesson HNCode",
             f"Contest: {contest_key}",
             f"Lesson: {hncode_lesson_url(course_slug, lesson_id)}",
         ]
-        for item in contest_rows:
-            source_code = item["code"]
-            dest_code = normalize_problem_code_for_target(source_code, "hncode")
-            problem_id = admin_problem_id(dst_session, TARGETS["hncode"]["base_url"], dest_code)
-            if not problem_id:
-                status_text = "Thiếu trên HNCode, sẽ chuyển khi xác nhận" if source == "hnoj" else "✗ Không tìm thấy bài trong admin HNCode"
-                selected = source == "hnoj"
-            elif problem_id in existing_ids:
-                status_text = "Đã có trong lesson"
-                selected = False
-            else:
-                status_text = "✓ Sẵn sàng"
-                selected = True
-            row = {
-                "index": item["order"],
-                "source_code": source_code,
-                "code": dest_code,
-                "title": item["title"],
-                "score": item["points"],
-                "problem_id": problem_id or "",
-                "selected": selected,
-                "status": status_text,
-            }
-            rows.append(row)
-            log_lines.append(f"{item['order']}. {source_code} → {dest_code} - {item['title']} - {status_text}")
+        rows = lesson_service.build_contest_to_lesson_rows(
+            contest_rows,
+            source=source,
+            existing_problem_ids=existing_ids,
+            normalize_problem_code=normalize_problem_code_for_target,
+            admin_problem_id=lambda code: admin_problem_id(dst_session, TARGETS["hncode"]["base_url"], code),
+        )
+        for row in rows:
+            log_lines.append(f"{row['index']}. {row['source_code']} → {row['code']} - {row['title']} - {row['status']}")
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / ("contest_lesson_copy_" + prepare_id)
         root.mkdir(parents=True, exist_ok=True)
@@ -1812,10 +1795,8 @@ def api_confirm_contest_to_lesson():
     if not state:
         return jsonify({"ok": False, "error": "Dữ liệu chuẩn bị đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
     try:
-        rows_by_code = {row["code"]: row for row in state["rows"]}
         requested_rows = payload.get("rows", [])
-        selected_refs = []
-        result_rows = []
+        result_rows, selected_refs = lesson_service.merge_requested_lesson_copy_rows(state["rows"], requested_rows)
         source = state.get("source", "hncode")
         source_label = "HNOJ" if source == "hnoj" else "HNCode"
         log_lines = [
@@ -1825,16 +1806,9 @@ def api_confirm_contest_to_lesson():
         ]
         dst_session = None
         src_session = None
-        for requested in requested_rows:
-            code = requested.get("code", "")
-            base = dict(rows_by_code.get(code, requested))
-            base["selected"] = bool(requested.get("selected"))
-            base["score"] = str(requested.get("score") or base.get("score") or "100")
-            if not base["selected"]:
-                base["status"] = "Bỏ qua"
-            elif "Đã có" in str(rows_by_code.get(code, {}).get("status", "")):
-                base["status"] = "Đã có trong lesson"
-            else:
+        for base in result_rows:
+            code = base.get("code", "")
+            if base.get("selected") and base.get("status") == "Cần chuyển/tìm problem_id":
                 if not dst_session:
                     dst_session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
                 if not base.get("problem_id") and source == "hnoj":
@@ -1863,7 +1837,6 @@ def api_confirm_contest_to_lesson():
                 else:
                     selected_refs.append(base)
                     base["status"] = "Đang thêm..."
-            result_rows.append(base)
         link = hncode_lesson_url(state["course_slug"], state["lesson_id"])
         if selected_refs:
             if not dst_session:
@@ -4123,8 +4096,7 @@ def lesson_quiz_rows_from_page(page: str, lesson_id: str) -> list[dict]:
 
 
 def remove_lesson_item_fields(data: list[tuple[str, str]], lesson_id: str) -> list[tuple[str, str]]:
-    prefixes = (f"problems_{lesson_id}-", f"quizzes_{lesson_id}-")
-    return [(name, value) for name, value in data if not any(name.startswith(prefix) for prefix in prefixes)]
+    return lesson_service.remove_lesson_item_fields(data, lesson_id)
 
 
 def append_lesson_quiz_formset(data: list[tuple[str, str]], lesson_id: str, rows: list[dict], initial_forms: int) -> list[tuple[str, str]]:
@@ -4437,50 +4409,11 @@ def remove_lesson_problem_fields(data: list[tuple[str, str]], lesson_id: str) ->
 
 
 def lesson_problem_rows_from_page(page: str, lesson_id: str) -> list[dict]:
-    prefix = f"problems_{lesson_id}"
-    total = int(input_value_from_page(page, f"{prefix}-TOTAL_FORMS", "0") or "0")
-    rows: list[dict] = []
-    for index in range(total):
-        problem_id = selected_option_value(page, f"{prefix}-{index}-problem", "") or input_value_from_page(page, f"{prefix}-{index}-problem", "")
-        if not problem_id:
-            continue
-        rows.append(
-            {
-                "id": input_value_from_page(page, f"{prefix}-{index}-id", ""),
-                "lesson": input_value_from_page(page, f"{prefix}-{index}-lesson", ""),
-                "problem": problem_id,
-                "score": input_value_from_page(page, f"{prefix}-{index}-score", "100"),
-                "order": input_value_from_page(page, f"{prefix}-{index}-order", str(index)),
-                "delete": input_checked(page, f"{prefix}-{index}-DELETE"),
-            }
-        )
-    return rows
+    return lesson_service.parse_lesson_problem_rows(page, lesson_id)
 
 
 def append_lesson_problem_formset(data: list[tuple[str, str]], lesson_id: str, rows: list[dict], initial_forms: int) -> list[tuple[str, str]]:
-    prefix = f"problems_{lesson_id}"
-    out = list(data)
-    out.extend(
-        [
-            (f"{prefix}-TOTAL_FORMS", str(len(rows))),
-            (f"{prefix}-INITIAL_FORMS", str(initial_forms)),
-            (f"{prefix}-MIN_NUM_FORMS", "0"),
-            (f"{prefix}-MAX_NUM_FORMS", "1000"),
-        ]
-    )
-    for index, row in enumerate(rows):
-        out.extend(
-            [
-                (f"{prefix}-{index}-order", str(row.get("order", index))),
-                (f"{prefix}-{index}-lesson", str(row.get("lesson", ""))),
-                (f"{prefix}-{index}-id", str(row.get("id", ""))),
-                (f"{prefix}-{index}-problem", str(row.get("problem", ""))),
-                (f"{prefix}-{index}-score", str(row.get("score", "100") or "100")),
-            ]
-        )
-        if row.get("delete"):
-            out.append((f"{prefix}-{index}-DELETE", "on"))
-    return out
+    return lesson_service.append_lesson_problem_formset(data, lesson_id, rows, initial_forms)
 
 
 def copy_hncode_contest_to_lesson(session, course_slug: str, lesson_id: str, problem_refs: list[dict]) -> str:

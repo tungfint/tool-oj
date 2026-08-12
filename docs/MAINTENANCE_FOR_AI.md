@@ -89,6 +89,12 @@ POST /api/prepare-course-clone
 POST /api/confirm-course-clone
 ```
 
+Test nền hiện có:
+
+```powershell
+python -m unittest tests.test_contest_lesson -v
+```
+
 ## Khi chuyển bài hoặc upload test lỗi
 
 Kiểm tra:
