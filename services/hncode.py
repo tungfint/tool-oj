@@ -102,7 +102,7 @@ def extract_contest_problem_rows_from_html(page: str, contest_key: str = "", def
         href_re = r'/problem/([A-Za-z0-9_-]+)'
 
     for row_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", page, re.S | re.I):
-        link_match = re.search(r'<a\b[^>]*href=["\']' + href_re + r'["\'][^>]*>(.*?)</a>', row_html, re.S | re.I)
+        link_match = re.search(r'<a\b[^>]*href=["\']' + href_re + r'(?:/[^"\']*)?["\'][^>]*>(.*?)</a>', row_html, re.S | re.I)
         if not link_match:
             continue
         code = html.unescape(link_match.group(1)).strip()

@@ -359,13 +359,13 @@ templates/index.html
 
 Hiện tại HTML/JS/CSS nằm nhiều trong `web_app.py`, AI đọc sẽ bị nặng. Tách ra sẽ dễ sửa giao diện hơn.
 
-Tráº¡ng thÃ¡i hiá»n táº¡i:
+Trạng thái hiện tại:
 
-- ÄÃ£ tÃ¡ch HTML chÃ­nh ra `templates/index.html`.
-- ÄÃ£ tÃ¡ch CSS ra `static/styles.css`.
-- ÄÃ£ tÃ¡ch JS giao diá»n ra `static/app.js`; template chá» cÃ²n block `window.APP_CONFIG` nhá» Äá» truyá»n dá»¯ liá»u Jinja cho JS.
-- Route `/` ÄÃ£ chuyá»n tá»« `render_template_string` sang `render_template("index.html")`.
-- ChÆ°a tÃ¡ch nhá» `static/api.js` vÃ  `static/tables.js`; nÃªn lÃ m á» giai Äoáº¡n sau Äá» trÃ¡nh lÃ m vá»¡ JS Äang cÃ³ nhiá»u phá»¥ thuá»c chÃ©o.
+- Đã tách HTML chính ra `templates/index.html`.
+- Đã tách CSS ra `static/styles.css`.
+- Đã tách JS giao diện ra `static/app.js`; template chỉ còn block `window.APP_CONFIG` nhỏ để truyền dữ liệu Jinja cho JS.
+- Route `/` đã chuyển từ `render_template_string` sang `render_template("index.html")`.
+- Chưa tách nhỏ `static/api.js` và `static/tables.js`; nên làm ở giai đoạn sau để tránh làm vỡ JS đang có nhiều phụ thuộc chéo.
 
 ## Giai đoạn 5: Viết test parser và test dữ liệu mẫu
 
@@ -390,6 +390,20 @@ def test_parse_hncode_ranking_problem_codes()
 def test_parse_hncode_lesson_problem_codes()
 def test_parse_hnoj_contest_problem_codes()
 ```
+
+Trạng thái hiện tại:
+
+- Đã tạo `tests/fixtures/` với 5 fixture HTML: contest HNCode cũ, contest HNCode mới, ranking HNCode, lesson HNCode, contest HNOJ.
+- Đã tạo `tests/test_parsers.py` bằng `unittest` chuẩn, không cần thêm dependency mới.
+- Đã thêm `services/hnoj.py` làm wrapper parser HNOJ để sau này nếu HNOJ đổi HTML thì sửa riêng tại service này.
+- Parser HNCode đã hỗ trợ link contest dạng `/contest/<contest>/problems/<ma_bai>` có hoặc không có dấu `/` phía sau mã bài.
+- Lệnh kiểm tra nhanh:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+Kết quả hiện tại: 5/5 test parser pass.
 
 ## VI. Tài liệu cần có để AI dễ đọc hiểu
 
