@@ -639,6 +639,25 @@ Lệnh test riêng:
 python -m unittest tests.test_tinhoctre -v
 ```
 
+## VII.J. Chặng 8: Rà soát UI sau refactor
+
+Trạng thái hiện tại:
+
+- Đã thêm `tests/test_ui_smoke.py` để rà soát các lỗi UI dễ phát sinh sau khi tách JS/backend:
+  - Trang `/` render được.
+  - Tải đủ các module `static/api.js`, `progress.js`, `app.js`, `upload.js`, `transfer.js`, `contest.js`, `lesson.js`, `misc.js`.
+  - Tất cả `document.getElementById(...)` trong JS đều có phần tử tương ứng trong HTML.
+  - Các endpoint `/api/...` được JS gọi đều tồn tại trong Flask routes.
+  - Chuẩn bị dữ liệu offline cho Up nhiều bài, Up 1 bài và Quiz vẫn chạy được.
+- Các chức năng live lớn đã có test nền ở các chặng trước: Chuyển bài, Chuyển contest, Contest -> Lesson, Clone Course, Chấm bài, Tool lẻ.
+- Trong phiên rà soát này runtime không có browser instance khả dụng để lấy console trực tiếp; kiểm tra thay thế bằng HTTP 200, static JS syntax, route mapping và UI smoke test.
+
+Lệnh test riêng:
+
+```powershell
+python -m unittest tests.test_ui_smoke -v
+```
+
 ## VIII. Việc chưa nên làm ngay
 
 Chưa nên làm ngay:

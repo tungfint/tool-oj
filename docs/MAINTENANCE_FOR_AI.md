@@ -95,6 +95,7 @@ POST /api/confirm-course-clone
 Test nền hiện có:
 
 ```powershell
+python -m unittest tests.test_ui_smoke -v
 python -m unittest tests.test_contest_lesson -v
 python -m unittest tests.test_course_clone -v
 python -m unittest tests.test_grading -v
