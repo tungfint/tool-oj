@@ -12,6 +12,7 @@ import base64
 import json
 import mimetypes
 import re
+import unicodedata
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
@@ -109,6 +110,42 @@ def strip_markdown_fence(text: str) -> str:
     return value
 
 
+def _ascii_label(value: str) -> str:
+    value = str(value or "").strip().replace("đ", "d").replace("Đ", "D")
+    value = unicodedata.normalize("NFD", value)
+    value = "".join(ch for ch in value if unicodedata.category(ch) != "Mn")
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def is_forbidden_statement_heading(line: str) -> bool:
+    stripped = str(line or "").strip()
+    if not stripped:
+        return False
+    stripped = stripped.lstrip("#").strip().strip(":：").strip()
+    return _ascii_label(stripped) in {"de bai", "problem statement", "statement", "bai toan"}
+
+
+def clean_statement_markdown(markdown: str) -> str:
+    text = strip_markdown_fence(markdown)
+    lines = text.splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and is_forbidden_statement_heading(lines[0]):
+        lines.pop(0)
+        while lines and not lines[0].strip():
+            lines.pop(0)
+    if lines:
+        header_probe = parse_statement_header("\n".join(lines))
+        code_ok = bool(re.fullmatch(r"[A-Za-z0-9_\-]+", header_probe.get("code") or ""))
+        if len(header_probe.get("parts") or []) >= 2 and header_probe.get("name") and code_ok:
+            idx = 1
+            while idx < len(lines) and not lines[idx].strip():
+                idx += 1
+            if idx < len(lines) and is_forbidden_statement_heading(lines[idx]):
+                del lines[idx]
+    return "\n".join(lines).strip()
+
+
 def ensure_statement_header(
     markdown: str,
     *,
@@ -117,7 +154,7 @@ def ensure_statement_header(
     points: str = "",
     tags: object = "",
 ) -> str:
-    text = strip_markdown_fence(markdown)
+    text = clean_statement_markdown(markdown)
     header = parse_statement_header(text)
     code_ok = bool(re.fullmatch(r"[A-Za-z0-9_\-]+", header.get("code") or ""))
     if len(header.get("parts") or []) >= 2 and header.get("name") and code_ok:
@@ -208,7 +245,7 @@ def parse_statement_header(markdown: str) -> dict:
 
 
 def validate_statement_markdown(markdown: str, target: str) -> tuple[list[dict], dict]:
-    text = str(markdown or "").strip()
+    text = clean_statement_markdown(markdown)
     header = parse_statement_header(text)
     checks = []
 
@@ -233,13 +270,35 @@ def validate_statement_markdown(markdown: str, target: str) -> tuple[list[dict],
         math_message = "Đã dùng `~` cho HNOJ/TinHocTre." if math_ok else "HNOJ/TinHocTre nên dùng `~`, còn thấy ký tự `$`."
     add("Ký hiệu công thức", math_ok, math_message)
     body_ok = len(text.splitlines()) >= 3
+    lines = text.splitlines()
+    forbidden_heading_ok = True
+    if lines and is_forbidden_statement_heading(lines[0]):
+        forbidden_heading_ok = False
+    if len(lines) >= 2:
+        idx = 1
+        while idx < len(lines) and not lines[idx].strip():
+            idx += 1
+        if idx < len(lines) and is_forbidden_statement_heading(lines[idx]):
+            forbidden_heading_ok = False
+    add("Không có heading Đề bài", forbidden_heading_ok, "Không có heading `# Đề bài` thừa." if forbidden_heading_ok else "Không viết `# Đề bài`/`## Đề bài` ở đầu đề.")
     add("Phần thân đề", body_ok, "Có phần thân đề sau dòng metadata." if body_ok else "Nên có nội dung đề sau dòng đầu.")
     requirement_ok = "**Yêu cầu:**" in text or "**Yeu cau:**" in text
     add("Dòng yêu cầu", requirement_ok, "Có dòng `**Yêu cầu:**`." if requirement_ok else "Thiếu dòng `**Yêu cầu:**` sau mô tả bài toán.")
     headings_ok = all(heading in text for heading in ("#### Input", "#### Output", "#### Example"))
     add("Heading Input/Output/Example", headings_ok, "Có đủ `#### Input`, `#### Output`, `#### Example`." if headings_ok else "Thiếu một trong các heading `#### Input`, `#### Output`, `#### Example`.")
-    example_ok = '!!! question' in text and '???+ "Input"' in text and '???+ success "Output"' in text and "```sample" in text
+    has_file_io = bool(re.findall(r"\b[A-Za-z0-9_./-]+\.(?:INP|OUT)\b", text, flags=re.IGNORECASE))
+    stdin_example_ok = '???+ "Input"' in text and '???+ success "Output"' in text
+    file_input_example_ok = bool(re.search(r'\?\?\?\+\s+"[^"]+\.(?:INP)"', text, flags=re.IGNORECASE))
+    file_output_example_ok = bool(re.search(r'\?\?\?\+\s+success\s+"[^"]+\.(?:OUT)"', text, flags=re.IGNORECASE))
+    example_ok = '!!! question' in text and "```sample" in text and ((file_input_example_ok and file_output_example_ok) if has_file_io else stdin_example_ok)
     add("Format Example", example_ok, "Example dùng đúng admonition và code block `sample`." if example_ok else "Example cần dùng `!!! question`, `???+ \"Input\"`, `???+ success \"Output\"` và code block `sample`.")
+    if has_file_io:
+        file_structure_ok = bool(re.search(r"\.INP\b", text, flags=re.IGNORECASE)) and bool(re.search(r"\.OUT\b", text, flags=re.IGNORECASE))
+        add("Cấu trúc đọc ghi file", file_structure_ok, "Đã nêu rõ file `.INP` và `.OUT`." if file_structure_ok else "Bài đọc ghi file phải nêu rõ cả file `.INP` và `.OUT`.")
+    else:
+        lower_text = text.lower()
+        stdio_structure_ok = any(token in lower_text for token in ("stdin", "bàn phím", "ban phim", "dòng", "dong"))
+        add("Cấu trúc stdin/stdout", stdio_structure_ok, "Bài không đọc ghi file có mô tả Input/Output theo stdin/stdout." if stdio_structure_ok else "Bài không đọc ghi file nên mô tả dữ liệu đọc từ stdin/bàn phím.")
     meta = {key: header[key] for key in ("name", "code", "points", "tags")}
     meta["valid"] = all(row["ok"] for row in checks)
     meta["normalized_markdown"] = normalize_statement_for_target(text, target)
@@ -341,6 +400,12 @@ Yêu cầu trả về:
 
 Quy tắc chuẩn hoá đề bài:
 ```text
+Quy tắc bổ sung bắt buộc:
+- Không viết `# Đề bài`, `## Đề bài`, `# Statement` ở đầu `statement_markdown`; sau dòng metadata đi thẳng vào mô tả bài.
+- Không tạo field/phần `Dịch`, `Translation`, `Vietnamese translation`; chỉ trả về nội dung đề chính trong `statement_markdown`.
+- Nếu bài không đọc ghi file: `#### Input`/`#### Output` mô tả dữ liệu từ stdin/stdout, example dùng nhãn `Input` và `Output`.
+- Nếu bài đọc ghi file: giữ đúng tên file `.INP`/`.OUT` trong `#### Input`/`#### Output`, example dùng nhãn `TENFILE.INP` và `TENFILE.OUT`; solution C++ phải dùng `freopen` đúng tên file.
+
 {statement_guidelines}
 ```
 

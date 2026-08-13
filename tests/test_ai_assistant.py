@@ -147,6 +147,47 @@ Mô tả.
         self.assertTrue(statement.startswith("Chuyến đi siêu thị | chuyendisieuthip | 100 | math, greedy"))
         self.assertNotIn("```", statement)
 
+    def test_ensure_statement_header_removes_forbidden_de_bai_heading(self):
+        statement = ai_service.ensure_statement_header(
+            "Tổng hai số | tonghaiso | 800 | math\n\n# Đề bài\n\nCho $a,b$.",
+            name="Tổng hai số",
+            code="tonghaiso",
+            points="800",
+            tags=["math"],
+        )
+
+        self.assertTrue(statement.startswith("Tổng hai số | tonghaiso | 800 | math"))
+        self.assertNotIn("# Đề bài", statement)
+
+    def test_validate_statement_accepts_file_io_example_labels(self):
+        markdown = """Phân loại | phanloai | 1200 | strings
+
+Cho file `PHANLOAI.INP` chứa dữ liệu.
+
+**Yêu cầu:** Ghi kết quả ra file `PHANLOAI.OUT`.
+
+#### Input
+- Dữ liệu được đọc từ file `PHANLOAI.INP`.
+
+#### Output
+- Ghi kết quả ra file `PHANLOAI.OUT`.
+
+#### Example
+!!! question "Test 1"
+    ???+ "PHANLOAI.INP"
+        ```sample
+        3
+        ```
+    ???+ success "PHANLOAI.OUT"
+        ```sample
+        YES
+        ```
+"""
+        checks, meta = ai_service.validate_statement_markdown(markdown, "hncode")
+
+        self.assertTrue(meta["valid"], checks)
+        self.assertTrue(any(row["name"] == "Cấu trúc đọc ghi file" and row["ok"] for row in checks))
+
     def test_gemini_generate_falls_back_when_legacy_model_is_404(self):
         class FakeResponse:
             def __init__(self, ok: bool, status_code: int, text: str, data: dict | None = None):
@@ -339,6 +380,7 @@ Cho $a,b$.
         self.assertEqual(data["rows"][0]["link"], "https://hncode.edu.vn/problem/tonghaiso")
         statement_update.assert_called_once()
         metadata_update.assert_called_once()
+        self.assertFalse(metadata_update.call_args.kwargs["sync_translation"])
         solution_update.assert_called_once()
 
     def test_hncode_snapshot_counts_test_cases_without_name_error(self):

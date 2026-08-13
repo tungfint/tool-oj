@@ -1581,6 +1581,7 @@ def api_ai_apply_normalize():
                         type_ids=type_ids_from_tags(tags, "hncode") or [TARGETS["hncode"]["type_id"]],
                         group_id=TARGETS["hncode"]["group_id"],
                         tags_text=tags,
+                        sync_translation=False,
                     )
                 if options.get("solution", True) and solution.strip():
                     update_problem_solution_markdown(session, TARGETS["hncode"]["base_url"], code, solution)
@@ -3123,6 +3124,7 @@ def update_hncode_problem_metadata(
     type_ids: list[str],
     group_id: str,
     tags_text: object = "",
+    sync_translation: bool = True,
 ) -> str:
     edit_url = urljoin(base_url, f"/problem/{code}/edit")
     page = session.get(edit_url, timeout=30)
@@ -3178,8 +3180,9 @@ def update_hncode_problem_metadata(
             f"HNCode nhận POST nhưng Problem Types của {code} vẫn là {saved_type_ids}, "
             f"chưa có {missing_type_ids}. Đã lưu debug tại {debug_dir}."
         )
-    saved_description = textarea_value(verify.text, "description")
-    ensure_hncode_vi_translation(session, base_url, code, name, saved_description)
+    if sync_translation:
+        saved_description = textarea_value(verify.text, "description")
+        ensure_hncode_vi_translation(session, base_url, code, name, saved_description)
     return result.url
 
 
