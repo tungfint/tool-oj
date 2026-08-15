@@ -139,64 +139,109 @@ CONTEST_TARGETS = {
     **TARGETS,
 }
 
-PROMPT_GUIDE = """Với mỗi bài trong danh sách dưới đây, hãy tạo đủ 4 file:
+PROMPT_GUIDE = """Bạn hãy tạo bộ file bài lập trình để tôi up bằng Tool HNCode.
 
-1. File sinh test:
-   - Tên file: gentest_<ma_bai>.py
-   - Ví dụ: gentest_tht26_tongbi.py
+Với mỗi bài trong danh sách bên dưới, hãy tạo các file theo cấu trúc sau:
 
-2. File lời giải Python:
-   - Tên file: sol_<ma_bai>.py
-   - Ví dụ: sol_tht26_tongbi.py
-
-3. File lời giải C++:
-   - Tên file: sol_<ma_bai>.cpp
-   - Ví dụ: sol_tht26_tongbi.cpp
-
-4. File đề bài Markdown:
+1. File đề bài Markdown
    - Tên file: <ma_bai>.md
    - Ví dụ: tht26_tongbi.md
-   - Dòng đầu tiên của file phải có đúng cấu trúc:
-     Tên bài | Mã bài
+   - Dòng đầu tiên bắt buộc có dạng:
+     Tên bài | Mã bài | Điểm | Tags
    - Ví dụ:
-     Tổng bi | tht26_tongbi
-   - Sau dòng đầu tiên là toàn bộ nội dung đề bài.
+     Tổng bi | tht26_tongbi | 800 | nhập xuất, toán học
+   - Sau dòng đầu tiên là nội dung đề bài.
+   - Không viết thêm heading `# Đề bài` ở đầu nội dung.
 
-Yêu cầu đối với file sinh test:
+2. File sinh test hoặc zip test có sẵn
+   - Cách 1: tạo file sinh test Python:
+     gentest_<ma_bai>.py
+   - Cách 2: nếu đã có test, tạo sẵn:
+     <ma_bai>.zip
+   - Tool chỉ cần một trong hai nguồn test trên.
 
-- File sinh test là file Python.
-- Trong file sinh test phải nhúng lời giải chuẩn bằng C++ để sinh output.
-- Khi chạy file sinh test, chương trình tự tạo thư mục test cho bài tương ứng.
-- Tên thư mục test nên là mã bài, ví dụ:
-  tht26_tongbi/
-- Các file test trong thư mục có dạng:
+3. File lời giải / hướng dẫn
+   - Tên file: sol_<ma_bai>.md
+   - File này là Markdown, gồm ý tưởng, thuật toán, độ phức tạp và code mẫu C++ nếu có.
+   - Nếu chưa chắc lời giải thì vẫn tạo file và ghi rõ phần cần kiểm tra.
+
+4. File code nộp thử, nếu có
+   - C++: sol_<ma_bai>.cpp
+   - Python: sol_<ma_bai>.py
+   - Nếu bài không có lời giải chạy được thì có thể bỏ qua các file này.
+
+Format đề bài HNCode cần dùng:
+
+- Dùng `$...$` cho công thức toán.
+- Với bài đọc từ stdin/stdout, dùng các heading:
+  #### Input
+  #### Output
+  #### Example
+- Example trên HNCode dùng đúng mẫu:
+
+!!! question "Test 1"
+    ???+ "Input"
+        ```sample
+        [sample input]
+        ```
+    ???+ success "Output"
+        ```sample
+        [sample output]
+        ```
+
+- Với bài đọc ghi file, giữ đúng tên file `.INP` và `.OUT`.
+  Ví dụ nếu bài dùng `BAI1.INP` và `BAI1.OUT` thì example viết:
+
+!!! question "Test 1"
+    ???+ "BAI1.INP"
+        ```sample
+        [sample input]
+        ```
+    ???+ success "BAI1.OUT"
+        ```sample
+        [sample output]
+        ```
+
+Yêu cầu đối với `gentest_<ma_bai>.py`:
+
+- Là file Python, chạy độc lập, không chờ nhập bàn phím.
+- Không dùng đường dẫn tuyệt đối trên máy cá nhân.
+- Tự sinh đủ cặp input/output.
+- Tự nén thành `<ma_bai>.zip`.
+- Trong zip test nên có dạng đơn giản:
   01.inp, 01.out
   02.inp, 02.out
   ...
-- Sau khi sinh test, file sinh test tự nén thư mục test thành:
-  tht26_tongbi.zip
+- Nếu cần dùng C++ để sinh output thì có thể nhúng code C++ và gọi `g++`.
+- Nếu dùng `g++`, cần báo lỗi rõ khi máy không có compiler.
 
 Yêu cầu đối với bộ test:
 
-- Bộ test phải đủ mạnh, phủ đủ các trường hợp đặc biệt và trường hợp biên.
-- Dữ liệu phải đúng giới hạn của đề bài.
-- Nếu đề có subtask, số lượng test phải phân bố đúng theo tỉ lệ subtask.
-- Nếu bài đơn giản, chỉ cần khoảng 10 test.
-- Nếu bài cần nhiều trường hợp để kiểm tra chặt chẽ hơn, có thể sinh khoảng 20 test hoặc nhiều hơn.
-- Cần có 01 test ví dụ, các test nhỏ, test biên, test ngẫu nhiên có kiểm soát, test đủ các trường hợp và test lớn.
+- Có test ví dụ.
+- Có test nhỏ, test biên, test ngẫu nhiên có kiểm soát và test lớn.
+- Dữ liệu đúng giới hạn đề bài.
+- Nếu có subtask, phân bố test theo đúng ý nghĩa subtask.
+- Bài đơn giản khoảng 10 test; bài cần kiểm tra chặt hơn có thể 20 test hoặc nhiều hơn.
 
-Sau khi tạo xong, hãy nén toàn bộ các file đã tạo thành một file zip duy nhất và gửi lại cho tôi.
+Sau khi tạo xong:
+
+- Nén toàn bộ file của tất cả bài thành một file zip duy nhất.
+- Trong zip không cần tạo thêm nhiều tầng thư mục phức tạp.
+- Mỗi bài tối thiểu nên có:
+  <ma_bai>.md
+  gentest_<ma_bai>.py hoặc <ma_bai>.zip
 
 Ví dụ với bài:
 
-Tổng bi | tht26_tongbi
+Tổng bi | tht26_tongbi | 800 | nhập xuất, toán học
 
-Cần tạo 4 file:
+Bộ file nên gồm:
 
-- gentest_tht26_tongbi.py
-- sol_tht26_tongbi.py
-- sol_tht26_tongbi.cpp
 - tht26_tongbi.md
+- gentest_tht26_tongbi.py hoặc tht26_tongbi.zip
+- sol_tht26_tongbi.md
+- sol_tht26_tongbi.cpp
+- sol_tht26_tongbi.py
 
 Hãy thực hiện cho toàn bộ các bài được cung cấp bên dưới."""
 
