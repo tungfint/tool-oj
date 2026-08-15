@@ -102,6 +102,17 @@
           File Markdown nên có dòng đầu <code>Tên bài | Mã bài | Điểm | Các Tags</code>. File sinh test sẽ tạo thư mục test và nén thành <code>&lt;ma_bai&gt;.zip</code>; nếu zip test có sẵn thì tool dùng trực tiếp. Thông tin nào thiếu sẽ để trống hoặc dùng mặc định.
           <br><b>Ràng buộc gentest:</b> nên là Python, tên <code>gentest_&lt;ma_bai&gt;.py</code>, tự tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất có đủ cặp <code>.inp/.out</code>; không cần input tương tác; chạy trong 120 giây; nếu dùng C++ trong gentest thì máy/VPS cần có <code>g++</code>.
           <br><a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso.zip" target="_blank" rel="noopener">Tải mẫu bo_mau_1_bai_tonghaiso.zip</a>
+          · <a class="problem-link" href="/samples/huong_dan_format_up_bai.md" target="_blank" rel="noopener">Xem hướng dẫn format</a>
+          · <a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso/tonghaiso.md" target="_blank" rel="noopener">Xem file đề mẫu</a>
+          · <a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso/gentest_tonghaiso.py" target="_blank" rel="noopener">Xem gentest mẫu</a>
+          <details style="margin-top:10px">
+            <summary><b>Format nhanh để làm theo</b></summary>
+            <div style="margin-top:8px">
+              <b>Up nhiều bài:</b> nén zip gồm <code>&lt;ma_bai&gt;.md</code>, <code>gentest_&lt;ma_bai&gt;.py</code> hoặc <code>&lt;ma_bai&gt;.zip</code>, <code>sol_&lt;ma_bai&gt;.md</code>, và nếu cần nộp thử thì có <code>sol_&lt;ma_bai&gt;.cpp</code>/<code>sol_&lt;ma_bai&gt;.py</code>.<br>
+              <b>Dòng đầu file .md:</b> <code>Tên bài | Mã bài | Điểm | Tags</code>.<br>
+              <b>Test:</b> zip test phải có đủ cặp <code>.inp/.out</code>. Nếu dùng gentest, file phải tự sinh zip test, không chờ nhập bàn phím, không phụ thuộc đường dẫn tuyệt đối.
+            </div>
+          </details>
         </div>
         <div class="grid-2">
           <div><label>Giới hạn thời gian</label><input id="timeLimit" type="text" value="1.0"></div>
@@ -147,6 +158,14 @@
       <div class="panel" id="panel-single-upload">
         <h2>Up 1 bài</h2>
         <p>Nhập trực tiếp một bài, kiểm tra dữ liệu trước, rồi xác nhận up. Thiếu phần nào thì tool bỏ qua phần đó.</p>
+        <div class="note" style="margin-top:12px">
+          <b>Format Up 1 bài:</b> nhập mã bài, tên bài, điểm, tags, time/memory; dán đề Markdown hoặc chọn file <code>.md</code>; dán <code>gentest_&lt;ma_bai&gt;.py</code> hoặc chọn zip test có sẵn; dán lời giải Markdown nếu muốn up solution.
+          Dòng đầu đề nên là <code>Tên bài | Mã bài | Điểm | Tags</code>. Nếu bật <code>Bỏ dòng đầu tiên</code>, dòng này chỉ dùng để lấy metadata và không đưa vào đề trên web.
+          <br><a class="problem-link" href="/samples/huong_dan_format_up_bai.md" target="_blank" rel="noopener">Xem hướng dẫn format</a>
+          · <a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso/tonghaiso.md" target="_blank" rel="noopener">File đề mẫu</a>
+          · <a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso/gentest_tonghaiso.py" target="_blank" rel="noopener">Gentest mẫu</a>
+          · <a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso/sol_tonghaiso.md" target="_blank" rel="noopener">Solution mẫu</a>
+        </div>
         <div class="grid-2">
           <div>
             <label>Web đích</label>

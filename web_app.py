@@ -81,6 +81,14 @@ from upload_tinhoctre_batch import (
 ROOT = Path(__file__).resolve().parent
 RUNTIME = ROOT / ".runtime"
 SAMPLE_TONGHAISO_ZIP = ROOT / "samples" / "bo_mau_1_bai_tonghaiso.zip"
+SAMPLE_GUIDE_MD = ROOT / "samples" / "huong_dan_format_up_bai.md"
+SAMPLE_TEXT_FILES = {
+    "tonghaiso.md": ROOT / "samples" / "bo_mau_1_bai_tonghaiso" / "tonghaiso.md",
+    "gentest_tonghaiso.py": ROOT / "samples" / "bo_mau_1_bai_tonghaiso" / "gentest_tonghaiso.py",
+    "sol_tonghaiso.md": ROOT / "samples" / "bo_mau_1_bai_tonghaiso" / "sol_tonghaiso.md",
+    "sol_tonghaiso.cpp": ROOT / "samples" / "bo_mau_1_bai_tonghaiso" / "sol_tonghaiso.cpp",
+    "sol_tonghaiso.py": ROOT / "samples" / "bo_mau_1_bai_tonghaiso" / "sol_tonghaiso.py",
+}
 DEFAULT_ZIP = r"E:\Google Drive\Google Drive\1-School\4-KiThi\THT\2026\5Tinh\04-06\tht26_5_bai_files.zip"
 QUIZ_BASE_URL = "https://oj.hncode.edu.vn"
 
@@ -1210,6 +1218,23 @@ def sample_tonghaiso_zip():
     if not SAMPLE_TONGHAISO_ZIP.exists():
         return api_response.api_error("Không tìm thấy file mẫu.", status=404)
     return send_file(SAMPLE_TONGHAISO_ZIP, as_attachment=True, download_name=SAMPLE_TONGHAISO_ZIP.name)
+
+
+@app.get("/samples/huong_dan_format_up_bai.md")
+def sample_upload_format_guide():
+    if not SAMPLE_GUIDE_MD.exists():
+        return api_response.api_error("Không tìm thấy file hướng dẫn mẫu.", status=404)
+    return send_file(SAMPLE_GUIDE_MD, mimetype="text/markdown; charset=utf-8")
+
+
+@app.get("/samples/bo_mau_1_bai_tonghaiso/<path:filename>")
+def sample_tonghaiso_text_file(filename: str):
+    path = SAMPLE_TEXT_FILES.get(filename)
+    if not path or not path.exists():
+        return api_response.api_error("Không tìm thấy file mẫu.", status=404)
+    suffix = path.suffix.lower()
+    mimetype = "text/markdown; charset=utf-8" if suffix == ".md" else "text/plain; charset=utf-8"
+    return send_file(path, mimetype=mimetype)
 
 
 @app.post("/api/sample/tonghaiso")

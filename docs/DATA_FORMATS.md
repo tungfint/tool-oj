@@ -1,5 +1,36 @@
 # Format Dữ Liệu
 
+
+## Mẫu tham khảo nhanh
+
+File mẫu trong repo:
+
+- `samples/huong_dan_format_up_bai.md`: hướng dẫn đầy đủ cho Up 1 bài và Up nhiều bài.
+- `samples/bo_mau_1_bai_tonghaiso.zip`: bộ zip mẫu dùng trực tiếp trên giao diện.
+- `samples/bo_mau_1_bai_tonghaiso/tonghaiso.md`: đề bài mẫu.
+- `samples/bo_mau_1_bai_tonghaiso/gentest_tonghaiso.py`: code sinh test mẫu.
+- `samples/bo_mau_1_bai_tonghaiso/sol_tonghaiso.md`: lời giải Markdown mẫu.
+- `samples/bo_mau_1_bai_tonghaiso/sol_tonghaiso.cpp`: code C++ nộp thử mẫu.
+- `samples/bo_mau_1_bai_tonghaiso/sol_tonghaiso.py`: code Python nộp thử mẫu.
+
+Tóm tắt cấu trúc:
+
+```text
+<ma_bai>.md
+gentest_<ma_bai>.py hoặc <ma_bai>.zip
+sol_<ma_bai>.md
+sol_<ma_bai>.cpp
+sol_<ma_bai>.py
+```
+
+Dòng đầu file đề:
+
+```text
+Tên bài | Mã bài | Điểm | Tags
+```
+
+Nếu dùng `gentest_<ma_bai>.py`, file này phải tự chạy, tự sinh đủ `.inp/.out`, tự nén thành `<ma_bai>.zip`, không chờ nhập bàn phím và không phụ thuộc đường dẫn tuyệt đối trên máy cá nhân.
+
 Tài liệu này mô tả các định dạng input/output mà tool đang dùng.
 
 ## Bộ bài để Up nhiều bài
