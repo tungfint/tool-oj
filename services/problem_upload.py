@@ -62,6 +62,20 @@ def statement_for_target(target: str, statement: str, *, skip_title_line: bool =
     return text.replace("$", "~")
 
 
+def infer_fileio_names(statement: str) -> tuple[str, str]:
+    text = str(statement or "")
+    matches = re.findall(r"\b[A-Za-z0-9_./-]+\.(?:INP|OUT)\b", text, flags=re.I)
+    input_name = ""
+    output_name = ""
+    for name in matches:
+        clean = name.strip("`'\"“”‘’.,;:()[]{}")
+        if clean.lower().endswith(".inp") and not input_name:
+            input_name = clean
+        elif clean.lower().endswith(".out") and not output_name:
+            output_name = clean
+    return input_name, output_name
+
+
 def problem_exists_for_target(session, target: str, base_url: str, code: str) -> bool:
     for path in (f"/problem/{code}/edit", f"/problem/{code}/test_data"):
         try:
@@ -86,11 +100,30 @@ def resolve_problem_code_for_upload(session, target: str, base_url: str, raw_cod
     return code, ""
 
 
-def upload_tests_for_target(session, target: str, base_url: str, code: str, tests: GeneratedTests, upload_hncode_tests, upload_hnoj_tests) -> None:
+def upload_tests_for_target(
+    session,
+    target: str,
+    base_url: str,
+    code: str,
+    tests: GeneratedTests,
+    upload_hncode_tests,
+    upload_hnoj_tests,
+    *,
+    statement: str = "",
+) -> None:
     if target == "hnoj":
         upload_hnoj_tests(session, base_url, code, tests)
         return
-    upload_hncode_tests(session, base_url, code, tests.zip_path, test_cases_from_files(tests.input_files, tests.output_files))
+    fileio_input, fileio_output = infer_fileio_names(statement) if target == "hncode" else ("", "")
+    upload_hncode_tests(
+        session,
+        base_url,
+        code,
+        tests.zip_path,
+        test_cases_from_files(tests.input_files, tests.output_files),
+        fileio_input=fileio_input,
+        fileio_output=fileio_output,
+    )
 
 
 def language_id_from_submit_page(page: str, preferred_languages: list[str]) -> str:

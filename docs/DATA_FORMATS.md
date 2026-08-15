@@ -33,6 +33,8 @@ Nếu dùng `gentest_<ma_bai>.py`, file này phải tự chạy, tự sinh đủ
 
 Với HNCode, nếu `Tags` trống hoặc không nhận diện được, tool báo cảnh báo và dùng mặc định `Chưa phân loại - 591`.
 
+Với bài đọc ghi file trên HNCode, đề bài cần ghi rõ tên `.INP` và `.OUT`. Khi up test, tool tự điền hai trường `Tên file input` và `Tên file output` ở `/problem/<ma_bai>/test_data` từ các tên file này.
+
 Tài liệu này mô tả các định dạng input/output mà tool đang dùng.
 
 ## Bộ bài để Up nhiều bài

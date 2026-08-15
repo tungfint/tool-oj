@@ -11,6 +11,7 @@ from typing import Callable
 
 from transfer_tinhoctre_to_hncode import ProblemInfo
 from upload_tinhoctre_batch import GeneratedTests, ProblemBundle
+from services.problem_upload import infer_fileio_names
 
 
 def selected_count(rows: list[dict]) -> int:
@@ -122,7 +123,16 @@ def upload_transfer_to_dmoj(
             tests = generated_tests_cls(zip_path, [case.input_file for case in cases], [case.output_file for case in cases])
             upload_hnoj_tests(session, base_url, dest_code, tests)
         else:
-            upload_hncode_tests(session, base_url, dest_code, zip_path, cases)
+            fileio_input, fileio_output = infer_fileio_names(info.description)
+            upload_hncode_tests(
+                session,
+                base_url,
+                dest_code,
+                zip_path,
+                cases,
+                fileio_input=fileio_input,
+                fileio_output=fileio_output,
+            )
         log_lines.append(f"{dest_code}: đã upload test.")
     else:
         log_lines.append(f"{dest_code}: không upload test.")
@@ -177,4 +187,3 @@ def upload_transfer_to_tinhoctre(
         log_lines.append(f"{dest_code}: đã upload test.")
     else:
         log_lines.append(f"{dest_code}: không upload test.")
-

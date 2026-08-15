@@ -1,5 +1,6 @@
 from pathlib import Path
 import unittest
+from unittest.mock import Mock
 
 from services import problem_transfer
 from transfer_tinhoctre_to_hncode import ProblemInfo, TestCase
@@ -73,6 +74,42 @@ class ProblemTransferTests(unittest.TestCase):
         self.assertEqual(info.name, "Tên mới")
         self.assertEqual(info.time_limit, "3.0")
         self.assertEqual(info.memory_limit, "4096")
+
+
+    def test_upload_transfer_to_hncode_passes_fileio_names(self):
+        info = ProblemInfo(
+            code="divnum",
+            name="DIVNUM",
+            description="Read input from DIVNUM.INP and write output to DIVNUM.OUT.",
+            points="100",
+            partial=True,
+            time_limit="1.0",
+            memory_limit="1048576",
+            memory_unit="KB",
+        )
+        upload_hncode_tests = Mock()
+
+        problem_transfer.upload_transfer_to_dmoj(
+            session=object(),
+            dest="hncode",
+            dest_code="divnum",
+            info=info,
+            zip_path=Path("divnum.zip"),
+            cases=[TestCase(1, "C", "01.inp", "01.out", "1")],
+            row={"upload_statement": False, "upload_tests": True},
+            language_ids=[],
+            log_lines=[],
+            target_info={"base_url": "https://hncode.edu.vn", "type_id": "591", "group_id": "105"},
+            problem_info_for_target=lambda source_info, target: source_info,
+            destination_problem_exists=lambda session, base_url, code: False,
+            problem_url=lambda base_url, code: f"{base_url}/problem/{code}",
+            create_problem=Mock(),
+            upload_hncode_tests=upload_hncode_tests,
+            upload_hnoj_tests=Mock(),
+        )
+
+        self.assertEqual(upload_hncode_tests.call_args.kwargs["fileio_input"], "DIVNUM.INP")
+        self.assertEqual(upload_hncode_tests.call_args.kwargs["fileio_output"], "DIVNUM.OUT")
 
 
 if __name__ == "__main__":

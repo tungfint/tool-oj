@@ -194,6 +194,7 @@ Format đề bài HNCode cần dùng:
         ```
 
 - Với bài đọc ghi file, giữ đúng tên file `.INP` và `.OUT`.
+  Tool sẽ tự lấy hai tên này để điền `Tên file input` và `Tên file output` ở trang test_data HNCode.
   Ví dụ nếu bài dùng `BAI1.INP` và `BAI1.OUT` thì example viết:
 
 !!! question "Test 1"
@@ -3384,7 +3385,7 @@ def upload_one_problem(
             if overwrite_tests:
                 if tests is None:
                     raise RuntimeError("Bài này không có bộ test trong dữ liệu chuẩn bị. Hãy bỏ tích Up test hoặc dùng file zip/gentest.")
-                upload_tests_for_target(session, target, base_url, bundle.code, tests)
+                upload_tests_for_target(session, target, base_url, bundle.code, tests, bundle.statement)
                 log_lines.append(f"{bundle.code}: đã ghi đè {len(tests.input_files)} test.")
                 actions.append("test")
             else:
@@ -3441,7 +3442,7 @@ def upload_one_problem(
     if row.get("upload_tests"):
         if tests is None:
             raise RuntimeError("Bài này không có bộ test trong dữ liệu chuẩn bị. Hãy bỏ tích Up test hoặc dùng file zip/gentest.")
-        upload_tests_for_target(session, target, base_url, bundle.code, tests)
+        upload_tests_for_target(session, target, base_url, bundle.code, tests, bundle.statement)
         log_lines.append(f"{bundle.code}: đã upload {len(tests.input_files)} test.")
         actions.append("upload test")
     else:
@@ -3590,11 +3591,21 @@ def selected_option_value(page: str, name: str, default: str = "") -> str:
     return default
 
 
-def upload_tests_for_target(session, target: str, base_url: str, code: str, tests: GeneratedTests) -> None:
+def upload_tests_for_target(session, target: str, base_url: str, code: str, tests: GeneratedTests, statement_path: Path | None = None) -> None:
     if target == "tinhoctre":
         upload_tinhoctre_tests(session, base_url, code, tests)
         return
-    upload_service.upload_tests_for_target(session, target, base_url, code, tests, upload_hncode_tests, upload_tinhoctre_tests)
+    statement = read_text_smart(statement_path) if statement_path else ""
+    upload_service.upload_tests_for_target(
+        session,
+        target,
+        base_url,
+        code,
+        tests,
+        upload_hncode_tests,
+        upload_tinhoctre_tests,
+        statement=statement,
+    )
 
 def submit_if_requested(session, base_url: str, bundle: ProblemBundle, settings: dict, log_lines: list[str]) -> None:
     fallback = None if "hncode.edu.vn" in base_url else submit_solution

@@ -118,6 +118,15 @@ Cho file `PHANLOAI.INP` chứa dữ liệu.
 
 Không viết thêm heading `# Đề bài` ở đầu nội dung.
 
+Với bài đọc ghi file trên HNCode, tool sẽ tự lấy tên `.INP` và `.OUT` trong đề để điền vào trang `/problem/<ma_bai>/test_data`:
+
+```text
+Tên file input: TENBAI.INP
+Tên file output: TENBAI.OUT
+```
+
+Vì vậy đề bài cần ghi rõ cả file input và file output, ví dụ `DIVNUM.INP` và `DIVNUM.OUT`.
+
 ## 5. Ràng buộc với `gentest_<ma_bai>.py`
 
 File sinh test nên:

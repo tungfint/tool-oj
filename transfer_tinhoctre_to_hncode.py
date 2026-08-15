@@ -505,7 +505,15 @@ def signature_grader_form_indices(page: str) -> list[int]:
     return sorted(ids)
 
 
-def test_data_base_fields(page: str, token: str, *, cases_total: int, cases_initial: str = "0") -> list[tuple[str, str]]:
+def test_data_base_fields(
+    page: str,
+    token: str,
+    *,
+    cases_total: int,
+    cases_initial: str = "0",
+    fileio_input: str = "",
+    fileio_output: str = "",
+) -> list[tuple[str, str]]:
     data: list[tuple[str, str]] = [
         ("csrfmiddlewaretoken", token),
         ("cases-TOTAL_FORMS", str(cases_total)),
@@ -513,8 +521,8 @@ def test_data_base_fields(page: str, token: str, *, cases_total: int, cases_init
         ("cases-MIN_NUM_FORMS", input_value(page, "cases-MIN_NUM_FORMS", "0")),
         ("cases-MAX_NUM_FORMS", input_value(page, "cases-MAX_NUM_FORMS", "1")),
         ("problem-data-checker", selected_option(page, "problem-data-checker", "standard") or "standard"),
-        ("problem-data-fileio_input", input_value(page, "problem-data-fileio_input", "")),
-        ("problem-data-fileio_output", input_value(page, "problem-data-fileio_output", "")),
+        ("problem-data-fileio_input", fileio_input or input_value(page, "problem-data-fileio_input", "")),
+        ("problem-data-fileio_output", fileio_output or input_value(page, "problem-data-fileio_output", "")),
         ("problem-data-output_zip_size_mb", input_value(page, "problem-data-output_zip_size_mb", "")),
         ("problem-data-communication_num_processes", input_value(page, "problem-data-communication_num_processes", "")),
         ("problem-data-generator_script", input_value(page, "problem-data-generator_script", "")),
@@ -627,6 +635,9 @@ def upload_hncode_tests(
     problem_code: str,
     zip_path: Path,
     cases: Iterable[TestCase],
+    *,
+    fileio_input: str = "",
+    fileio_output: str = "",
 ) -> str:
     zip_path, cases = normalize_hncode_test_zip(zip_path, cases)
     test_url = urljoin(base_url, f"/problem/{problem_code}/test_data")
@@ -656,7 +667,14 @@ def upload_hncode_tests(
     page = request_with_retry(dest, "GET", test_url, action="mở lại form test_data sau khi upload zip")
     token = csrf_token(page.text)
     cases = list(cases)
-    data = test_data_base_fields(page.text, token, cases_total=len(cases), cases_initial="0")
+    data = test_data_base_fields(
+        page.text,
+        token,
+        cases_total=len(cases),
+        cases_initial="0",
+        fileio_input=fileio_input,
+        fileio_output=fileio_output,
+    )
     for idx, case in enumerate(cases):
         data.extend(
             [
