@@ -51,10 +51,12 @@ from transfer_tinhoctre_to_hncode import (
     infer_cases_from_zip_paths,
     input_value,
     login_hncode,
+    infer_hncode_fileio_names,
     parse_source_cases,
     selected_option,
     textarea_value,
     upload_hncode_tests,
+    update_hncode_fileio_metadata,
 )
 from upload_tinhoctre_batch import (
     GeneratedTests,
@@ -3365,6 +3367,20 @@ def upload_one_problem(
         )
         log_lines.append(f"{bundle.code}: đã cập nhật lại điểm và dạng bài tập HNCode.")
 
+    def sync_hncode_fileio_metadata() -> None:
+        if target != "hncode" or not bundle.statement:
+            return
+        statement = statement_for_target(
+            target,
+            read_text_smart(bundle.statement),
+            skip_title_line=bool(settings.get("skip_statement_title", True)),
+        )
+        fileio_input, fileio_output = infer_hncode_fileio_names(statement)
+        if not (fileio_input or fileio_output):
+            return
+        update_hncode_fileio_metadata(session, base_url, bundle.code, fileio_input, fileio_output)
+        log_lines.append(f"{bundle.code}: file I/O HNCode = {fileio_input}/{fileio_output}.")
+
     exists = problem_exists_for_target(session, target, base_url, bundle.code)
     if exists:
         overwrite_row = bool(row.get("overwrite") or settings.get("overwrite_existing"))
@@ -3393,6 +3409,8 @@ def upload_one_problem(
         submit_if_requested(session, base_url, bundle, settings, log_lines)
         if overwrite_statement or overwrite_tests or overwrite_row:
             refresh_hncode_metadata()
+        if overwrite_statement:
+            sync_hncode_fileio_metadata()
         return "✓ Ghi đè " + " và ".join(actions) if actions else "✓ Không có phần ghi đè"
     actions: list[str] = []
     if row.get("upload_statement"):
@@ -3451,6 +3469,7 @@ def upload_one_problem(
     submit_if_requested(session, base_url, bundle, settings, log_lines)
     if target == "hncode" and row.get("upload_statement"):
         refresh_hncode_metadata()
+        sync_hncode_fileio_metadata()
     return "✓ " + " và ".join(actions) if actions else "✓ Thành công"
 
 
