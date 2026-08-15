@@ -79,6 +79,21 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(data["prepare_id"])
         self.assertEqual(len(data["rows"]), 1)
 
+    def test_hncode_tag_fallback_defaults_to_uncategorized_591(self):
+        tags, warning = web_app.normalize_tags_for_target("", "hncode")
+
+        self.assertEqual(tags, "Chưa phân loại")
+        self.assertIn("591", warning)
+        self.assertEqual(web_app.type_ids_from_tags(tags, "hncode"), ["591"])
+
+        tags, warning = web_app.normalize_tags_for_target("tag khong co", "hncode")
+        self.assertEqual(tags, "Chưa phân loại")
+        self.assertIn("chưa nhận diện", warning)
+
+        tags, warning = web_app.normalize_tags_for_target("implementation, math", "hncode")
+        self.assertEqual(tags, "implementation, math")
+        self.assertEqual(warning, "")
+
     def test_list_problem_codes_uses_fixture_without_live_login(self):
         fixture = (Path(__file__).parent / "fixtures" / "hncode_contest_new.html").read_text(encoding="utf-8")
         with patch.object(web_app, "login_hncode", return_value=FakeSession(fixture)):

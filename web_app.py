@@ -80,6 +80,8 @@ from upload_tinhoctre_batch import (
 
 ROOT = Path(__file__).resolve().parent
 RUNTIME = ROOT / ".runtime"
+HNCODE_UNCATEGORIZED_TYPE_ID = "591"
+HNCODE_UNCATEGORIZED_LABEL = "Chưa phân loại"
 SAMPLE_TONGHAISO_ZIP = ROOT / "samples" / "bo_mau_1_bai_tonghaiso.zip"
 SAMPLE_GUIDE_MD = ROOT / "samples" / "huong_dan_format_up_bai.md"
 SAMPLE_TEXT_FILES = {
@@ -105,7 +107,7 @@ TARGETS = {
     "hncode": {
         "label": "HNCode",
         "base_url": "https://hncode.edu.vn",
-        "type_id": "387",
+        "type_id": HNCODE_UNCATEGORIZED_TYPE_ID,
         "group_id": "105",
         "languages": {"C++17": "12", "C++20": "14", "Pascal": "10", "Python 3": "8", "PyPy 3": "16"},
         "default_user": "hncode",
@@ -150,6 +152,8 @@ Với mỗi bài trong danh sách bên dưới, hãy tạo các file theo cấu 
      Tên bài | Mã bài | Điểm | Tags
    - Ví dụ:
      Tổng bi | tht26_tongbi | 800 | nhập xuất, toán học
+   - Nếu chưa chắc Điểm hoặc Tags thì có thể để trống phần đó; tool sẽ dùng mặc định.
+   - Nếu không có tag phù hợp, ghi `Chưa phân loại`. Với HNCode tool sẽ dùng Type ID mặc định `591`.
    - Sau dòng đầu tiên là nội dung đề bài.
    - Không viết thêm heading `# Đề bài` ở đầu nội dung.
 
@@ -342,6 +346,9 @@ QUESTION_TYPE_ALIASES = {
 }
 
 HNCODE_TYPE_ALIASES = {
+    "chua phan loai": HNCODE_UNCATEGORIZED_TYPE_ID,
+    "chưa phân loại": HNCODE_UNCATEGORIZED_TYPE_ID,
+    "uncategorized": HNCODE_UNCATEGORIZED_TYPE_ID,
     "binary search": "198",
     "binary-search": "198",
     "binary_search": "198",
@@ -2637,6 +2644,8 @@ def api_prepare_upload():
                 tests[bundle.code] = generated
                 source = "gentest" if bundle.generator else "zip có sẵn"
             meta = metadata_from_statement(bundle.statement, payload)
+            effective_tags, tag_warning = normalize_tags_for_target(meta["tags"], payload.get("target") or "")
+            meta["tags"] = effective_tags
             metadata[bundle.code] = meta
             solution_md = find_named_file(source_dir, ["sol"], bundle.index, bundle.code, ".md") if source_path.suffix.lower() != ".md" else None
             solutions_md[bundle.code] = solution_md
@@ -2646,7 +2655,7 @@ def api_prepare_upload():
                     "code": bundle.code,
                     "name": bundle.name,
                     "points": meta["points"],
-                    "tags": meta["tags"],
+                    "tags": effective_tags,
                     "time_limit": payload.get("time_limit") or "1.0",
                     "memory_limit": payload.get("memory_limit") or "1048576",
                     "partial": meta["partial"],
@@ -2654,11 +2663,14 @@ def api_prepare_upload():
                     "test_count": len(generated.input_files) if generated else 0,
                     "upload_tests_default": bool(generated),
                     "upload_solution_default": bool(solution_md),
+                    "status": tag_warning or "Đã chuẩn bị",
+                    "note": tag_warning,
                 }
             )
             test_text = f"{len(generated.input_files)} test" if generated else "không có test"
             solution_text = ", có lời giải Markdown" if solution_md else ""
-            log_lines.append(f"- {bundle.code}: {bundle.name}, điểm {meta['points']}, tags {meta['tags'] or 'trống'}, {test_text}, nguồn {source}{solution_text}.")
+            warning_text = f" {tag_warning}" if tag_warning else ""
+            log_lines.append(f"- {bundle.code}: {bundle.name}, điểm {meta['points']}, tags {effective_tags}, {test_text}, nguồn {source}{solution_text}.{warning_text}")
             progress_update(progress_id, phase="prepare-upload", done=index, total=len(bundles), rows=rows, message=f"{bundle.code}: đã chuẩn bị {test_text}")
         prepared_uploads[prepare_id] = {"root": root, "bundles": {b.code: b for b in bundles}, "tests": tests, "solutions": solutions_md, "metadata": metadata}
         progress_finish(progress_id, True, f"Đã chuẩn bị {len(bundles)}/{len(bundles)} bài")
@@ -2786,13 +2798,17 @@ def api_prepare_single_upload():
             solution_path.write_text(solution_text + "\n", encoding="utf-8")
             log_lines.append("- Có lời giải/hướng dẫn Markdown.")
 
+        effective_tags, tag_warning = normalize_tags_for_target(payload.get("tags") or "", payload.get("target") or "")
+        if tag_warning:
+            log_lines.append(f"- {tag_warning}")
+        base_status = "Đã chuẩn bị" if bool(statement_text) or bool(tests) or bool(solution_path) else "Chưa có phần nào để up"
         rows = [
             {
                 "original_code": code,
                 "code": code,
                 "name": name,
                 "points": payload.get("points") or "100",
-                "tags": payload.get("tags") or "",
+                "tags": effective_tags,
                 "time_limit": payload.get("time_limit") or "1.0",
                 "memory_limit": payload.get("memory_limit") or "1024M",
                 "partial": bool(payload.get("partial", True)),
@@ -2801,8 +2817,8 @@ def api_prepare_single_upload():
                 "upload_statement_default": bool(statement_text),
                 "upload_tests_default": bool(tests),
                 "upload_solution_default": bool(solution_path),
-                "status": "Đã chuẩn bị" if bool(statement_text) or bool(tests) or bool(solution_path) else "Chưa có phần nào để up",
-                "note": prepare_note,
+                "status": tag_warning or base_status,
+                "note": tag_warning or prepare_note,
             }
         ]
         prepared_single_uploads[prepare_id] = {
@@ -3329,7 +3345,9 @@ def upload_one_problem(
     def refresh_hncode_metadata() -> None:
         if target != "hncode":
             return
-        tags_text = row.get("tags") or settings.get("tags")
+        tags_text, tag_warning = normalize_tags_for_target(row.get("tags") or settings.get("tags"), target)
+        if tag_warning:
+            log_lines.append(f"{bundle.code}: {tag_warning}")
         type_ids = type_ids_from_tags(tags_text, target) or [target_info["type_id"]]
         update_hncode_problem_metadata(
             session,
@@ -3377,7 +3395,10 @@ def upload_one_problem(
         return "✓ Ghi đè " + " và ".join(actions) if actions else "✓ Không có phần ghi đè"
     actions: list[str] = []
     if row.get("upload_statement"):
-        type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
+        tags_text, tag_warning = normalize_tags_for_target(row.get("tags") or settings.get("tags"), target)
+        if tag_warning:
+            log_lines.append(f"{bundle.code}: {tag_warning}")
+        type_ids = type_ids_from_tags(tags_text, target) or [target_info["type_id"]]
         type_id = type_ids[0] if type_ids else target_info["type_id"]
         info = ProblemInfo(
             code=bundle.code,
@@ -3613,10 +3634,21 @@ def type_ids_from_tags(value: object, target: str) -> list[str]:
         tag = re.sub(r"\s+", " ", raw_tag.strip().lower())
         if not tag:
             continue
-        type_id = HNCODE_TYPE_ALIASES.get(tag)
+        type_id = HNCODE_TYPE_ALIASES.get(tag) or HNCODE_TYPE_ALIASES.get(normalized_lookup_text(tag))
         if type_id and type_id not in ids:
             ids.append(type_id)
     return ids
+
+
+def normalize_tags_for_target(value: object, target: str) -> tuple[str, str]:
+    text = str(value or "").strip()
+    if target != "hncode":
+        return text, ""
+    if not text:
+        return HNCODE_UNCATEGORIZED_LABEL, f"⚠ Tags trống, dùng mặc định {HNCODE_UNCATEGORIZED_LABEL} - {HNCODE_UNCATEGORIZED_TYPE_ID}."
+    if type_ids_from_tags(text, "hncode"):
+        return text, ""
+    return HNCODE_UNCATEGORIZED_LABEL, f"⚠ Tags `{text}` chưa nhận diện được, dùng mặc định {HNCODE_UNCATEGORIZED_LABEL} - {HNCODE_UNCATEGORIZED_TYPE_ID}."
 
 
 def problem_url(base_url: str, code: str) -> str:

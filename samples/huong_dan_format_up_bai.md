@@ -7,7 +7,7 @@ Trên giao diện, điền trực tiếp các ô:
 - `Mã bài`: ví dụ `tonghaiso`.
 - `Tên bài toán`: ví dụ `Tổng hai số`.
 - `Điểm`: điểm/rating của bài, ví dụ `800` hoặc `100`.
-- `Dạng bài tập / Tags`: ví dụ `nhập xuất, toán học`.
+- `Dạng bài tập / Tags`: ví dụ `nhập xuất, toán học`. Nếu để trống hoặc tag không nhận diện được trên HNCode, tool sẽ báo cảnh báo và dùng mặc định `Chưa phân loại - 591`.
 - `Giới hạn thời gian`: ví dụ `1.0`.
 - `Giới hạn bộ nhớ`: ví dụ `1024M` hoặc `1048576`.
 - `Đề bài`: dán Markdown hoặc chọn file `.md`.
@@ -57,6 +57,8 @@ Tổng hai số | tonghaiso | 800 | nhập xuất, toán học
 ```
 
 Sau dòng đầu là nội dung đề bài. Nếu bật tùy chọn `Bỏ dòng đầu tiên trong file đề bài`, dòng metadata này chỉ dùng để lấy tên/mã/điểm/tags và không đưa vào nội dung đề trên web.
+
+Nếu thiếu `Điểm` hoặc `Tags`, tool dùng giá trị mặc định trên giao diện. Với HNCode, nếu `Tags` trống hoặc không khớp tag/Type ID mà tool nhận diện được, tool dùng `Chưa phân loại - 591` và ghi cảnh báo trong bảng chuẩn bị dữ liệu.
 
 ## 4. Format đề bài HNCode
 
@@ -147,4 +149,3 @@ test02.inp
 test02.out
 ...
 ```
-

@@ -42,7 +42,7 @@ function renderUploadTable(rows) {
       <td><input type="checkbox" class="row-solution" ${row.upload_solution_default ? "checked" : ""}></td>
       <td><div class="test-meta">${escapeHtml(row.test_file)}</div></td>
       <td>${row.test_count}</td>
-      <td class="row-status">Chưa up</td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "Chưa up")}</td>
     </tr>`).join("")}</tbody></table>`;
 }
 function collectUploadRows() {

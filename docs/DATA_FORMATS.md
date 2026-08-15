@@ -31,6 +31,8 @@ Tên bài | Mã bài | Điểm | Tags
 
 Nếu dùng `gentest_<ma_bai>.py`, file này phải tự chạy, tự sinh đủ `.inp/.out`, tự nén thành `<ma_bai>.zip`, không chờ nhập bàn phím và không phụ thuộc đường dẫn tuyệt đối trên máy cá nhân.
 
+Với HNCode, nếu `Tags` trống hoặc không nhận diện được, tool báo cảnh báo và dùng mặc định `Chưa phân loại - 591`.
+
 Tài liệu này mô tả các định dạng input/output mà tool đang dùng.
 
 ## Bộ bài để Up nhiều bài

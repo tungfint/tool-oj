@@ -5,7 +5,7 @@ function newProgressId() {
 function statusClass(text) {
   const value = String(text || "");
   if (value.startsWith("✓") || value.includes("Thành công") || value.includes("Đã đọc")) return "ok";
-  if (value.includes("đã tồn tại") || value.includes("Đã tồn tại") || value.includes("đã có") || value.includes("Đã có")) return "warn";
+  if (value.includes("⚠") || value.includes("đã tồn tại") || value.includes("Đã tồn tại") || value.includes("đã có") || value.includes("Đã có")) return "warn";
   if (value.startsWith("✗") || value.includes("Lỗi")) return "err";
   return "";
 }
