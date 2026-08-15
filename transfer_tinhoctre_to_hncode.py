@@ -499,6 +499,33 @@ def case_form_indices(page: str) -> list[int]:
     return sorted(ids)
 
 
+def infer_hncode_fileio_names(statement: str) -> tuple[str, str]:
+    text = str(statement or "")
+    matches = re.findall(r"\b[A-Za-z0-9_./-]+\.(?:INP|OUT)\b", text, flags=re.I)
+    input_name = ""
+    output_name = ""
+    for raw_name in matches:
+        name = raw_name.strip("`'\"“”‘’.,;:()[]{}")
+        if name.lower().endswith(".inp") and not input_name:
+            input_name = name
+        elif name.lower().endswith(".out") and not output_name:
+            output_name = name
+    if input_name and not output_name:
+        output_name = re.sub(r"\.inp$", ".OUT", input_name, flags=re.I)
+    return input_name, output_name
+
+
+def fetch_hncode_statement(dest: requests.Session, base_url: str, problem_code: str) -> str:
+    edit_url = urljoin(base_url, f"/problem/{problem_code}/edit")
+    try:
+        edit = request_with_retry(dest, "GET", edit_url, action=f"đọc đề bài HNCode {problem_code}")
+    except Exception:
+        return ""
+    if not edit.ok or "/login/" in edit.url:
+        return ""
+    return textarea_value(edit.text, "description")
+
+
 def signature_grader_form_indices(page: str) -> list[int]:
     ids = {int(x) for x in re.findall(r'name=[\"\']signature-graders-(\d+)-id[\"\']', page)}
     ids.update(int(x) for x in re.findall(r'name=[\"\']signature-graders-(\d+)-language[\"\']', page))
@@ -550,14 +577,8 @@ def test_data_base_fields(
     return data
 
 
-def clear_hncode_existing_tests(dest: requests.Session, test_url: str, page_text: str) -> str:
-    indices = case_form_indices(page_text)
-    if not indices:
-        return page_text
-    token = csrf_token(page_text)
-    initial = input_value(page_text, "cases-INITIAL_FORMS", str(len(indices)))
-    data = test_data_base_fields(page_text, token, cases_total=len(indices), cases_initial=initial)
-    for idx in indices:
+def append_existing_hncode_cases(page_text: str, data: list[tuple[str, str]], *, delete: bool = False) -> None:
+    for idx in case_form_indices(page_text):
         data.extend(
             [
                 (f"cases-{idx}-id", input_value(page_text, f"cases-{idx}-id", "")),
@@ -568,11 +589,36 @@ def clear_hncode_existing_tests(dest: requests.Session, test_url: str, page_text
                 (f"cases-{idx}-points", input_value(page_text, f"cases-{idx}-points", "1")),
                 (f"cases-{idx}-batch_scoring", selected_option(page_text, f"cases-{idx}-batch_scoring", "sum") or "sum"),
                 (f"cases-{idx}-generator_args", input_value(page_text, f"cases-{idx}-generator_args", "")),
-                (f"cases-{idx}-DELETE", "on"),
             ]
         )
         if checkbox_checked(page_text, f"cases-{idx}-is_pretest"):
             data.append((f"cases-{idx}-is_pretest", "on"))
+        if delete:
+            data.append((f"cases-{idx}-DELETE", "on"))
+
+
+def clear_hncode_existing_tests(
+    dest: requests.Session,
+    test_url: str,
+    page_text: str,
+    *,
+    fileio_input: str = "",
+    fileio_output: str = "",
+) -> str:
+    indices = case_form_indices(page_text)
+    if not indices:
+        return page_text
+    token = csrf_token(page_text)
+    initial = input_value(page_text, "cases-INITIAL_FORMS", str(len(indices)))
+    data = test_data_base_fields(
+        page_text,
+        token,
+        cases_total=len(indices),
+        cases_initial=initial,
+        fileio_input=fileio_input,
+        fileio_output=fileio_output,
+    )
+    append_existing_hncode_cases(page_text, data, delete=True)
     result = request_with_retry(
         dest,
         "POST",
@@ -589,6 +635,43 @@ def clear_hncode_existing_tests(dest: requests.Session, test_url: str, page_text
     refreshed = request_with_retry(dest, "GET", test_url, action="tải lại form test_data sau khi xóa", timeout=30)
     require(refreshed.ok, f"HNCode test_data reload after clear failed: HTTP {refreshed.status_code}")
     return refreshed.text
+
+
+def update_hncode_fileio_metadata(
+    dest: requests.Session,
+    base_url: str,
+    problem_code: str,
+    fileio_input: str,
+    fileio_output: str,
+) -> None:
+    if not (fileio_input or fileio_output):
+        return
+    test_url = urljoin(base_url, f"/problem/{problem_code}/test_data")
+    page = request_with_retry(dest, "GET", test_url, action=f"mở test_data {problem_code}")
+    require(page.ok, f"HNCode test_data page failed: HTTP {page.status_code}")
+    indices = case_form_indices(page.text)
+    token = csrf_token(page.text)
+    data = test_data_base_fields(
+        page.text,
+        token,
+        cases_total=len(indices),
+        cases_initial=input_value(page.text, "cases-INITIAL_FORMS", str(len(indices))),
+        fileio_input=fileio_input,
+        fileio_output=fileio_output,
+    )
+    append_existing_hncode_cases(page.text, data, delete=False)
+    result = request_with_retry(
+        dest,
+        "POST",
+        test_url,
+        action="lưu tên file input/output HNCode",
+        data=data,
+        headers={"Referer": test_url},
+        allow_redirects=True,
+    )
+    require(result.ok, f"HNCode file I/O metadata apply failed: HTTP {result.status_code}")
+    errors = form_errors(result.text)
+    require(not errors, "HNCode file I/O metadata form errors: " + "; ".join(errors))
 
 
 def upload_hncode_zip_with_retry(
@@ -641,9 +724,19 @@ def upload_hncode_tests(
 ) -> str:
     zip_path, cases = normalize_hncode_test_zip(zip_path, cases)
     test_url = urljoin(base_url, f"/problem/{problem_code}/test_data")
+    if not (fileio_input and fileio_output):
+        inferred_input, inferred_output = infer_hncode_fileio_names(fetch_hncode_statement(dest, base_url, problem_code))
+        fileio_input = fileio_input or inferred_input
+        fileio_output = fileio_output or inferred_output
     page = request_with_retry(dest, "GET", test_url, action=f"mở test_data {problem_code}")
     require(page.ok, f"HNCode test_data page failed: HTTP {page.status_code}")
-    page_text = clear_hncode_existing_tests(dest, test_url, page.text)
+    page_text = clear_hncode_existing_tests(
+        dest,
+        test_url,
+        page.text,
+        fileio_input=fileio_input,
+        fileio_output=fileio_output,
+    )
     token = csrf_token(page_text)
 
     endpoint = urljoin(base_url, f"/problem/{problem_code}/test_data/upload")

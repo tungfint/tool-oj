@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from services import problem_upload
-from transfer_tinhoctre_to_hncode import test_data_base_fields
+from transfer_tinhoctre_to_hncode import append_existing_hncode_cases, test_data_base_fields
 from upload_tinhoctre_batch import GeneratedTests
 
 
@@ -20,6 +20,11 @@ class FileIoUploadTests(unittest.TestCase):
         statement = "Dữ liệu nhập từ bàn phím, kết quả in ra màn hình."
 
         self.assertEqual(problem_upload.infer_fileio_names(statement), ("", ""))
+
+    def test_infer_fileio_names_defaults_output_from_input(self):
+        statement = "Read data from DIV11.INP."
+
+        self.assertEqual(problem_upload.infer_fileio_names(statement), ("DIV11.INP", "DIV11.OUT"))
 
     def test_test_data_base_fields_accepts_fileio_override(self):
         page = """
@@ -44,6 +49,26 @@ class FileIoUploadTests(unittest.TestCase):
 
         self.assertIn(("problem-data-fileio_input", "DIVNUM.INP"), data)
         self.assertIn(("problem-data-fileio_output", "DIVNUM.OUT"), data)
+
+    def test_append_existing_cases_preserves_current_formset(self):
+        page = """
+        <input name="cases-0-id" value="42">
+        <input name="cases-0-order" value="7">
+        <select name="cases-0-type"><option value="C" selected>Batch</option></select>
+        <select name="cases-0-input_file"><option value="01.inp" selected>01.inp</option></select>
+        <select name="cases-0-output_file"><option value="01.out" selected>01.out</option></select>
+        <input name="cases-0-points" value="5">
+        <select name="cases-0-batch_scoring"><option value="sum" selected>sum</option></select>
+        <input name="cases-0-generator_args" value="">
+        """
+        data = []
+
+        append_existing_hncode_cases(page, data)
+
+        self.assertIn(("cases-0-id", "42"), data)
+        self.assertIn(("cases-0-input_file", "01.inp"), data)
+        self.assertIn(("cases-0-output_file", "01.out"), data)
+        self.assertNotIn(("cases-0-DELETE", "on"), data)
 
     def test_upload_tests_for_hncode_passes_fileio_names(self):
         tests = GeneratedTests(Path("tests.zip"), ["01.inp"], ["01.out"])

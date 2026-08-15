@@ -73,6 +73,8 @@ def infer_fileio_names(statement: str) -> tuple[str, str]:
             input_name = clean
         elif clean.lower().endswith(".out") and not output_name:
             output_name = clean
+    if input_name and not output_name:
+        output_name = re.sub(r"\.inp$", ".OUT", input_name, flags=re.I)
     return input_name, output_name
 
 
