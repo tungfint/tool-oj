@@ -526,6 +526,11 @@
             <div><label>URL contest HNCode</label><input id="gradingContestUrl" type="text" value="https://hncode.edu.vn/contest/_nt26tst"></div>
             <div><label>Mật khẩu contest nếu có</label><input id="gradingContestPassword" type="password" placeholder="Nhập nếu contest có mật khẩu"></div>
           </div>
+          <details class="guide">
+            <summary><b>Mã bài tương ứng với tên file code</b></summary>
+            <p>Mỗi dòng có dạng <code>tên_file | mã_bài</code>. Ví dụ: <code>bai1 | tht26_bai1</code>. Nếu để trống, tool tự suy từ danh sách bài trong contest.</p>
+            <textarea id="gradingProblemFileMapping" rows="6" placeholder="bai1 | ma_bai_1&#10;bai2 | ma_bai_2"></textarea>
+          </details>
           <div class="grid-2">
             <div>
               <label>Chế độ xử lý</label>

@@ -2201,8 +2201,8 @@ def map_grading_problem_code(stem: str, contest_problems: list[dict]) -> str:
     return grading_service.map_problem_code(stem, contest_problems)
 
 
-def collect_hncode_grading_files(source_root: Path, accounts: list[dict], contest_problems: list[dict]) -> tuple[list[dict], list[str]]:
-    return grading_service.collect_submission_files(source_root, accounts, contest_problems)
+def collect_hncode_grading_files(source_root: Path, accounts: list[dict], contest_problems: list[dict], problem_file_map: dict[str, str] | None = None) -> tuple[list[dict], list[str]]:
+    return grading_service.collect_submission_files(source_root, accounts, contest_problems, problem_file_map)
 
 
 def join_hncode_contest_if_needed(session: requests.Session, contest_key: str, contest_password: str) -> str:
@@ -2411,16 +2411,19 @@ def api_prepare_hncode_grading():
         progress_update(progress_id, phase="prepare-hncode-grading", done=0, total=3, rows=[], message="Đang đọc contest HNCode")
         admin_session = login_hncode(TARGETS["hncode"]["base_url"], "hncode", "HNCodemaidinh89()")
         contest_problems = parse_hncode_contest_problems(admin_session, contest_key)
+        mapping_text = request.form.get("problem_file_mapping", "")
+        default_mapping_text = grading_service.build_default_problem_file_mapping(contest_problems)
+        problem_file_map = grading_service.parse_problem_file_mapping(mapping_text or default_mapping_text)
         accounts = read_hncode_grading_accounts(account_csv)
         safe_extract_zip(source_zip, extract_root)
         source_root = grading_source_root(extract_root)
-        rows, warnings = collect_hncode_grading_files(source_root, accounts, contest_problems)
-        prepared_hncode_grading[prepare_id] = {"root": root, "source_root": source_root, "contest_key": contest_key, "contest_problems": contest_problems, "accounts": accounts, "rows": rows, "output": ""}
-        log_lines = [f"Contest: {contest_key}", f"Đã đọc {len(contest_problems)} bài: " + ", ".join(problem["code"] for problem in contest_problems), f"Đã đọc {len(accounts)} tài khoản.", f"Đã tìm thấy {len(rows)} file bài làm."]
+        rows, warnings = collect_hncode_grading_files(source_root, accounts, contest_problems, problem_file_map)
+        prepared_hncode_grading[prepare_id] = {"root": root, "source_root": source_root, "contest_key": contest_key, "contest_problems": contest_problems, "accounts": accounts, "rows": rows, "output": "", "problem_file_mapping": mapping_text or default_mapping_text}
+        log_lines = [f"Contest: {contest_key}", f"Đã đọc {len(contest_problems)} bài: " + ", ".join(problem["code"] for problem in contest_problems), f"Đã đọc {len(accounts)} tài khoản.", f"Mapping tên file/mã bài: {len(problem_file_map)} dòng.", f"Đã tìm thấy {len(rows)} file bài làm."]
         log_lines.extend(f"- {warning}" for warning in warnings)
         progress_update(progress_id, phase="prepare-hncode-grading", done=3, total=3, rows=rows, message="Đã chuẩn bị dữ liệu chấm")
         progress_finish(progress_id, True, "Đã chuẩn bị dữ liệu chấm")
-        return api_response.api_success(message="Đã chuẩn bị dữ liệu chấm HNCode", rows=rows, log="\n".join(log_lines), prepare_id=prepare_id, problems=contest_problems, accounts=accounts, meta={"contest_key": contest_key})
+        return api_response.api_success(message="Đã chuẩn bị dữ liệu chấm HNCode", rows=rows, log="\n".join(log_lines), prepare_id=prepare_id, problems=contest_problems, accounts=accounts, meta={"contest_key": contest_key, "problem_file_mapping": mapping_text or default_mapping_text})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
         return api_response.api_error(str(exc))

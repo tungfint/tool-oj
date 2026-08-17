@@ -496,12 +496,16 @@ document.getElementById("prepareGrading").onclick = async () => {
     form.append("zip_file", selectedGradingZipFile);
     form.append("csv_file", selectedGradingCsvFile);
     form.append("contest_url", document.getElementById("gradingContestUrl").value.trim());
+    form.append("problem_file_mapping", document.getElementById("gradingProblemFileMapping").value);
     form.append("progress_id", progressId);
     const res = await fetch("/api/prepare-hncode-grading", {method:"POST", body:form});
     const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error || "Không chuẩn bị được dữ liệu chấm.");
     stopProgressPolling(progressId);
     preparedGrading = data.prepare_id;
+    if (!document.getElementById("gradingProblemFileMapping").value.trim() && data.meta && data.meta.problem_file_mapping) {
+      document.getElementById("gradingProblemFileMapping").value = data.meta.problem_file_mapping;
+    }
     renderGradingTable(data.rows || []);
     document.getElementById("confirmGrading").disabled = false;
     log(data.log || "Đã chuẩn bị dữ liệu chấm.");

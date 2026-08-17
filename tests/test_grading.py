@@ -53,6 +53,18 @@ class GradingServiceTests(unittest.TestCase):
         self.assertEqual(grading_service.map_problem_code("ranka", problems), "rank_a")
         self.assertEqual(grading_service.map_problem_code("unknown", problems), "unknown")
 
+    def test_parse_problem_file_mapping(self):
+        mapping = grading_service.parse_problem_file_mapping(
+            """
+            bai1.cpp | tht26_bai1
+            Bai 2 = tht26_bai2
+            # comment
+            """
+        )
+
+        self.assertEqual(mapping["bai1"], "tht26_bai1")
+        self.assertEqual(mapping["bai2"], "tht26_bai2")
+
     def test_collect_submission_files_builds_prepare_rows(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -88,6 +100,20 @@ class GradingServiceTests(unittest.TestCase):
         self.assertFalse(by_path["Khong Co TK/bai1.cpp"]["selected"])
         self.assertEqual(by_path["Khong Co TK/bai1.cpp"]["status"], "Thiếu tài khoản trong CSV")
         self.assertTrue(any("Không tìm thấy tài khoản" in warning for warning in warnings))
+
+    def test_collect_submission_files_uses_manual_problem_file_mapping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            student = root / "Nguyen Van A"
+            student.mkdir()
+            (student / "baiA.cpp").write_text("int main(){return 0;}", encoding="utf-8")
+            accounts = [{"index": 1, "username": "hs_a", "password": "p", "name": "Nguyễn Văn A"}]
+            problems = [{"code": "real_code", "title": "Bài thật", "points": 100, "order": 1}]
+
+            rows, _warnings = grading_service.collect_submission_files(root, accounts, problems, {"baia": "real_code"})
+
+        self.assertEqual(rows[0]["problem"], "real_code")
+        self.assertTrue(rows[0]["selected"])
 
     def test_merge_requested_rows(self):
         saved = [

@@ -134,10 +134,45 @@ def map_problem_code(stem: str, contest_problems: list[dict]) -> str:
     return raw
 
 
-def collect_submission_files(source_root_path: Path, accounts: list[dict], contest_problems: list[dict]) -> tuple[list[dict], list[str]]:
+def normalize_file_stem(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_]+", "", Path(str(value or "").strip()).stem).lower()
+
+
+def parse_problem_file_mapping(text: str) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "|" in line:
+            left, right = line.split("|", 1)
+        elif "=" in line:
+            left, right = line.split("=", 1)
+        elif "," in line:
+            left, right = line.split(",", 1)
+        else:
+            continue
+        key = normalize_file_stem(left)
+        value = re.sub(r"[^A-Za-z0-9_]+", "", right.strip()).lower()
+        if key and value:
+            mapping[key] = value
+    return mapping
+
+
+def build_default_problem_file_mapping(contest_problems: list[dict]) -> str:
+    lines = []
+    for problem in sorted(contest_problems, key=lambda item: item.get("order", 0)):
+        code = problem.get("code", "")
+        if code:
+            lines.append(f"{code} | {code}")
+    return "\n".join(lines)
+
+
+def collect_submission_files(source_root_path: Path, accounts: list[dict], contest_problems: list[dict], problem_file_map: dict[str, str] | None = None) -> tuple[list[dict], list[str]]:
     account_by_key = {normalize_key(account["name"]): account for account in accounts}
     account_by_folder_key = {account_folder_key(account): account for account in accounts if account_folder_key(account)}
     problem_by_code = {problem["code"]: problem for problem in contest_problems}
+    problem_file_map = problem_file_map or {}
     allowed_suffixes = {".cpp", ".cc", ".cxx", ".c", ".py", ".pas"}
     rows: list[dict] = []
     warnings: list[str] = []
@@ -161,7 +196,7 @@ def collect_submission_files(source_root_path: Path, accounts: list[dict], conte
             warnings.append(f"Thư mục {student_dir.name} không có file code.")
             continue
         for path in files:
-            code = map_problem_code(path.stem, contest_problems)
+            code = problem_file_map.get(normalize_file_stem(path.stem)) or map_problem_code(path.stem, contest_problems)
             problem = problem_by_code.get(code)
             rows.append(build_prepare_row(path, source_root_path, account, code, problem))
     if not rows:

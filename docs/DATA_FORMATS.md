@@ -236,6 +236,16 @@ Khi xác nhận chấm HNCode có hai chế độ:
 
 Tool có thể nộp song song theo nhiều tài khoản. Mỗi tài khoản dùng một session riêng; các bài của cùng một tài khoản được nộp tuần tự.
 
+Phần Chấm bài HNCode có khối ẩn/hiện `Mã bài tương ứng với tên file code`. Có thể sửa mapping trước khi chuẩn bị:
+
+```text
+tên_file | mã_bài
+bai1 | tht26_bai1
+bai2.cpp | tht26_bai2
+```
+
+Tool so theo stem của file, nên `bai2.cpp` và `bai2` tương đương.
+
 Ví dụ mapping:
 
 ```text
