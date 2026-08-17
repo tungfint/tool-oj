@@ -28,6 +28,7 @@ from urllib.parse import quote, urljoin
 from urllib.request import urlopen
 
 from flask import Flask, Response, jsonify, render_template, request, send_file
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from services import ai_assistant as ai_service
 from services import api_response
@@ -311,6 +312,7 @@ Ghi chú:
 """
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 PROGRESS_DIR = RUNTIME / "progress"
 prepared_uploads: dict[str, dict] = {}
 prepared_single_uploads: dict[str, dict] = {}

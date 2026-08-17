@@ -1,3 +1,23 @@
+function appBasePath() {
+  return (window.APP_CONFIG && window.APP_CONFIG.basePath || "").replace(/\/$/, "");
+}
+function appPath(url) {
+  if (typeof url !== "string") return url;
+  if (!url.startsWith("/api/") && !url.startsWith("/samples/")) return url;
+  return appBasePath() + url;
+}
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init) => {
+  if (typeof input === "string") return nativeFetch(appPath(input), init);
+  return nativeFetch(input, init);
+};
+document.addEventListener("click", event => {
+  const anchor = event.target.closest && event.target.closest("a[href]");
+  if (!anchor) return;
+  const href = anchor.getAttribute("href") || "";
+  const rewritten = appPath(href);
+  if (rewritten !== href) anchor.setAttribute("href", rewritten);
+}, true);
 async function postJson(url, payload) {
   const res = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
   const data = await parseJsonResponse(res);

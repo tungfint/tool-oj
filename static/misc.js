@@ -564,11 +564,12 @@ document.getElementById("confirmGrading").onclick = async () => {
     stopProgressPolling(progressId);
     applyGradingStatuses(data.rows || []);
     sortGradingErrorRowsTop();
-    const link = data.download_url ? `\nTải bảng điểm: ${location.origin}${data.download_url}` : "";
+    const downloadUrl = data.download_url ? appPath(data.download_url) : "";
+    const link = downloadUrl ? `\nTải bảng điểm: ${location.origin}${downloadUrl}` : "";
     log((data.log || (submitOnly ? "Đã nộp xong." : "Đã chấm xong.")) + link);
     if (data.download_url) {
       const a = document.getElementById("downloadGradingResult");
-      a.href = data.download_url;
+      a.href = downloadUrl;
       a.classList.remove("hidden");
     }
     status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");

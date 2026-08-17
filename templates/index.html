@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tool HNCode</title>
-  <link rel="icon" type="image/svg+xml" href="/static/favicon-HNCode.svg">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon-HNCode.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
@@ -607,7 +607,8 @@
 <script>
 window.APP_CONFIG = {
   targets: {{ targets_json | safe }},
-  quizFormatGuide: {{ quiz_format_guide_json | safe }}
+  quizFormatGuide: {{ quiz_format_guide_json | safe }},
+  basePath: {{ request.script_root | tojson }}
 };
 </script>
 <script src="{{ url_for('static', filename='api.js') }}"></script>
