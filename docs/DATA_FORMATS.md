@@ -219,7 +219,22 @@ File CSV tài khoản nộp bài nên có các cột:
 name,username,password
 ```
 
-Tên cột có thể linh hoạt hơn trong code, nhưng giữ format trên là dễ bảo trì nhất.
+Tool cũng nhận các tên cột tiếng Việt phổ biến:
+
+```text
+Họ tên,Tên đăng nhập,Mật khẩu
+```
+
+Hoặc file chỉ có `username,password`. Khi thiếu `name`, nếu username có dạng `chamthi_<folderName>` thì tool tự lấy `folderName` làm tên hiển thị.
+
+Khi chuẩn bị dữ liệu chấm, bảng sẽ hiện folder bài làm và tài khoản chấm tương ứng. Có thể sửa ô tài khoản trước khi bấm xác nhận chấm.
+
+Ví dụ mapping:
+
+```text
+Folder: NguyenVanA
+Tài khoản gợi ý: chamthi_NguyenVanA
+```
 
 ## Zip bài làm học sinh
 

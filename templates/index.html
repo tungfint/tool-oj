@@ -527,8 +527,17 @@
             <div><label>Mật khẩu contest nếu có</label><input id="gradingContestPassword" type="password" placeholder="Nhập nếu contest có mật khẩu"></div>
           </div>
           <div class="grid-2">
-            <div><label>Thời gian chờ mỗi submission</label><input id="gradingPollSeconds" type="text" value="Đến khi chấm xong" readonly></div>
-            <div><label>Quy đổi điểm</label><input type="text" value="% chấm x điểm contest" readonly></div>
+            <div>
+              <label>Thời gian chờ mỗi submission</label>
+              <select id="gradingPollSeconds">
+                <option value="until_done" selected>Đến khi chấm xong</option>
+                <option value="0">Không chờ</option>
+                <option value="30">Tối đa 30 giây</option>
+                <option value="60">Tối đa 60 giây</option>
+                <option value="120">Tối đa 120 giây</option>
+                <option value="300">Tối đa 5 phút</option>
+              </select>
+            </div>
           </div>
           <div class="actions">
             <button class="action primary" type="button" id="prepareGrading">Chuẩn bị dữ liệu</button>

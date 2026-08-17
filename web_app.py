@@ -2284,7 +2284,8 @@ def parse_hncode_submission_result(page: str) -> dict:
     return {"done": not pending, "percent": None, "verdict": verdict or "Đang chấm"}
 
 
-def poll_hncode_submission(session: requests.Session, submission_url: str) -> dict:
+def poll_hncode_submission(session: requests.Session, submission_url: str, wait_seconds: int | None = None) -> dict:
+    started = time.time()
     while True:
         page = session.get(submission_url, timeout=30)
         if not page.ok:
@@ -2292,7 +2293,22 @@ def poll_hncode_submission(session: requests.Session, submission_url: str) -> di
         result = parse_hncode_submission_result(page.text)
         if result.get("done") and result.get("percent") is not None:
             return result
+        if wait_seconds is not None and time.time() - started >= wait_seconds:
+            result["verdict"] = f"Hết thời gian chờ {wait_seconds}s; submission vẫn đang chấm"
+            return result
         time.sleep(2)
+
+
+def grading_wait_seconds(value: object) -> int | None:
+    text = str(value or "").strip().lower()
+    if text in {"", "until_done", "done", "wait_done", "-1"}:
+        return None
+    if text in {"none", "no_wait", "0"}:
+        return 0
+    try:
+        return max(0, int(float(text)))
+    except ValueError:
+        return None
 
 
 def html_cell_text(fragment: str) -> str:
@@ -2392,6 +2408,7 @@ def api_confirm_hncode_grading():
             raise RuntimeError("Chưa chọn bài nào để nộp chấm.")
         contest_password = payload.get("contest_password", "")
         account_by_username = {account["username"]: account for account in state["accounts"]}
+        wait_seconds = grading_wait_seconds(payload.get("wait_seconds"))
         sessions: dict[str, requests.Session] = {}
         done = 0
         log_lines = [f"Chấm bài HNCode contest {state['contest_key']}: {len(selected_rows)} file được chọn."]
@@ -2401,16 +2418,21 @@ def api_confirm_hncode_grading():
                 row["status"] = "Bỏ qua"
                 continue
             try:
-                account = account_by_username[row["username"]]
-                session = sessions.get(row["username"])
+                username = str(row.get("username") or "").strip()
+                account = account_by_username.get(username)
+                if not account:
+                    raise RuntimeError(f"Tài khoản {username or '(trống)'} không có trong file CSV.")
+                if not account.get("password"):
+                    raise RuntimeError(f"Tài khoản {username} thiếu mật khẩu trong file CSV.")
+                session = sessions.get(username)
                 if session is None:
                     session = hncode_student_session(account["username"], account["password"])
                     log_lines.append(f"{account['name']} ({account['username']}): {join_hncode_contest_if_needed(session, state['contest_key'], contest_password)}.")
-                    sessions[row["username"]] = session
+                    sessions[username] = session
                 progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row['student']} - {row['problem']}: đang nộp")
                 row["status"] = "Đang nộp"
                 row["submission_url"] = submit_hncode_grading_file(session, row["problem"], Path(row["local_path"]))
-                result = poll_hncode_submission(session, row["submission_url"])
+                result = poll_hncode_submission(session, row["submission_url"], wait_seconds=wait_seconds)
                 percent = result.get("percent")
                 row["percent"] = "" if percent is None else round(float(percent), 2)
                 row["score"] = "" if percent is None else round(float(row.get("contest_points") or 0) * float(percent) / 100.0, 2)

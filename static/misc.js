@@ -418,11 +418,12 @@ function renderGradingTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#gradingSummary', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#gradingSummary', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Học sinh</th><th>Username</th><th>Mã bài</th><th>Tên bài</th><th>Điểm bài</th><th>File</th><th>%</th><th>Điểm</th><th>Trạng thái</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Folder</th><th>Học sinh</th><th>Tài khoản chấm</th><th>Mã bài</th><th>Tên bài</th><th>Điểm bài</th><th>File</th><th>%</th><th>Điểm</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_key)}">
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""}></td>
+      <td>${escapeHtml(row.folder || "")}</td>
       <td>${escapeHtml(row.student || "")}</td>
-      <td>${escapeHtml(row.username || "")}</td>
+      <td><input class="grading-username compact-input" type="text" value="${escapeHtml(row.username || "")}" title="Tài khoản chấm tương ứng folder này"></td>
       <td>${escapeHtml(row.problem || "")}</td>
       <td>${escapeHtml(row.problem_title || "")}</td>
       <td>${escapeHtml(row.contest_points || "")}</td>
@@ -436,6 +437,7 @@ function collectGradingRows() {
   return [...document.querySelectorAll("#gradingSummary tbody tr")].map(tr => ({
     original_key: tr.dataset.original,
     selected: tr.querySelector(".row-selected").checked,
+    username: tr.querySelector(".grading-username")?.value.trim() || "",
   }));
 }
 function applyGradingStatuses(rows) {
@@ -493,6 +495,7 @@ document.getElementById("confirmGrading").onclick = async () => {
       prepare_id: preparedGrading,
       rows: collectGradingRows(),
       contest_password: document.getElementById("gradingContestPassword").value,
+      wait_seconds: document.getElementById("gradingPollSeconds").value,
       progress_id: progressId,
     });
     stopProgressPolling(progressId);

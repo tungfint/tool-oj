@@ -14,29 +14,104 @@ from typing import Callable
 DecodeText = Callable[[bytes], str]
 
 
+ACCOUNT_COLUMN_ALIASES = {
+    "username": {
+        "username",
+        "user",
+        "account",
+        "tai khoan",
+        "tai_khoan",
+        "ten dang nhap",
+        "ten_dang_nhap",
+        "login",
+    },
+    "password": {
+        "password",
+        "pass",
+        "mat khau",
+        "mat_khau",
+        "mk",
+    },
+    "name": {
+        "name",
+        "fullname",
+        "full name",
+        "ho ten",
+        "ho_ten",
+        "ten",
+        "hoc sinh",
+        "hoc_sinh",
+        "student",
+    },
+}
+
+
+def normalize_header(value: str) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.replace("đ", "d").replace("Đ", "D")
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def account_fieldnames(fieldnames: list[str] | None) -> dict[str, str]:
+    normalized = {normalize_header(name): name for name in fieldnames or []}
+    result: dict[str, str] = {}
+    for target, aliases in ACCOUNT_COLUMN_ALIASES.items():
+        for alias in aliases:
+            key = normalize_header(alias)
+            if key in normalized:
+                result[target] = normalized[key]
+                break
+    return result
+
+
 def read_accounts(csv_path: Path, decode_text: DecodeText | None = None) -> list[dict]:
     raw = csv_path.read_bytes()
     text = decode_text(raw) if decode_text else raw.decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(text.splitlines())
-    missing = {"username", "password", "name"} - set(reader.fieldnames or [])
+    try:
+        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t")
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(text.splitlines(), dialect=dialect)
+    fields = account_fieldnames(reader.fieldnames)
+    missing = {"username", "password"} - set(fields)
     if missing:
-        raise RuntimeError("File tài khoản thiếu cột: " + ", ".join(sorted(missing)))
+        raise RuntimeError(
+            "File tài khoản thiếu cột: "
+            + ", ".join(sorted(missing))
+            + ". Tool nhận các cột như username/password/name hoặc Tên đăng nhập/Mật khẩu/Họ tên."
+        )
     accounts = []
     for index, row in enumerate(reader, 1):
-        username = (row.get("username") or "").strip()
-        password = (row.get("password") or "").strip()
-        name = (row.get("name") or "").strip()
-        if username and password and name:
+        username = (row.get(fields["username"]) or "").strip()
+        password = (row.get(fields["password"]) or "").strip()
+        name = (row.get(fields.get("name", "")) or "").strip() if fields.get("name") else ""
+        if username and password:
+            if not name:
+                name = folder_name_from_account(username)
             accounts.append({"index": index, "username": username, "password": password, "name": name})
     if not accounts:
-        raise RuntimeError("Không đọc được tài khoản hợp lệ nào trong file CSV.")
+        raise RuntimeError("Không đọc được tài khoản hợp lệ nào trong file CSV. Mỗi dòng cần có ít nhất username và password.")
     return accounts
 
 
 def normalize_key(value: str) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.replace("đ", "d").replace("Đ", "D")
     return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+def folder_name_from_account(username: str) -> str:
+    text = str(username or "").strip()
+    for prefix in ("chamthi_", "chamthi-", "chamthi"):
+        if text.lower().startswith(prefix):
+            return text[len(prefix):].strip("_- ") or text
+    return text
+
+
+def account_folder_key(account: dict) -> str:
+    return normalize_key(folder_name_from_account(str(account.get("username") or "")))
 
 
 def source_root(extract_root: Path) -> Path:
@@ -61,15 +136,23 @@ def map_problem_code(stem: str, contest_problems: list[dict]) -> str:
 
 def collect_submission_files(source_root_path: Path, accounts: list[dict], contest_problems: list[dict]) -> tuple[list[dict], list[str]]:
     account_by_key = {normalize_key(account["name"]): account for account in accounts}
+    account_by_folder_key = {account_folder_key(account): account for account in accounts if account_folder_key(account)}
     problem_by_code = {problem["code"]: problem for problem in contest_problems}
     allowed_suffixes = {".cpp", ".cc", ".cxx", ".c", ".py", ".pas"}
     rows: list[dict] = []
     warnings: list[str] = []
     for student_dir in sorted((item for item in source_root_path.iterdir() if item.is_dir()), key=lambda path: path.name.lower()):
-        account = account_by_key.get(normalize_key(student_dir.name))
+        folder_key = normalize_key(student_dir.name)
+        account = account_by_key.get(folder_key) or account_by_folder_key.get(folder_key)
         if not account:
-            warnings.append(f"Không tìm thấy tài khoản CSV cho thư mục {student_dir.name}.")
-            continue
+            account = {
+                "index": 0,
+                "username": f"chamthi_{student_dir.name}",
+                "password": "",
+                "name": student_dir.name,
+                "missing": True,
+            }
+            warnings.append(f"Không tìm thấy tài khoản CSV cho thư mục {student_dir.name}; đã gợi ý username {account['username']}.")
         files = sorted(
             (path for path in student_dir.rglob("*") if path.is_file() and path.suffix.lower() in allowed_suffixes),
             key=lambda path: path.name.lower(),
@@ -87,19 +170,28 @@ def collect_submission_files(source_root_path: Path, accounts: list[dict], conte
 
 
 def build_prepare_row(path: Path, source_root_path: Path, account: dict, problem_code: str, problem: dict | None) -> dict:
+    relative_path = path.relative_to(source_root_path)
+    folder = relative_path.parts[0] if relative_path.parts else ""
+    password_missing = bool(account.get("missing"))
+    selected = bool(problem) and not password_missing
+    status = "Đã chuẩn bị" if problem else "Không khớp bài trong contest"
+    if password_missing:
+        status = "Thiếu tài khoản trong CSV"
     return {
-        "original_key": f"{account['username']}::{path.relative_to(source_root_path).as_posix()}",
-        "selected": bool(problem),
+        "original_key": f"{folder}::{relative_path.as_posix()}",
+        "selected": selected,
         "student": account["name"],
+        "folder": folder,
         "username": account["username"],
+        "password_missing": password_missing,
         "problem": problem_code,
         "problem_title": problem["title"] if problem else "",
         "contest_points": problem["points"] if problem else 0,
         "language": path.suffix.lower().lstrip("."),
         "file": path.name,
-        "relative_path": path.relative_to(source_root_path).as_posix(),
+        "relative_path": relative_path.as_posix(),
         "local_path": str(path),
-        "status": "Đã chuẩn bị" if problem else "Không khớp bài trong contest",
+        "status": status,
         "submission_url": "",
         "percent": "",
         "score": "",
@@ -113,7 +205,12 @@ def merge_requested_rows(saved_rows: list[dict], requested_rows: list[dict]) -> 
     for base in saved_rows:
         row = dict(base)
         if row["original_key"] in requested:
-            row["selected"] = bool(requested[row["original_key"]].get("selected"))
+            update = requested[row["original_key"]]
+            row["selected"] = bool(update.get("selected"))
+            for field in ("username", "student", "problem"):
+                value = str(update.get(field, "")).strip()
+                if value:
+                    row[field] = value
         rows.append(row)
     return rows
 

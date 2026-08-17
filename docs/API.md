@@ -243,9 +243,19 @@ Service nền:
 
 Nhận zip bài làm, CSV tài khoản, URL contest. Tool đọc danh sách bài contest và map file bài làm theo học sinh.
 
+CSV tài khoản nhận `username,password,name` hoặc các cột tiếng Việt tương đương như `Tên đăng nhập,Mật khẩu,Họ tên`. Nếu thiếu `name`, tool suy ra từ username dạng `chamthi_<folderName>`.
+
+Bảng chuẩn bị trả về thêm `folder`, `username`, `password_missing`; frontend cho sửa `username` trước khi xác nhận chấm.
+
 ### `POST /api/confirm-hncode-grading`
 
 Đăng nhập từng tài khoản, join contest nếu cần, nộp từng bài và chờ kết quả.
+
+Payload có thể gửi `wait_seconds`:
+
+- `until_done` hoặc bỏ trống: chờ đến khi submission chấm xong.
+- `0`: không chờ.
+- `30`, `60`, `120`, `300`: chờ tối đa số giây tương ứng.
 
 ### `GET /api/download-hncode-grading/<prepare_id>`
 

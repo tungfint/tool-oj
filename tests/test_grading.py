@@ -22,6 +22,20 @@ class GradingServiceTests(unittest.TestCase):
         self.assertEqual(accounts[0]["name"], "Nguyễn Văn A")
         self.assertEqual(accounts[1]["index"], 2)
 
+    def test_read_accounts_csv_accepts_vietnamese_headers_and_missing_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "accounts.csv"
+            csv_path.write_text(
+                "Tên đăng nhập;Mật khẩu\nchamthi_folderA;pass_a\n",
+                encoding="utf-8",
+            )
+
+            accounts = grading_service.read_accounts(csv_path)
+
+        self.assertEqual(accounts[0]["username"], "chamthi_folderA")
+        self.assertEqual(accounts[0]["password"], "pass_a")
+        self.assertEqual(accounts[0]["name"], "folderA")
+
     def test_normalize_student_and_file_key(self):
         self.assertEqual(grading_service.normalize_key("Nguyễn Văn A"), "nguyenvana")
         self.assertEqual(grading_service.normalize_key("  Tran-Thi_B  "), "tranthib")
@@ -63,12 +77,16 @@ class GradingServiceTests(unittest.TestCase):
 
             rows, warnings = grading_service.collect_submission_files(root, accounts, problems)
 
-        by_file = {row["file"]: row for row in rows}
-        self.assertEqual(by_file["bai1.cpp"]["problem"], "bai1_tong")
-        self.assertTrue(by_file["bai1.cpp"]["selected"])
-        self.assertEqual(by_file["Bai2-DaySo.py"]["problem"], "bai2_dayso")
-        self.assertEqual(by_file["unknown.cpp"]["status"], "Không khớp bài trong contest")
-        self.assertFalse(by_file["unknown.cpp"]["selected"])
+        by_path = {row["relative_path"]: row for row in rows}
+        self.assertEqual(by_path["Nguyen Van A/bai1.cpp"]["problem"], "bai1_tong")
+        self.assertTrue(by_path["Nguyen Van A/bai1.cpp"]["selected"])
+        self.assertEqual(by_path["Tran Thi B/Bai2-DaySo.py"]["problem"], "bai2_dayso")
+        self.assertEqual(by_path["Nguyen Van A/unknown.cpp"]["status"], "Không khớp bài trong contest")
+        self.assertFalse(by_path["Nguyen Van A/unknown.cpp"]["selected"])
+        self.assertEqual(by_path["Khong Co TK/bai1.cpp"]["username"], "chamthi_Khong Co TK")
+        self.assertTrue(by_path["Khong Co TK/bai1.cpp"]["password_missing"])
+        self.assertFalse(by_path["Khong Co TK/bai1.cpp"]["selected"])
+        self.assertEqual(by_path["Khong Co TK/bai1.cpp"]["status"], "Thiếu tài khoản trong CSV")
         self.assertTrue(any("Không tìm thấy tài khoản" in warning for warning in warnings))
 
     def test_merge_requested_rows(self):
@@ -76,11 +94,12 @@ class GradingServiceTests(unittest.TestCase):
             {"original_key": "a::one.cpp", "selected": True, "status": "Đã chuẩn bị"},
             {"original_key": "b::two.cpp", "selected": True, "status": "Đã chuẩn bị"},
         ]
-        requested = [{"original_key": "a::one.cpp", "selected": False}]
+        requested = [{"original_key": "a::one.cpp", "selected": False, "username": "hs_c"}]
 
         rows = grading_service.merge_requested_rows(saved, requested)
 
         self.assertFalse(rows[0]["selected"])
+        self.assertEqual(rows[0]["username"], "hs_c")
         self.assertTrue(rows[1]["selected"])
 
     def test_write_excel_sample(self):

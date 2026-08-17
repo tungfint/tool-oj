@@ -65,6 +65,7 @@
     .inner-table { margin-top:0; font-size:12px; }
     .inner-table th, .inner-table td { padding:5px 6px; }
     td input[type=text] { padding:6px 7px; }
+    .compact-input { min-width:130px; max-width:190px; }
     a.problem-link { color:var(--accent); font-weight:700; text-decoration:none; }
     .test-meta { color:var(--muted); font-size:12px; line-height:1.4; }
     .lang-list { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; margin-top:8px; }
