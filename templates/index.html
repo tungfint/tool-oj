@@ -409,11 +409,18 @@
 
       <div class="panel" id="panel-ai-normalize">
         <h2>AI chuẩn hóa đề bài</h2>
-        <p>Dùng Google AI API key để đọc bài HNCode hoặc nội dung file rời, sau đó chuẩn hóa đề theo format HNCode/HNOJ. Có thể kiểm tra kết quả trong bảng trước khi bấm Chuẩn hoá để cập nhật lên HNCode.</p>
+        <p>D&#249;ng Google AI ho&#7863;c OpenRouter API key &#273;&#7875; &#273;&#7885;c b&#224;i HNCode ho&#7863;c n&#7897;i dung file r&#7901;i, sau &#273;&#243; chu&#7849;n h&#243;a &#273;&#7873; theo format HNCode/HNOJ. C&#243; th&#7875; ki&#7875;m tra k&#7871;t qu&#7843; trong b&#7843;ng tr&#432;&#7899;c khi b&#7845;m Chu&#7849;n ho&#225; &#273;&#7875; c&#7853;p nh&#7853;t l&#234;n HNCode.</p>
         <div class="grid-3">
+          <div><label>Nh&#224; cung c&#7845;p AI</label><select id="aiProvider"><option value="google">Google AI</option><option value="openrouter">OpenRouter.ai</option></select></div>
+          <div><label>&#272;&#237;ch format</label><select id="aiTarget"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select></div>
+        </div>
+        <div class="grid-2 ai-provider-box" id="googleAiBox">
           <div><label>Google AI API key</label><input id="aiApiKey" type="password" class="secret-input" placeholder="AIza..."></div>
-          <div><label>Model</label><select id="aiModel"><option value="gemini-3.5-flash">gemini-3.5-flash</option><option value="gemini-3.6-flash">gemini-3.6-flash</option><option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option><option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option><option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option><option value="gemini-2.5-flash">gemini-2.5-flash (cũ, có thể lỗi 404)</option><option value="gemini-2.5-pro">gemini-2.5-pro (cũ, có thể lỗi 404)</option></select></div>
-          <div><label>Đích format</label><select id="aiTarget"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select></div>
+          <div><label>Model Google AI</label><select id="aiModel"><option value="gemini-3.5-flash">gemini-3.5-flash</option><option value="gemini-3.6-flash">gemini-3.6-flash</option><option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option><option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option><option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option><option value="gemini-2.5-flash">gemini-2.5-flash (c&#361;, c&#243; th&#7875; l&#7895;i 404)</option><option value="gemini-2.5-pro">gemini-2.5-pro (c&#361;, c&#243; th&#7875; l&#7895;i 404)</option></select></div>
+        </div>
+        <div class="grid-2 ai-provider-box hidden" id="openRouterAiBox">
+          <div><label>OpenRouter API key</label><input id="openRouterApiKey" type="password" class="secret-input" placeholder="sk-or-v1-..."></div>
+          <div><label>Model OpenRouter</label><select id="openRouterModel"><option value="deepseek/deepseek-v4-flash-0731">DeepSeek V4 Flash 0731 (deepseek/deepseek-v4-flash-0731)</option></select></div>
         </div>
         <div class="grid-2">
           <div>

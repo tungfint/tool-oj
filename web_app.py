@@ -1516,10 +1516,12 @@ def api_ai_normalize():
         options = payload.get("options") or {}
         target = options.get("target") or state.get("target") or "hncode"
         rows = payload.get("rows") or state["rows"]
+        provider = (payload.get("provider") or "google").strip().lower()
         api_key = payload.get("api_key") or ""
-        model = payload.get("model") or ai_service.DEFAULT_GEMINI_MODEL
+        model = payload.get("model") or (ai_service.DEFAULT_OPENROUTER_MODEL if provider == "openrouter" else ai_service.DEFAULT_GEMINI_MODEL)
+        provider_label = "OpenRouter" if provider == "openrouter" else "Google AI"
         result_rows = []
-        log_lines = [f"Chuẩn hóa bằng Google AI model {model}."]
+        log_lines = [f"AI provider: {provider_label}; model: {model}."]
         for row in rows:
             result = dict(row)
             original = row.get("original_code") or row.get("code")
@@ -1532,7 +1534,13 @@ def api_ai_normalize():
                 if not snapshot:
                     raise RuntimeError("Không tìm thấy snapshot bài đã chuẩn bị.")
                 prompt = ai_service.build_hncode_normalization_prompt(state["reference"], snapshot, {**options, "target": target})
-                raw = ai_service.gemini_generate(api_key=api_key, model=model, prompt=prompt, files=state.get("files", {}).get(original) or state.get("files", {}).get(row.get("code")))
+                raw = ai_service.ai_generate(
+                    provider=provider,
+                    api_key=api_key,
+                    model=model,
+                    prompt=prompt,
+                    files=state.get("files", {}).get(original) or state.get("files", {}).get(row.get("code")),
+                )
                 try:
                     parsed = ai_service.parse_ai_json(raw)
                 except Exception as parse_exc:

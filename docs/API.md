@@ -293,17 +293,26 @@ Trả `prepare_id` và bảng rows.
 
 ### `POST /api/ai/normalize`
 
-Gọi Google AI bằng API key người dùng nhập, trả về Markdown đề bài, points, tags, solution, nhận xét test và issues theo từng bài. Test tự động mock endpoint này, không gọi mạng thật.
+Goi AI bang API key nguoi dung nhap, tra ve Markdown de bai, points, tags, solution, nhan xet test va issues theo tung bai. Test tu dong mock endpoint nay, khong goi mang that.
+
+Payload chinh:
+
+- `provider`: `google` hoac `openrouter`. Neu bo trong thi dung `google`.
+- `api_key`: API key tuong ung provider dang chon.
+- `model`: model can dung.
+  - Google AI mac dinh: `gemini-3.5-flash`.
+  - OpenRouter mac dinh: `deepseek/deepseek-v4-flash-0731` (DeepSeek V4 Flash 0731).
+
+OpenRouter dung endpoint OpenAI-compatible `https://openrouter.ai/api/v1/chat/completions` voi Bearer token. Voi OpenRouter/model DeepSeek hien tool gui phan text cua prompt; neu nguon la anh/PDF scan chua OCR thi nen dung Google AI/Gemini hoac dan text da OCR.
 
 ### `POST /api/ai/validate-statement`
 
-Kiểm tra nhanh Markdown AI trả về: dòng đầu metadata, mã bài, điểm, ký hiệu công thức `$`/`~`, phần thân đề.
+Kiem tra nhanh Markdown AI tra ve: dong dau metadata, ma bai, diem, ky hieu cong thuc `$`/`~`, phan than de.
 
-Service nền:
+Service nen:
 
-- `services/ai_assistant.py`: đọc file, build prompt theo tài liệu chuẩn hóa, gọi Gemini REST `generateContent`, parse JSON AI trả về và validate Markdown.
-- Tool dùng Google AI API key, không đăng nhập hoặc lưu mật khẩu Google/Gemini web.
-
+- `services/ai_assistant.py`: doc file, build prompt theo tai lieu chuan hoa, goi Google Gemini REST `generateContent` hoac OpenRouter `chat/completions`, parse JSON AI tra ve va validate Markdown.
+- Tool dung API key do nguoi dung nhap, luu tam trong `localStorage` cua trinh duyet neu nguoi dung bam luu; khong dang nhap hoac luu mat khau Google/Gemini web.
 ### `POST /api/misc/last-submissions`
 
 Nhận zip/folder data contest, trả zip chứa lần nộp cuối.

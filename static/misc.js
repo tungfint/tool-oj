@@ -12,6 +12,21 @@ function syncAiSourceMode() {
   document.getElementById("aiCodesBox").classList.toggle("hidden", mode !== "codes");
   document.getElementById("aiFileBox").classList.toggle("hidden", mode !== "file");
 }
+function syncAiProvider() {
+  const provider = document.getElementById("aiProvider").value;
+  document.getElementById("googleAiBox").classList.toggle("hidden", provider !== "google");
+  document.getElementById("openRouterAiBox").classList.toggle("hidden", provider !== "openrouter");
+}
+function currentAiApiKey() {
+  return document.getElementById("aiProvider").value === "openrouter"
+    ? document.getElementById("openRouterApiKey").value.trim()
+    : document.getElementById("aiApiKey").value.trim();
+}
+function currentAiModel() {
+  return document.getElementById("aiProvider").value === "openrouter"
+    ? document.getElementById("openRouterModel").value.trim()
+    : document.getElementById("aiModel").value.trim();
+}
 const AI_TEXT = {
   selectAll: "Ch\u1ecdn t\u1ea5t c\u1ea3",
   unselectAll: "B\u1ecf ch\u1ecdn t\u1ea5t c\u1ea3",
@@ -22,12 +37,12 @@ const AI_TEXT = {
   status: "Tr\u1ea1ng th\u00e1i",
   result: "K\u1ebft qu\u1ea3",
   openMd: "M\u1edf md",
-  saveKey: "\u0110\u00e3 l\u01b0u API key Google AI t\u1ea1m tr\u00ean tr\u00ecnh duy\u1ec7t m\u00e1y n\u00e0y.",
+  saveKey: "\u0110\u00e3 l\u01b0u API key AI t\u1ea1m tr\u00ean tr\u00ecnh duy\u1ec7t m\u00e1y n\u00e0y.",
   fileRead: "\u0110\u00e3 \u0111\u1ecdc file.",
   preparing: "\u0110ang chu\u1ea9n b\u1ecb d\u1eef li\u1ec7u AI...",
-  needApiKey: "H\u00e3y nh\u1eadp Google AI API key.",
+  needApiKey: "H\u00e3y nh\u1eadp API key cho nh\u00e0 cung c\u1ea5p AI \u0111ang ch\u1ecdn.",
   callingAi: "\u0110ang g\u1ecdi AI...",
-  callingAiLog: "\u0110ang g\u1ecdi Google AI \u0111\u1ec3 chu\u1ea9n h\u00f3a...",
+  callingAiLog: "\u0110ang g\u1ecdi AI \u0111\u1ec3 chu\u1ea9n h\u00f3a...",
   applying: "\u0110ang c\u1eadp nh\u1eadt web...",
   applyingLog: "\u0110ang c\u1eadp nh\u1eadt k\u1ebft qu\u1ea3 chu\u1ea9n h\u00f3a l\u00ean HNCode...",
   testReview: "Nh\u1eadn x\u00e9t test",
@@ -82,17 +97,25 @@ function applyAiRows(rows) {
 }
 document.getElementById("aiSourceMode").addEventListener("change", syncAiSourceMode);
 syncAiSourceMode();
+document.getElementById("aiProvider").addEventListener("change", syncAiProvider);
 document.getElementById("aiHncodeUserMirror").value = accountFields.hncode_user.value || "hncode";
 document.getElementById("saveAiKey").onclick = () => {
+  localStorage.setItem("chuyenbai.ai_provider", document.getElementById("aiProvider").value);
   localStorage.setItem("chuyenbai.google_ai_key", document.getElementById("aiApiKey").value);
   localStorage.setItem("chuyenbai.google_ai_model", document.getElementById("aiModel").value);
+  localStorage.setItem("chuyenbai.openrouter_ai_key", document.getElementById("openRouterApiKey").value);
+  localStorage.setItem("chuyenbai.openrouter_ai_model", document.getElementById("openRouterModel").value);
   append(AI_TEXT.saveKey);
 };
+document.getElementById("aiProvider").value = localStorage.getItem("chuyenbai.ai_provider") || document.getElementById("aiProvider").value;
 document.getElementById("aiApiKey").value = localStorage.getItem("chuyenbai.google_ai_key") || "";
 document.getElementById("aiModel").value = localStorage.getItem("chuyenbai.google_ai_model") || document.getElementById("aiModel").value;
 if (!document.getElementById("aiModel").value || document.getElementById("aiModel").value.startsWith("gemini-2.")) {
   document.getElementById("aiModel").value = "gemini-3.5-flash";
 }
+document.getElementById("openRouterApiKey").value = localStorage.getItem("chuyenbai.openrouter_ai_key") || "";
+document.getElementById("openRouterModel").value = localStorage.getItem("chuyenbai.openrouter_ai_model") || document.getElementById("openRouterModel").value || "deepseek/deepseek-v4-flash-0731";
+syncAiProvider();
 document.getElementById("chooseAiSourceFile").onclick = () => document.getElementById("aiSourceFile").click();
 document.getElementById("aiSourceFile").addEventListener("change", async event => {
   selectedAiSourceFile = event.target.files && event.target.files[0] || null;
@@ -145,14 +168,15 @@ async function prepareAiNormalizeFlow() {
 }
 async function runAiNormalizeFlow() {
   if (!preparedAiNormalize) await prepareAiNormalizeFlow();
-  if (!document.getElementById("aiApiKey").value.trim()) throw new Error(AI_TEXT.needApiKey);
+  if (!currentAiApiKey()) throw new Error(AI_TEXT.needApiKey);
   status("running");
   markRowsProcessing("#aiNormalizeTable", AI_TEXT.callingAi);
   log(AI_TEXT.callingAiLog);
   const data = await postJson("/api/ai/normalize", {
     prepare_id: preparedAiNormalize,
-    api_key: document.getElementById("aiApiKey").value.trim(),
-    model: document.getElementById("aiModel").value.trim(),
+    provider: document.getElementById("aiProvider").value,
+    api_key: currentAiApiKey(),
+    model: currentAiModel(),
     options: aiOptions(),
     rows: collectAiRows(),
   });

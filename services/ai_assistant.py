@@ -23,6 +23,8 @@ import requests
 TEXT_SUFFIXES = {".txt", ".md", ".markdown"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash-0731"
+OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_FALLBACK_MODELS = [
     "gemini-3.5-flash",
     "gemini-3.6-flash",
@@ -499,6 +501,88 @@ def gemini_generate(
     if not text:
         raise RuntimeError("Google AI tr? n?i dung r?ng.")
     return text
+
+
+def openrouter_generate(
+    *,
+    api_key: str,
+    prompt: str,
+    model: str = DEFAULT_OPENROUTER_MODEL,
+    files: list[dict] | None = None,
+    timeout: int = 120,
+) -> str:
+    key = (api_key or "").strip()
+    if not key:
+        raise RuntimeError("Chưa nhập OpenRouter API key.")
+    model_name = (model or DEFAULT_OPENROUTER_MODEL).strip() or DEFAULT_OPENROUTER_MODEL
+    effective_prompt = prompt
+    if files:
+        names = ", ".join(str(item.get("filename") or "file") for item in files if item)
+        effective_prompt += (
+            "\n\nGhi chú: Provider OpenRouter/model hiện tại của tool chỉ gửi nội dung text. "
+            f"Các file đính kèm đã chuẩn bị nhưng không gửi trực tiếp qua OpenRouter: {names}. "
+            "Nếu đây là ảnh/PDF scan chưa có text OCR, hãy dùng Google AI/Gemini hoặc dán nội dung OCR vào nguồn text."
+        )
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": effective_prompt}],
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "response_format": {"type": "json_object"},
+    }
+    response = requests.post(
+        OPENROUTER_CHAT_COMPLETIONS_URL,
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://hncode.edu.vn",
+            "X-OpenRouter-Title": "Tool HNCode",
+        },
+        json=payload,
+        timeout=timeout,
+    )
+    if not response.ok:
+        raise RuntimeError(f"OpenRouter API lỗi HTTP {response.status_code}: {response.text[:800]}")
+    data = response.json()
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError("OpenRouter không trả choice nào.")
+    message = choices[0].get("message") or {}
+    content = message.get("content") or ""
+    if isinstance(content, list):
+        text = "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in content).strip()
+    else:
+        text = str(content).strip()
+    if not text:
+        raise RuntimeError("OpenRouter trả nội dung rỗng.")
+    return text
+
+
+def ai_generate(
+    *,
+    provider: str,
+    api_key: str,
+    prompt: str,
+    model: str = "",
+    files: list[dict] | None = None,
+    timeout: int = 120,
+) -> str:
+    provider_key = (provider or "google").strip().lower()
+    if provider_key in {"openrouter", "open-router"}:
+        return openrouter_generate(
+            api_key=api_key,
+            model=model or DEFAULT_OPENROUTER_MODEL,
+            prompt=prompt,
+            files=files,
+            timeout=timeout,
+        )
+    return gemini_generate(
+        api_key=api_key,
+        model=model or DEFAULT_GEMINI_MODEL,
+        prompt=prompt,
+        files=files,
+        timeout=timeout,
+    )
 
 
 def parse_ai_json(text: str) -> dict:

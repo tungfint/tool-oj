@@ -219,6 +219,35 @@ Cho file `PHANLOAI.INP` chứa dữ liệu.
         self.assertIn("gemini-2.5-flash", calls[0])
         self.assertIn("gemini-3.5-flash", calls[1])
 
+    def test_openrouter_generate_uses_chat_completions_endpoint(self):
+        class FakeResponse:
+            ok = True
+            status_code = 200
+            text = "{}"
+
+            def json(self):
+                return {"choices": [{"message": {"content": '{"code":"ok"}'}}]}
+
+        captured = {}
+
+        def fake_post(url, **kwargs):
+            captured["url"] = url
+            captured["headers"] = kwargs.get("headers") or {}
+            captured["json"] = kwargs.get("json") or {}
+            return FakeResponse()
+
+        with patch.object(ai_service.requests, "post", side_effect=fake_post):
+            text = ai_service.openrouter_generate(
+                api_key="sk-or-v1-fake",
+                prompt="prompt",
+                model="deepseek/deepseek-v4-flash-0731",
+            )
+
+        self.assertEqual(text, '{"code":"ok"}')
+        self.assertEqual(captured["url"], ai_service.OPENROUTER_CHAT_COMPLETIONS_URL)
+        self.assertEqual(captured["headers"]["Authorization"], "Bearer sk-or-v1-fake")
+        self.assertEqual(captured["json"]["model"], "deepseek/deepseek-v4-flash-0731")
+
 
 class AiAssistantApiTests(unittest.TestCase):
     def setUp(self):
@@ -293,11 +322,12 @@ Cho $a,b$.
                 "confidence": "high",
             }
         )
-        with patch.object(web_app.ai_service, "gemini_generate", return_value=fake_ai):
+        with patch.object(web_app.ai_service, "ai_generate", return_value=fake_ai):
             response = self.client.post(
                 "/api/ai/normalize",
                 json={
                     "prepare_id": prepare_data["prepare_id"],
+                    "provider": "google",
                     "api_key": "fake-key",
                     "model": "gemini-2.5-flash",
                     "options": {"target": "hncode", "statement": True, "metadata": True, "solution": False, "test_review": True},
