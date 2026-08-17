@@ -65,8 +65,9 @@ function renderContestLessonCopyTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#contestLessonCopyTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#contestLessonCopyTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm lesson</th><th>Trạng thái</th></tr></thead>
-    <tbody>${rows.map(row => `<tr data-code="${escapeHtml(row.code)}">
+    <thead><tr><th>STT</th><th>Chọn</th><th>Thứ tự nguồn</th><th>Mã bài</th><th>Tên bài</th><th>Điểm lesson</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map((row, index) => `<tr data-code="${escapeHtml(row.code)}">
+      <td class="row-index">${index + 1}</td>
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.problem_id ? "" : "disabled"}></td>
       <td>${escapeHtml(row.index || "")}</td>
       <td><a class="problem-link" href="https://hncode.edu.vn/problem/${escapeHtml(row.code)}" target="_blank" rel="noopener">${escapeHtml(row.code)}</a></td>
@@ -149,8 +150,9 @@ function renderCourseCloneTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Loại</th><th>Thứ tự</th><th>Mã/ID nguồn</th><th>Tên</th><th>Mã contest đích</th><th>Trạng thái</th></tr></thead>
-    <tbody>${rows.map(row => `<tr data-kind="${escapeHtml(row.kind)}" data-key="${escapeHtml(row.key)}">
+    <thead><tr><th>STT</th><th>Chọn</th><th>Loại</th><th>Thứ tự</th><th>Mã/ID nguồn</th><th>Tên</th><th>Mã contest đích</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map((row, index) => `<tr data-kind="${escapeHtml(row.kind)}" data-key="${escapeHtml(row.key)}">
+      <td class="row-index">${index + 1}</td>
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.can_clone ? "" : "disabled"}></td>
       <td>${row.kind === "contest" ? "Contest" : "Lesson"}</td>
       <td>${escapeHtml(row.order || "")}</td>

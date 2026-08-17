@@ -42,7 +42,7 @@
     .tool-title::before { content:""; width:6px; height:24px; border-radius:999px; background:var(--accent); display:inline-block; }
     .tool-subtitle { margin-bottom:14px; }
     .sample, pre#log { background:var(--code); color:#f2f4f7; border-radius:6px; padding:12px; white-space:pre-wrap; overflow:auto; font-family:Consolas, "Cascadia Mono", monospace; font-size:12px; line-height:1.45; }
-    .log-panel { flex:0 0 auto; width:min(380px, 34vw); min-width:280px; max-width:680px; display:grid; grid-template-rows:auto minmax(360px, 1fr); min-height:520px; resize:horizontal; overflow:auto; }
+    .log-panel { flex:0 0 auto; width:min(380px, 34vw); min-width:280px; max-width:680px; display:grid; grid-template-rows:auto minmax(360px, 1fr); min-height:520px; max-height:calc(100vh - 40px); resize:horizontal; overflow:auto; position:sticky; top:20px; align-self:flex-start; }
     .log-head { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:12px; align-items:center; }
     pre#log { margin:0; border-radius:0 0 8px 8px; }
     .status { border-radius:999px; padding:4px 10px; background:var(--soft); color:var(--muted); font-weight:650; font-size:12px; }
@@ -71,4 +71,4 @@
     .lang-list { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; margin-top:8px; }
     .check { display:flex; align-items:center; gap:7px; }
     .hidden { display:none; }
-    @media (max-width:980px) { main { display:block; padding:14px; } .log-panel { width:100%; max-width:none; margin-top:14px; resize:vertical; } .grid-2,.grid-3,.lang-list { grid-template-columns:1fr; } }
+    @media (max-width:980px) { main { display:block; padding:14px; } .log-panel { width:100%; max-width:none; margin-top:14px; resize:vertical; position:static; max-height:none; } .grid-2,.grid-3,.lang-list { grid-template-columns:1fr; } }

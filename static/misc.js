@@ -40,8 +40,9 @@ function renderAiNormalizeTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#aiNormalizeTable', true)">${AI_TEXT.selectAll}</button>
     <button class="action" type="button" onclick="setRowSelection('#aiNormalizeTable', false)">${AI_TEXT.unselectAll}</button>
   </div><table>
-    <thead><tr><th>${AI_TEXT.selected}</th><th>${AI_TEXT.code}</th><th>${AI_TEXT.name}</th><th>${AI_TEXT.statement}</th><th>Solution</th><th>Point</th><th>${AI_TEXT.status}</th><th>${AI_TEXT.result}</th></tr></thead>
+    <thead><tr><th>STT</th><th>${AI_TEXT.selected}</th><th>${AI_TEXT.code}</th><th>${AI_TEXT.name}</th><th>${AI_TEXT.statement}</th><th>Solution</th><th>Point</th><th>${AI_TEXT.status}</th><th>${AI_TEXT.result}</th></tr></thead>
     <tbody>${aiNormalizeRows.map((row, index) => `<tr data-index="${index}" data-original="${escapeHtml(row.original_code || row.code || "")}">
+      <td class="row-index">${index + 1}</td>
       <td><input type="checkbox" class="row-selected" ${row.can_normalize === false ? "" : "checked"} ${row.can_normalize === false ? "disabled" : ""}></td>
       <td><input class="mini-input row-code" value="${escapeHtml(row.code || "")}"></td>
       <td><input class="mini-input row-name" value="${escapeHtml(row.name || "")}"></td>
@@ -425,8 +426,9 @@ function renderGradingTable(rows) {
     <button class="action" type="button" onclick="sortGradingErrorRowsTop()">Đưa lỗi lên trên</button>
     <button class="action primary" type="button" onclick="selectAndSortGradingErrors()">Chọn lỗi & đưa lên trên</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Folder</th><th>Học sinh</th><th>Tài khoản chấm</th><th>Mã bài</th><th>Tên bài</th><th>Điểm bài</th><th>File</th><th>%</th><th>Điểm</th><th>Trạng thái</th></tr></thead>
-    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_key)}">
+    <thead><tr><th>STT</th><th>Chọn</th><th>Folder</th><th>Học sinh</th><th>Tài khoản chấm</th><th>Mã bài</th><th>Tên bài</th><th>Điểm bài</th><th>File</th><th>%</th><th>Điểm</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map((row, index) => `<tr data-original="${escapeHtml(row.original_key)}">
+      <td class="row-index">${index + 1}</td>
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""}></td>
       <td>${escapeHtml(row.folder || "")}</td>
       <td>${escapeHtml(row.student || "")}</td>

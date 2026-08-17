@@ -91,8 +91,9 @@ function renderContestTransferTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#contestTransferTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#contestTransferTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Mã contest</th><th>Tên contest</th><th>Thời gian</th><th>Bài trong contest</th><th>Trạng thái</th></tr></thead>
-    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_key)}">
+    <thead><tr><th>STT</th><th>Chọn</th><th>Mã contest</th><th>Tên contest</th><th>Thời gian</th><th>Bài trong contest</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map((row, index) => `<tr data-original="${escapeHtml(row.original_key)}">
+      <td class="row-index">${index + 1}</td>
       <td><input type="checkbox" class="row-selected" ${row.can_transfer ? "checked" : ""}></td>
       <td><input type="text" class="row-key" value="${escapeHtml(row.key)}"></td>
       <td><input type="text" class="row-name" value="${escapeHtml(row.name || "")}"></td>
@@ -104,8 +105,9 @@ function renderContestTransferTable(rows) {
 
 function renderContestProblemList(problems) {
   if (!problems.length) return `<div class="test-meta">Không có bài.</div>`;
-  return `<table class="inner-table"><thead><tr><th>Chọn</th><th>Mã bài</th><th>Điểm</th><th>Thứ tự</th><th>Trạng thái</th></tr></thead><tbody>
-    ${problems.map(p => `<tr data-problem-code="${escapeHtml(p.code)}">
+  return `<table class="inner-table"><thead><tr><th>STT</th><th>Chọn</th><th>Mã bài</th><th>Điểm</th><th>Thứ tự</th><th>Trạng thái</th></tr></thead><tbody>
+    ${problems.map((p, index) => `<tr data-problem-code="${escapeHtml(p.code)}">
+      <td class="row-index">${index + 1}</td>
       <td><input type="checkbox" class="problem-selected" checked></td>
       <td>${escapeHtml(p.code)}</td>
       <td>${escapeHtml(p.points || "100")}</td>

@@ -30,8 +30,9 @@ function renderTransferTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#transferTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#transferTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Time</th><th>Memory</th><th>Up đề</th><th>Up test</th><th>Bộ test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
-    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}">
+    <thead><tr><th>STT</th><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Time</th><th>Memory</th><th>Up đề</th><th>Up test</th><th>Bộ test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map((row, index) => `<tr data-original="${escapeHtml(row.original_code)}">
+      <td class="row-index">${index + 1}</td>
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
       <td><input type="text" class="row-name" value="${escapeHtml(row.name || "")}"></td>

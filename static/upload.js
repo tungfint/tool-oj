@@ -26,8 +26,9 @@ function renderUploadTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#uploadTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#uploadTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Ghi đè</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>File test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
-    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}" data-source-time="${escapeHtml(row.source_time_limit || row.time_limit || "1.0")}" data-source-memory="${escapeHtml(row.source_memory_limit || row.memory_limit || "1048576")}">
+    <thead><tr><th>STT</th><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Ghi đè</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>File test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map((row, index) => `<tr data-original="${escapeHtml(row.original_code)}" data-source-time="${escapeHtml(row.source_time_limit || row.time_limit || "1.0")}" data-source-memory="${escapeHtml(row.source_memory_limit || row.memory_limit || "1048576")}">
+      <td class="row-index">${index + 1}</td>
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
       <td><input type="text" class="row-name" value="${escapeHtml(row.name)}"></td>
@@ -106,8 +107,9 @@ document.getElementById("prepareSingleUpload").onclick = async () => {
 
 function renderSingleUploadTable(rows) {
   document.getElementById("singleUploadTable").innerHTML = `<table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>Test</th><th>Trạng thái</th></tr></thead>
-    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}">
+    <thead><tr><th>STT</th><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>Test</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map((row, index) => `<tr data-original="${escapeHtml(row.original_code)}">
+      <td class="row-index">${index + 1}</td>
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
       <td><input type="text" class="row-name" value="${escapeHtml(row.name)}"></td>
