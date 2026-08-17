@@ -413,6 +413,10 @@ document.getElementById("gradingCsvFile").addEventListener("change", event => {
   selectedGradingCsvFile = event.target.files && event.target.files[0] || null;
   document.getElementById("gradingCsvName").value = selectedGradingCsvFile ? selectedGradingCsvFile.name : "";
 });
+document.getElementById("gradingMode").addEventListener("change", event => {
+  document.getElementById("gradingPollSeconds").disabled = event.target.value === "submit_only";
+});
+document.getElementById("gradingPollSeconds").disabled = document.getElementById("gradingMode").value === "submit_only";
 function renderGradingTable(rows) {
   document.getElementById("gradingSummary").innerHTML = `<div class="table-tools">
     <button class="action" type="button" onclick="setRowSelection('#gradingSummary', true)">Chọn tất cả</button>
@@ -487,21 +491,25 @@ document.getElementById("confirmGrading").onclick = async () => {
   const progressId = newProgressId();
   try {
     if (!preparedGrading) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước.");
+    const mode = document.getElementById("gradingMode").value;
+    const submitOnly = mode === "submit_only";
     status("running");
-    log("Đang đăng nhập học sinh, tham gia contest và nộp bài...");
-    markRowsProcessing("#gradingSummary", "Đang chấm...");
+    log(submitOnly ? "Đang đăng nhập học sinh, tham gia contest và nộp bài song song..." : "Đang đăng nhập học sinh, tham gia contest, nộp bài và chờ kết quả...");
+    markRowsProcessing("#gradingSummary", submitOnly ? "Đang nộp..." : "Đang chấm...");
     startProgressPolling(progressId, "#gradingSummary", "grading");
     const data = await postJson("/api/confirm-hncode-grading", {
       prepare_id: preparedGrading,
       rows: collectGradingRows(),
       contest_password: document.getElementById("gradingContestPassword").value,
+      mode,
       wait_seconds: document.getElementById("gradingPollSeconds").value,
+      max_workers: document.getElementById("gradingWorkers").value,
       progress_id: progressId,
     });
     stopProgressPolling(progressId);
     applyGradingStatuses(data.rows || []);
     const link = data.download_url ? `\nTải bảng điểm: ${location.origin}${data.download_url}` : "";
-    log((data.log || "Đã chấm xong.") + link);
+    log((data.log || (submitOnly ? "Đã nộp xong." : "Đã chấm xong.")) + link);
     if (data.download_url) {
       const a = document.getElementById("downloadGradingResult");
       a.href = data.download_url;

@@ -528,6 +528,25 @@
           </div>
           <div class="grid-2">
             <div>
+              <label>Chế độ xử lý</label>
+              <select id="gradingMode">
+                <option value="submit_only" selected>Chỉ nộp bài lên, không chờ kết quả</option>
+                <option value="submit_and_wait">Nộp bài và chờ lấy kết quả</option>
+              </select>
+            </div>
+            <div>
+              <label>Số luồng nộp</label>
+              <select id="gradingWorkers">
+                <option value="2">2 luồng</option>
+                <option value="4" selected>4 luồng</option>
+                <option value="6">6 luồng</option>
+                <option value="8">8 luồng</option>
+                <option value="10">10 luồng</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
               <label>Thời gian chờ mỗi submission</label>
               <select id="gradingPollSeconds">
                 <option value="until_done" selected>Đến khi chấm xong</option>
@@ -541,7 +560,7 @@
           </div>
           <div class="actions">
             <button class="action primary" type="button" id="prepareGrading">Chuẩn bị dữ liệu</button>
-            <button class="action primary" type="button" id="confirmGrading" disabled>Xác nhận nộp và chấm</button>
+            <button class="action primary" type="button" id="confirmGrading" disabled>Xác nhận xử lý</button>
             <a class="action primary hidden" id="downloadGradingResult" href="#" download="bang_diem_hncode.xlsx">Tải bảng điểm Excel</a>
           </div>
           <div id="gradingSummary"></div>

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import html
 import base64
+import concurrent.futures
 import csv
 import json
 import math
@@ -14,6 +15,7 @@ import requests
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 import uuid
@@ -2311,6 +2313,13 @@ def grading_wait_seconds(value: object) -> int | None:
         return None
 
 
+def grading_worker_count(value: object, default: int = 4) -> int:
+    try:
+        return max(1, min(12, int(float(str(value or default).strip()))))
+    except ValueError:
+        return default
+
+
 def html_cell_text(fragment: str) -> str:
     return grading_service.html_cell_text(fragment)
 
@@ -2408,52 +2417,106 @@ def api_confirm_hncode_grading():
             raise RuntimeError("Chưa chọn bài nào để nộp chấm.")
         contest_password = payload.get("contest_password", "")
         account_by_username = {account["username"]: account for account in state["accounts"]}
+        mode = str(payload.get("mode") or "submit_and_wait")
+        wait_results = mode != "submit_only"
         wait_seconds = grading_wait_seconds(payload.get("wait_seconds"))
-        sessions: dict[str, requests.Session] = {}
+        max_workers = grading_worker_count(payload.get("max_workers"), default=4)
         done = 0
-        log_lines = [f"Chấm bài HNCode contest {state['contest_key']}: {len(selected_rows)} file được chọn."]
-        progress_update(progress_id, phase="confirm-hncode-grading", done=0, total=len(selected_rows), rows=rows, message="Bắt đầu nộp bài")
+        lock = threading.Lock()
+        log_lines = [
+            f"Chấm bài HNCode contest {state['contest_key']}: {len(selected_rows)} file được chọn.",
+            f"Chế độ: {'nộp và chờ kết quả' if wait_results else 'chỉ nộp bài'}.",
+            f"Số luồng nộp: {max_workers}.",
+        ]
         for row in rows:
             if not row.get("selected"):
                 row["status"] = "Bỏ qua"
-                continue
+
+        grouped_rows: dict[str, list[dict]] = defaultdict(list)
+        for row in selected_rows:
+            grouped_rows[str(row.get("username") or "").strip()].append(row)
+
+        def push_progress(message: str) -> None:
+            progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=message)
+
+        def append_log(line: str) -> None:
+            with lock:
+                log_lines.append(line)
+
+        def finish_row(row: dict, message: str) -> None:
+            nonlocal done
+            with lock:
+                done += 1
+                push_progress(message)
+
+        def process_account(username: str, account_rows: list[dict]) -> None:
+            account = account_by_username.get(username)
+            if not account:
+                for row in account_rows:
+                    row["status"] = "✗ Lỗi"
+                    row["message"] = f"Tài khoản {username or '(trống)'} không có trong file CSV."
+                    append_log(f"✗ {row.get('student')} - {row.get('problem')}: {row['message']}")
+                    finish_row(row, f"{row.get('student')} - {row.get('problem')}: {row.get('status')}")
+                return
+            if not account.get("password"):
+                for row in account_rows:
+                    row["status"] = "✗ Lỗi"
+                    row["message"] = f"Tài khoản {username} thiếu mật khẩu trong file CSV."
+                    append_log(f"✗ {row.get('student')} - {row.get('problem')}: {row['message']}")
+                    finish_row(row, f"{row.get('student')} - {row.get('problem')}: {row.get('status')}")
+                return
             try:
-                username = str(row.get("username") or "").strip()
-                account = account_by_username.get(username)
-                if not account:
-                    raise RuntimeError(f"Tài khoản {username or '(trống)'} không có trong file CSV.")
-                if not account.get("password"):
-                    raise RuntimeError(f"Tài khoản {username} thiếu mật khẩu trong file CSV.")
-                session = sessions.get(username)
-                if session is None:
-                    session = hncode_student_session(account["username"], account["password"])
-                    log_lines.append(f"{account['name']} ({account['username']}): {join_hncode_contest_if_needed(session, state['contest_key'], contest_password)}.")
-                    sessions[username] = session
-                progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row['student']} - {row['problem']}: đang nộp")
-                row["status"] = "Đang nộp"
-                row["submission_url"] = submit_hncode_grading_file(session, row["problem"], Path(row["local_path"]))
-                result = poll_hncode_submission(session, row["submission_url"], wait_seconds=wait_seconds)
-                percent = result.get("percent")
-                row["percent"] = "" if percent is None else round(float(percent), 2)
-                row["score"] = "" if percent is None else round(float(row.get("contest_points") or 0) * float(percent) / 100.0, 2)
-                row["status"] = "✓ Đã chấm" if percent is not None else "✓ Đã nộp"
-                row["message"] = result.get("verdict") or ""
-                log_lines.append(f"✓ {row['student']} - {row['problem']}: {row['message']}, {row['percent']}%, điểm {row['score']}.")
+                session = hncode_student_session(account["username"], account["password"])
+                join_message = join_hncode_contest_if_needed(session, state["contest_key"], contest_password)
+                append_log(f"{account['name']} ({account['username']}): {join_message}.")
             except Exception as exc:
-                row["status"] = "✗ Lỗi"
-                row["message"] = str(exc)
-                log_lines.append(f"✗ {row.get('student')} - {row.get('problem')}: {exc}")
-            done += 1
-            progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row.get('student')} - {row.get('problem')}: {row.get('status')}")
+                for row in account_rows:
+                    row["status"] = "✗ Lỗi"
+                    row["message"] = str(exc)
+                    append_log(f"✗ {row.get('student')} - {row.get('problem')}: {exc}")
+                    finish_row(row, f"{row.get('student')} - {row.get('problem')}: {row.get('status')}")
+                return
+            for row in account_rows:
+                try:
+                    with lock:
+                        row["status"] = "Đang nộp"
+                        push_progress(f"{row['student']} - {row['problem']}: đang nộp")
+                    row["submission_url"] = submit_hncode_grading_file(session, row["problem"], Path(row["local_path"]))
+                    if wait_results:
+                        result = poll_hncode_submission(session, row["submission_url"], wait_seconds=wait_seconds)
+                        percent = result.get("percent")
+                        row["percent"] = "" if percent is None else round(float(percent), 2)
+                        row["score"] = "" if percent is None else round(float(row.get("contest_points") or 0) * float(percent) / 100.0, 2)
+                        row["status"] = "✓ Đã chấm" if percent is not None else "✓ Đã nộp"
+                        row["message"] = result.get("verdict") or ""
+                        append_log(f"✓ {row['student']} - {row['problem']}: {row['message']}, {row['percent']}%, điểm {row['score']}.")
+                    else:
+                        row["status"] = "✓ Đã nộp"
+                        row["message"] = "Chỉ nộp bài, không chờ kết quả."
+                        append_log(f"✓ {row['student']} - {row['problem']}: đã nộp {row['submission_url']}.")
+                except Exception as exc:
+                    row["status"] = "✗ Lỗi"
+                    row["message"] = str(exc)
+                    append_log(f"✗ {row.get('student')} - {row.get('problem')}: {exc}")
+                finish_row(row, f"{row.get('student')} - {row.get('problem')}: {row.get('status')}")
+
+        progress_update(progress_id, phase="confirm-hncode-grading", done=0, total=len(selected_rows), rows=rows, message="Bắt đầu nộp bài")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, max(1, len(grouped_rows)))) as executor:
+            futures = [executor.submit(process_account, username, account_rows) for username, account_rows in grouped_rows.items()]
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
         output_path = Path(state["root"]) / "bang_diem_hncode.xlsx"
         ranking_rows: list[dict] = []
         ranking_problem_codes: list[str] = []
-        try:
-            rank_session = login_hncode(TARGETS["hncode"]["base_url"], "hncode", "HNCodemaidinh89()")
-            ranking_rows, ranking_problem_codes = fetch_hncode_contest_ranking(rank_session, state["contest_key"])
-            log_lines.append(f"Đã đọc lại bảng rank contest: {len(ranking_rows)} dòng.")
-        except Exception as exc:
-            log_lines.append(f"Không đọc được bảng rank, Excel dùng dữ liệu submission vừa nộp: {exc}")
+        if wait_results:
+            try:
+                rank_session = login_hncode(TARGETS["hncode"]["base_url"], "hncode", "HNCodemaidinh89()")
+                ranking_rows, ranking_problem_codes = fetch_hncode_contest_ranking(rank_session, state["contest_key"])
+                log_lines.append(f"Đã đọc lại bảng rank contest: {len(ranking_rows)} dòng.")
+            except Exception as exc:
+                log_lines.append(f"Không đọc được bảng rank, Excel dùng dữ liệu submission vừa nộp: {exc}")
+        else:
+            log_lines.append("Chế độ chỉ nộp bài: bỏ qua đọc bảng rank, có thể tải Excel danh sách submission đã nộp.")
         write_hncode_grading_excel(rows, state["contest_problems"], state["accounts"], output_path, ranking_rows, ranking_problem_codes)
         state["rows"] = rows
         state["output"] = str(output_path)

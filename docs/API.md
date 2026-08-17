@@ -251,11 +251,18 @@ Bảng chuẩn bị trả về thêm `folder`, `username`, `password_missing`; f
 
 Đăng nhập từng tài khoản, join contest nếu cần, nộp từng bài và chờ kết quả.
 
+Payload có thể gửi `mode`:
+
+- `submit_only`: chỉ nộp bài lên HNCode, không chờ kết quả; Excel trả về danh sách submission đã nộp.
+- `submit_and_wait`: nộp bài rồi chờ kết quả theo `wait_seconds`.
+
 Payload có thể gửi `wait_seconds`:
 
 - `until_done` hoặc bỏ trống: chờ đến khi submission chấm xong.
 - `0`: không chờ.
 - `30`, `60`, `120`, `300`: chờ tối đa số giây tương ứng.
+
+Payload có thể gửi `max_workers` để nộp song song theo tài khoản. Tool xử lý song song giữa các tài khoản, còn trong một tài khoản thì nộp tuần tự để giữ session ổn định.
 
 ### `GET /api/download-hncode-grading/<prepare_id>`
 

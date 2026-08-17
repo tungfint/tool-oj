@@ -229,6 +229,13 @@ Hoặc file chỉ có `username,password`. Khi thiếu `name`, nếu username c�
 
 Khi chuẩn bị dữ liệu chấm, bảng sẽ hiện folder bài làm và tài khoản chấm tương ứng. Có thể sửa ô tài khoản trước khi bấm xác nhận chấm.
 
+Khi xác nhận chấm HNCode có hai chế độ:
+
+- `Chỉ nộp bài lên, không chờ kết quả`: dùng khi judge lâu; tool nộp nhanh và xuất Excel chứa link submission.
+- `Nộp bài và chờ lấy kết quả`: tool chờ từng submission theo thời gian đã chọn rồi xuất Excel điểm.
+
+Tool có thể nộp song song theo nhiều tài khoản. Mỗi tài khoản dùng một session riêng; các bài của cùng một tài khoản được nộp tuần tự.
+
 Ví dụ mapping:
 
 ```text
