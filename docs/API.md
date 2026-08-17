@@ -264,6 +264,8 @@ Payload có thể gửi `wait_seconds`:
 
 Payload có thể gửi `max_workers` để nộp song song theo tài khoản. Tool xử lý song song giữa các tài khoản, còn trong một tài khoản thì nộp tuần tự để giữ session ổn định.
 
+Nếu HNCode trả HTTP 429 khi submit, tool tự chờ theo `Retry-After` nếu có hoặc chờ tăng dần rồi thử lại. Nếu vẫn lỗi, giảm `max_workers` và dùng nút chọn các dòng lỗi để nộp lại riêng.
+
 ### `GET /api/download-hncode-grading/<prepare_id>`
 
 Tải file Excel kết quả chấm.

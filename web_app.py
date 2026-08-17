@@ -2241,27 +2241,51 @@ def preferred_languages_for_source(path: Path) -> list[str]:
     return ["C++17", "C++"]
 
 
+def rate_limit_wait_seconds(response: requests.Response, attempt: int) -> int:
+    retry_after = response.headers.get("Retry-After", "")
+    try:
+        value = int(float(retry_after))
+        if value > 0:
+            return min(value, 90)
+    except ValueError:
+        pass
+    return min(5 * (2 ** max(0, attempt - 1)), 60)
+
+
 def submit_hncode_grading_file(session: requests.Session, problem_code: str, source_path: Path) -> str:
     submit_url = urljoin(TARGETS["hncode"]["base_url"], f"/problem/{problem_code}/submit")
-    page = session.get(submit_url, timeout=30, allow_redirects=True)
-    if not page.ok:
-        raise RuntimeError(f"Không mở được trang nộp bài {problem_code}: HTTP {page.status_code}")
-    language_id = language_id_from_submit_page(page.text, preferred_languages_for_source(source_path))
-    if not language_id:
-        raise RuntimeError(f"Không tìm thấy ngôn ngữ phù hợp cho file {source_path.name}")
-    result = session.post(
-        submit_url,
-        data={"csrfmiddlewaretoken": csrf_token(page.text), "source": read_text_smart(source_path), "language": language_id, "judge": ""},
-        headers={"Referer": submit_url},
-        allow_redirects=True,
-        timeout=30,
-    )
-    errors = form_errors(result.text) + compact_form_red_errors(result.text)
-    if not result.ok or errors:
-        raise RuntimeError("Submit form báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
-    if "/submission/" not in result.url:
-        raise RuntimeError(f"Submit chưa tạo submission; URL sau POST: {result.url}")
-    return result.url
+    last_status = ""
+    for attempt in range(1, 6):
+        page = session.get(submit_url, timeout=30, allow_redirects=True)
+        if page.status_code == 429:
+            wait = rate_limit_wait_seconds(page, attempt)
+            last_status = f"GET HTTP 429, đã chờ {wait}s"
+            time.sleep(wait)
+            continue
+        if not page.ok:
+            raise RuntimeError(f"Không mở được trang nộp bài {problem_code}: HTTP {page.status_code}")
+        language_id = language_id_from_submit_page(page.text, preferred_languages_for_source(source_path))
+        if not language_id:
+            raise RuntimeError(f"Không tìm thấy ngôn ngữ phù hợp cho file {source_path.name}")
+        result = session.post(
+            submit_url,
+            data={"csrfmiddlewaretoken": csrf_token(page.text), "source": read_text_smart(source_path), "language": language_id, "judge": ""},
+            headers={"Referer": submit_url},
+            allow_redirects=True,
+            timeout=30,
+        )
+        if result.status_code == 429:
+            wait = rate_limit_wait_seconds(result, attempt)
+            last_status = f"POST HTTP 429, đã chờ {wait}s"
+            time.sleep(wait)
+            continue
+        errors = form_errors(result.text) + compact_form_red_errors(result.text)
+        if not result.ok or errors:
+            raise RuntimeError("Submit form báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
+        if "/submission/" not in result.url:
+            raise RuntimeError(f"Submit chưa tạo submission; URL sau POST: {result.url}")
+        return result.url
+    raise RuntimeError(f"Submit form báo lỗi: HTTP 429 sau nhiều lần thử lại ({last_status}). Hãy giảm số luồng nộp hoặc chờ vài phút rồi chấm lại các dòng lỗi.")
 
 
 def parse_hncode_submission_result(page: str) -> dict:
@@ -2499,6 +2523,7 @@ def api_confirm_hncode_grading():
                     row["message"] = str(exc)
                     append_log(f"✗ {row.get('student')} - {row.get('problem')}: {exc}")
                 finish_row(row, f"{row.get('student')} - {row.get('problem')}: {row.get('status')}")
+                time.sleep(0.75)
 
         progress_update(progress_id, phase="confirm-hncode-grading", done=0, total=len(selected_rows), rows=rows, message="Bắt đầu nộp bài")
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, max(1, len(grouped_rows)))) as executor:

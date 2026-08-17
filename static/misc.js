@@ -421,6 +421,9 @@ function renderGradingTable(rows) {
   document.getElementById("gradingSummary").innerHTML = `<div class="table-tools">
     <button class="action" type="button" onclick="setRowSelection('#gradingSummary', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#gradingSummary', false)">Bỏ chọn tất cả</button>
+    <button class="action" type="button" onclick="selectGradingErrorRows()">Chọn dòng lỗi</button>
+    <button class="action" type="button" onclick="sortGradingErrorRowsTop()">Đưa lỗi lên trên</button>
+    <button class="action primary" type="button" onclick="selectAndSortGradingErrors()">Chọn lỗi & đưa lên trên</button>
   </div><table>
     <thead><tr><th>Chọn</th><th>Folder</th><th>Học sinh</th><th>Tài khoản chấm</th><th>Mã bài</th><th>Tên bài</th><th>Điểm bài</th><th>File</th><th>%</th><th>Điểm</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_key)}">
@@ -436,6 +439,28 @@ function renderGradingTable(rows) {
       <td class="row-score">${escapeHtml(row.score || "")}</td>
       <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.submission_url ? ` <a class="problem-link" href="${escapeHtml(row.submission_url)}" target="_blank" rel="noopener">Link</a>` : ""}${row.message ? `<div class="test-meta">${escapeHtml(row.message)}</div>` : ""}</td>
     </tr>`).join("")}</tbody></table>`;
+}
+function isGradingErrorRow(tr) {
+  const text = tr.querySelector(".row-status")?.textContent || "";
+  return text.includes("✗") || text.includes("Lỗi") || text.includes("HTTP 429");
+}
+function selectGradingErrorRows() {
+  const rows = [...document.querySelectorAll("#gradingSummary tbody tr")];
+  rows.forEach(tr => {
+    const checkbox = tr.querySelector(".row-selected");
+    if (checkbox) checkbox.checked = isGradingErrorRow(tr);
+  });
+}
+function sortGradingErrorRowsTop() {
+  const tbody = document.querySelector("#gradingSummary tbody");
+  if (!tbody) return;
+  [...tbody.querySelectorAll("tr")]
+    .sort((left, right) => Number(isGradingErrorRow(right)) - Number(isGradingErrorRow(left)))
+    .forEach(tr => tbody.appendChild(tr));
+}
+function selectAndSortGradingErrors() {
+  selectGradingErrorRows();
+  sortGradingErrorRowsTop();
 }
 function collectGradingRows() {
   return [...document.querySelectorAll("#gradingSummary tbody tr")].map(tr => ({
@@ -508,6 +533,7 @@ document.getElementById("confirmGrading").onclick = async () => {
     });
     stopProgressPolling(progressId);
     applyGradingStatuses(data.rows || []);
+    sortGradingErrorRowsTop();
     const link = data.download_url ? `\nTải bảng điểm: ${location.origin}${data.download_url}` : "";
     log((data.log || (submitOnly ? "Đã nộp xong." : "Đã chấm xong.")) + link);
     if (data.download_url) {
