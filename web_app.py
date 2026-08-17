@@ -2418,12 +2418,13 @@ def api_prepare_hncode_grading():
         safe_extract_zip(source_zip, extract_root)
         source_root = grading_source_root(extract_root)
         rows, warnings = collect_hncode_grading_files(source_root, accounts, contest_problems, problem_file_map)
-        prepared_hncode_grading[prepare_id] = {"root": root, "source_root": source_root, "contest_key": contest_key, "contest_problems": contest_problems, "accounts": accounts, "rows": rows, "output": "", "problem_file_mapping": mapping_text or default_mapping_text}
-        log_lines = [f"Contest: {contest_key}", f"Đã đọc {len(contest_problems)} bài: " + ", ".join(problem["code"] for problem in contest_problems), f"Đã đọc {len(accounts)} tài khoản.", f"Mapping tên file/mã bài: {len(problem_file_map)} dòng.", f"Đã tìm thấy {len(rows)} file bài làm."]
+        prepared_mapping_text = grading_service.build_prepared_problem_file_mapping(rows) or (mapping_text or default_mapping_text)
+        prepared_hncode_grading[prepare_id] = {"root": root, "source_root": source_root, "contest_key": contest_key, "contest_problems": contest_problems, "accounts": accounts, "rows": rows, "output": "", "problem_file_mapping": prepared_mapping_text}
+        log_lines = [f"Contest: {contest_key}", f"Đã đọc {len(contest_problems)} bài: " + ", ".join(problem["code"] for problem in contest_problems), f"Đã đọc {len(accounts)} tài khoản.", f"Mapping tên file/mã bài: {len(problem_file_map)} dòng đầu vào, {len(grading_service.parse_problem_file_mapping(prepared_mapping_text))} dòng sau chuẩn bị.", f"Đã tìm thấy {len(rows)} file bài làm."]
         log_lines.extend(f"- {warning}" for warning in warnings)
         progress_update(progress_id, phase="prepare-hncode-grading", done=3, total=3, rows=rows, message="Đã chuẩn bị dữ liệu chấm")
         progress_finish(progress_id, True, "Đã chuẩn bị dữ liệu chấm")
-        return api_response.api_success(message="Đã chuẩn bị dữ liệu chấm HNCode", rows=rows, log="\n".join(log_lines), prepare_id=prepare_id, problems=contest_problems, accounts=accounts, meta={"contest_key": contest_key, "problem_file_mapping": mapping_text or default_mapping_text})
+        return api_response.api_success(message="Đã chuẩn bị dữ liệu chấm HNCode", rows=rows, log="\n".join(log_lines), prepare_id=prepare_id, problems=contest_problems, accounts=accounts, meta={"contest_key": contest_key, "problem_file_mapping": prepared_mapping_text})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
         return api_response.api_error(str(exc))

@@ -115,6 +115,17 @@ class GradingServiceTests(unittest.TestCase):
         self.assertEqual(rows[0]["problem"], "real_code")
         self.assertTrue(rows[0]["selected"])
 
+    def test_build_prepared_problem_file_mapping_from_rows(self):
+        rows = [
+            {"file": "bai1.cpp", "problem": "tht26_bai1"},
+            {"file": "Bai 2.py", "problem": "tht26_bai2"},
+        ]
+
+        text = grading_service.build_prepared_problem_file_mapping(rows)
+
+        self.assertIn("bai1 | tht26_bai1", text)
+        self.assertIn("bai2 | tht26_bai2", text)
+
     def test_merge_requested_rows(self):
         saved = [
             {"original_key": "a::one.cpp", "selected": True, "status": "Đã chuẩn bị"},

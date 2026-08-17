@@ -246,6 +246,8 @@ bai2.cpp | tht26_bai2
 
 Tool so theo stem của file, nên `bai2.cpp` và `bai2` tương đương.
 
+Sau khi bấm `Chuẩn bị dữ liệu`, tool tự điền lại khối này theo mapping vừa chuẩn bị. Nếu thấy mã nào chưa đúng, sửa trực tiếp trong khối này rồi bấm `Chuẩn bị dữ liệu` lại.
+
 Ví dụ mapping:
 
 ```text

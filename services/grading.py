@@ -168,6 +168,16 @@ def build_default_problem_file_mapping(contest_problems: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def build_prepared_problem_file_mapping(rows: list[dict]) -> str:
+    pairs: dict[str, str] = {}
+    for row in rows:
+        key = normalize_file_stem(row.get("file") or row.get("relative_path") or "")
+        code = re.sub(r"[^A-Za-z0-9_]+", "", str(row.get("problem") or "")).lower()
+        if key and code:
+            pairs[key] = code
+    return "\n".join(f"{key} | {code}" for key, code in sorted(pairs.items()))
+
+
 def collect_submission_files(source_root_path: Path, accounts: list[dict], contest_problems: list[dict], problem_file_map: dict[str, str] | None = None) -> tuple[list[dict], list[str]]:
     account_by_key = {normalize_key(account["name"]): account for account in accounts}
     account_by_folder_key = {account_folder_key(account): account for account in accounts if account_folder_key(account)}

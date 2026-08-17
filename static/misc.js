@@ -503,7 +503,7 @@ document.getElementById("prepareGrading").onclick = async () => {
     if (!res.ok) throw new Error(data.error || "Không chuẩn bị được dữ liệu chấm.");
     stopProgressPolling(progressId);
     preparedGrading = data.prepare_id;
-    if (!document.getElementById("gradingProblemFileMapping").value.trim() && data.meta && data.meta.problem_file_mapping) {
+    if (data.meta && data.meta.problem_file_mapping) {
       document.getElementById("gradingProblemFileMapping").value = data.meta.problem_file_mapping;
     }
     renderGradingTable(data.rows || []);
