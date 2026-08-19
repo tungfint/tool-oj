@@ -115,6 +115,8 @@ Payload:
 
 Response trả `download_url` để tải file `hncode_statements.md`, kèm `rows` trạng thái từng bài.
 
+Tool ưu tiên đọc `/problem/<ma_bai>/edit` khi đăng nhập HNCode thành công. Nếu login/admin lỗi, tool fallback đọc trang public `/problem/<ma_bai>`; bài private vẫn cần tài khoản có quyền.
+
 ## Up nhiều bài
 
 ### `POST /api/prepare-upload`

@@ -22,6 +22,53 @@ def strip_html_text(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<.*?>", " ", value, flags=re.S))).strip()
 
 
+def html_fragment_to_markdown(fragment: str) -> str:
+    text = re.sub(r"<script\b.*?</script>", " ", fragment, flags=re.S | re.I)
+    text = re.sub(r"<style\b.*?</style>", " ", text, flags=re.S | re.I)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
+    text = re.sub(r"</(?:p|div|section|article|tr|table|ul|ol)>", "\n\n", text, flags=re.I)
+    text = re.sub(r"<li\b[^>]*>", "- ", text, flags=re.I)
+    text = re.sub(r"</li>", "\n", text, flags=re.I)
+    text = re.sub(r"<h([1-6])\b[^>]*>(.*?)</h\1>", lambda m: "\n\n" + "#" * min(int(m.group(1)) + 1, 6) + " " + strip_html_text(m.group(2)) + "\n\n", text, flags=re.S | re.I)
+    text = re.sub(r"<pre\b[^>]*>(.*?)</pre>", lambda m: "\n```sample\n" + strip_html_text(m.group(1)) + "\n```\n", text, flags=re.S | re.I)
+    text = re.sub(r"<code\b[^>]*>(.*?)</code>", lambda m: "`" + strip_html_text(m.group(1)) + "`", text, flags=re.S | re.I)
+    text = re.sub(r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", lambda m: f"[{strip_html_text(m.group(2)) or html.unescape(m.group(1))}]({html.unescape(m.group(1))})", text, flags=re.S | re.I)
+    text = re.sub(r"<img\b[^>]*src=[\"']([^\"']+)[\"'][^>]*>", lambda m: f"\n![]({html.unescape(m.group(1))})\n", text, flags=re.S | re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    lines = [re.sub(r"[ \t]+", " ", html.unescape(line)).strip() for line in text.splitlines()]
+    cleaned = "\n".join(line for line in lines if line)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def public_problem_snapshot_from_html(page: str, code: str, base_url: str = "https://hncode.edu.vn") -> dict:
+    title = code
+    h1 = re.search(r"<h1\b[^>]*>(.*?)</h1>", page, re.S | re.I)
+    if h1:
+        title = strip_html_text(h1.group(1)) or code
+    else:
+        title_match = re.search(r"<title\b[^>]*>(.*?)</title>", page, re.S | re.I)
+        if title_match:
+            title = re.sub(r"\s*[-|].*$", "", strip_html_text(title_match.group(1))) or code
+
+    candidate_patterns = [
+        r"<(?P<tag>div|section|article)\b[^>]*(?:id|class)=[\"'][^\"']*(?:problem[-_ ]?statement|problem[-_ ]?description|content[-_ ]?description|description|statement|md-typeset|markdown)[^\"']*[\"'][^>]*>(?P<body>.*?)</(?P=tag)>",
+        r"<main\b[^>]*>(?P<body>.*?)</main>",
+    ]
+    candidates: list[str] = []
+    for pattern in candidate_patterns:
+        for match in re.finditer(pattern, page, re.S | re.I):
+            body = match.group("body")
+            markdown = html_fragment_to_markdown(body)
+            if len(markdown) >= 30:
+                candidates.append(markdown)
+    if not candidates:
+        raise RuntimeError("Khong tim thay vung de bai tren trang public.")
+    statement = max(candidates, key=len)
+    statement = re.sub(r"\]\(/", f"]({base_url.rstrip('/')}/", statement)
+    statement = re.sub(r"\]\((?!https?://|mailto:|data:|#)([^)]+)\)", lambda m: f"]({base_url.rstrip('/')}/{m.group(1).lstrip('/')})", statement)
+    return {"code": code, "name": title, "statement": statement, "link": f"{base_url.rstrip('/')}/problem/{code}"}
+
+
 def input_value(page: str, name: str, default: str = "") -> str:
     match = re.search(
         r'<input\b[^>]*name=["\']' + re.escape(name) + r'["\'][^>]*>',

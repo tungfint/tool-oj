@@ -137,6 +137,46 @@ class HncodeMiscExportTests(unittest.TestCase):
         self.assertIn("## 1. Bai mot (`p_one`)", markdown)
         self.assertIn("Noi dung bai hai.", markdown)
 
+    def test_export_hncode_statements_falls_back_to_public_when_login_fails(self):
+        with patch.object(web_app, "login_hncode", side_effect=RuntimeError("HNCode login did not create a session")), patch.object(
+            web_app,
+            "hncode_public_problem_snapshot",
+            return_value={"name": "Public Bai", "statement": "Noi dung public."},
+        ):
+            response = self.client.post(
+                "/api/misc/export-hncode-statements",
+                json={
+                    "items": "public_one",
+                    "account": {"username": "fake", "password": "wrong"},
+                },
+            )
+
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["ok"])
+        self.assertIn("public", data["rows"][0]["status"])
+        self.assertIn("doc trang public", data["log"])
+
+        download = self.client.get(data["download_url"])
+        markdown = download.get_data(as_text=True)
+        download.close()
+        self.assertIn("Public Bai", markdown)
+        self.assertIn("Noi dung public.", markdown)
+
+    def test_public_problem_snapshot_parser_extracts_statement(self):
+        html = """
+        <html><head><title>Bai public - HNCode</title></head>
+        <body><main><h1>Bai public</h1><div class="problem-statement">
+        <p>Cho so nguyen n.</p><h2>Input</h2><p>Một dòng chứa n.</p>
+        <pre>5</pre></div></main></body></html>
+        """
+        from services import hncode as hncode_service
+
+        snapshot = hncode_service.public_problem_snapshot_from_html(html, "public_one")
+        self.assertEqual(snapshot["name"], "Bai public")
+        self.assertIn("Cho so nguyen n.", snapshot["statement"])
+        self.assertIn("```sample", snapshot["statement"])
+
 
 if __name__ == "__main__":
     unittest.main()

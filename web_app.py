@@ -1846,6 +1846,19 @@ def misc_markdown_export_dir(export_id: str) -> Path:
     return RUNTIME / "misc_statement_exports" / export_id
 
 
+def hncode_public_problem_snapshot(session: requests.Session, code: str) -> dict:
+    base_url = TARGETS["hncode"]["base_url"]
+    public_url = urljoin(base_url, f"/problem/{code}")
+    page = session.get(public_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Khong mo duoc trang public bai {code}: HTTP {page.status_code}")
+    snapshot = hncode_service.public_problem_snapshot_from_html(page.text, code, base_url)
+    snapshot["edit_url"] = ""
+    snapshot["test_url"] = ""
+    snapshot["solution_url"] = ""
+    return snapshot
+
+
 @app.post("/api/misc/export-hncode-statements")
 def api_misc_export_hncode_statements():
     payload = request.get_json(force=True)
@@ -1854,7 +1867,15 @@ def api_misc_export_hncode_statements():
         codes = misc_service.parse_hncode_problem_inputs(payload.get("items") or payload.get("codes") or "")
         if not codes:
             raise RuntimeError("Hay nhap it nhat mot link hoac ma bai HNCode.")
-        session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+        auth_note = ""
+        can_read_admin = False
+        try:
+            session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+            can_read_admin = True
+        except Exception as exc:
+            session = requests.Session()
+            session.headers.update({"User-Agent": USER_AGENT})
+            auth_note = f"Khong dang nhap duoc ({exc}); da thu doc trang public."
         export_id = uuid.uuid4().hex
         output_dir = misc_markdown_export_dir(export_id)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1862,19 +1883,33 @@ def api_misc_export_hncode_statements():
         rows: list[dict] = []
         sections = ["# Danh sach de bai HNCode\n"]
         log_lines = [f"Xuat de bai HNCode ra Markdown: {len(codes)} bai."]
+        if auth_note:
+            log_lines.append(auth_note)
         all_ok = True
         for index, code in enumerate(codes, 1):
             link = misc_service.hncode_problem_url(TARGETS["hncode"]["base_url"], code)
             row = {"index": index, "code": code, "name": "", "link": link, "status": ""}
             try:
-                snapshot = hncode_problem_snapshot(session, code)
+                admin_error = ""
+                if can_read_admin:
+                    try:
+                        snapshot = hncode_problem_snapshot(session, code)
+                    except Exception as exc:
+                        admin_error = str(exc)
+                        snapshot = hncode_public_problem_snapshot(session, code)
+                else:
+                    snapshot = hncode_public_problem_snapshot(session, code)
                 name = snapshot.get("name") or code
                 statement = (snapshot.get("statement") or "").strip()
                 if not statement:
                     raise RuntimeError("De bai dang trong.")
-                row.update({"name": name, "status": "✓ Da lay de"})
+                source_note = "public" if (not can_read_admin or admin_error) else "admin"
+                row.update({"name": name, "status": f"✓ Da lay de ({source_note})"})
                 sections.append(f"## {index}. {name} (`{code}`)\n\n**Link:** {link}\n\n{statement}\n")
-                log_lines.append(f"✓ {code}: da lay de.")
+                if admin_error:
+                    log_lines.append(f"✓ {code}: da lay de public sau khi admin loi: {admin_error}")
+                else:
+                    log_lines.append(f"✓ {code}: da lay de ({source_note}).")
             except Exception as exc:
                 all_ok = False
                 row["status"] = f"✗ Loi: {exc}"
