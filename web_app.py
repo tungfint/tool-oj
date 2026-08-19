@@ -1742,9 +1742,24 @@ def api_misc_list_problem_codes():
     source_type = payload.get("source_type", "contest")
     source_url = (payload.get("url") or "").strip()
     account = payload.get("account", {})
+    def optional_read_session(base_url: str, account_payload: dict) -> tuple[requests.Session, str]:
+        username = (account_payload.get("username") or "").strip()
+        password = account_payload.get("password") or ""
+        if username and password:
+            try:
+                return login_hncode(base_url, username, password), ""
+            except Exception as exc:
+                public_session = requests.Session()
+                public_session.headers.update({"User-Agent": USER_AGENT})
+                return public_session, f"Khong dang nhap duoc ({exc}); da thu doc trang public."
+        public_session = requests.Session()
+        public_session.headers.update({"User-Agent": USER_AGENT})
+        return public_session, "Chua co tai khoan/mat khau, da doc trang public."
+
     try:
+        auth_note = ""
         if site == "hncode":
-            session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+            session, auth_note = optional_read_session(TARGETS["hncode"]["base_url"], account)
             if source_type == "lesson":
                 course_slug, lesson_id = extract_hncode_lesson_ref(source_url)
                 rows = hncode_lesson_problem_code_rows(session, course_slug, lesson_id)
@@ -1759,7 +1774,7 @@ def api_misc_list_problem_codes():
         elif site == "hnoj":
             if source_type != "contest":
                 raise RuntimeError("HNOJ hiện chỉ hỗ trợ lấy mã bài từ Contest.")
-            session = login_hncode(TARGETS["hnoj"]["base_url"], account.get("username", ""), account.get("password", ""))
+            session, auth_note = optional_read_session(TARGETS["hnoj"]["base_url"], account)
             contest_key = extract_hncode_contest_key(source_url)
             rows = hnoj_contest_problem_rows(session, contest_key)
             source_label = f"HNOJ Contest: {contest_key}"
@@ -1784,11 +1799,13 @@ def api_misc_list_problem_codes():
             "Danh sách mã bài:",
             codes_text,
         ]
+        if auth_note:
+            log_lines.insert(1, auth_note)
         return api_response.api_success(
             message=f"Đã lấy {len(rows)} mã bài.",
             rows=rows,
             log="\n".join(log_lines),
-            meta={"source": source_label, "count": len(rows)},
+            meta={"source": source_label, "count": len(rows), "auth_note": auth_note},
             codes_text=codes_text,
             compact_text=compact_text,
             links_text=links_text,

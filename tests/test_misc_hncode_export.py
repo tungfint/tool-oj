@@ -53,6 +53,27 @@ class HncodeMiscExportTests(unittest.TestCase):
         )
         self.assertEqual(data["rows"][0]["link"], "https://hncode.edu.vn/problem/p_one")
 
+    def test_list_problem_codes_falls_back_to_public_when_login_fails(self):
+        rows = [{"code": "public_one", "title": "Public One", "points": "100"}]
+        with patch.object(web_app, "login_hncode", side_effect=RuntimeError("HNCode login did not create a session")), patch.object(
+            web_app, "hncode_contest_problem_rows", return_value=rows
+        ):
+            response = self.client.post(
+                "/api/misc/list-problem-codes",
+                json={
+                    "site": "hncode",
+                    "source_type": "contest",
+                    "url": "https://hncode.edu.vn/contest/demo",
+                    "account": {"username": "fake", "password": "wrong"},
+                },
+            )
+
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["codes_text"], "public_one")
+        self.assertIn("doc trang public", data["meta"]["auth_note"])
+
     def test_export_hncode_statements_writes_markdown_without_live_login(self):
         snapshots = {
             "p_one": {"name": "Bai mot", "statement": "Noi dung bai mot."},
