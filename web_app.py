@@ -1749,10 +1749,13 @@ def api_misc_list_problem_codes():
                 course_slug, lesson_id = extract_hncode_lesson_ref(source_url)
                 rows = hncode_lesson_problem_code_rows(session, course_slug, lesson_id)
                 source_label = f"HNCode Lesson: {course_slug}/lesson/{lesson_id}"
+                source_key = ""
             else:
                 contest_key = extract_hncode_contest_key(source_url)
                 rows = hncode_contest_problem_rows(session, contest_key)
                 source_label = f"HNCode Contest: {contest_key}"
+                source_key = contest_key
+            base_url = TARGETS["hncode"]["base_url"]
         elif site == "hnoj":
             if source_type != "contest":
                 raise RuntimeError("HNOJ hiện chỉ hỗ trợ lấy mã bài từ Contest.")
@@ -1760,12 +1763,21 @@ def api_misc_list_problem_codes():
             contest_key = extract_hncode_contest_key(source_url)
             rows = hnoj_contest_problem_rows(session, contest_key)
             source_label = f"HNOJ Contest: {contest_key}"
+            source_key = contest_key
+            base_url = TARGETS["hnoj"]["base_url"]
         else:
             raise RuntimeError("Nguồn không hợp lệ. Hãy chọn HNCode hoặc HNOJ.")
         for index, row in enumerate(rows, 1):
             row["index"] = index
+            row["link"] = row.get("link") or misc_service.hncode_problem_url(base_url, row["code"])
+            if site == "hncode" and source_type == "contest" and source_key:
+                row["source_link"] = row.get("source_link") or misc_service.hncode_contest_problem_url(base_url, source_key, row["code"])
+            else:
+                row["source_link"] = row.get("source_link") or row["link"]
         codes_text = "\n".join(row["code"] for row in rows)
         compact_text = " ".join(row["code"] for row in rows)
+        links_text = "\n".join(row["link"] for row in rows)
+        source_links_text = "\n".join(row["source_link"] for row in rows)
         log_lines = [
             f"Nguồn: {source_label}",
             f"Số bài: {len(rows)}",
@@ -1779,9 +1791,77 @@ def api_misc_list_problem_codes():
             meta={"source": source_label, "count": len(rows)},
             codes_text=codes_text,
             compact_text=compact_text,
+            links_text=links_text,
+            source_links_text=source_links_text,
         )
     except Exception as exc:
         return api_response.api_error(str(exc))
+
+
+def misc_markdown_export_dir(export_id: str) -> Path:
+    if not re.fullmatch(r"[a-f0-9]{32}", export_id or ""):
+        raise RuntimeError("Ma file xuat khong hop le.")
+    return RUNTIME / "misc_statement_exports" / export_id
+
+
+@app.post("/api/misc/export-hncode-statements")
+def api_misc_export_hncode_statements():
+    payload = request.get_json(force=True)
+    account = payload.get("account", {})
+    try:
+        codes = misc_service.parse_hncode_problem_inputs(payload.get("items") or payload.get("codes") or "")
+        if not codes:
+            raise RuntimeError("Hay nhap it nhat mot link hoac ma bai HNCode.")
+        session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+        export_id = uuid.uuid4().hex
+        output_dir = misc_markdown_export_dir(export_id)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "hncode_statements.md"
+        rows: list[dict] = []
+        sections = ["# Danh sach de bai HNCode\n"]
+        log_lines = [f"Xuat de bai HNCode ra Markdown: {len(codes)} bai."]
+        all_ok = True
+        for index, code in enumerate(codes, 1):
+            link = misc_service.hncode_problem_url(TARGETS["hncode"]["base_url"], code)
+            row = {"index": index, "code": code, "name": "", "link": link, "status": ""}
+            try:
+                snapshot = hncode_problem_snapshot(session, code)
+                name = snapshot.get("name") or code
+                statement = (snapshot.get("statement") or "").strip()
+                if not statement:
+                    raise RuntimeError("De bai dang trong.")
+                row.update({"name": name, "status": "✓ Da lay de"})
+                sections.append(f"## {index}. {name} (`{code}`)\n\n**Link:** {link}\n\n{statement}\n")
+                log_lines.append(f"✓ {code}: da lay de.")
+            except Exception as exc:
+                all_ok = False
+                row["status"] = f"✗ Loi: {exc}"
+                sections.append(f"## {index}. `{code}`\n\n**Link:** {link}\n\n> Loi: {exc}\n")
+                log_lines.append(f"✗ {code}: {exc}")
+            rows.append(row)
+        output_path.write_text("\n\n---\n\n".join(sections).strip() + "\n", encoding="utf-8")
+        download_url = f"/api/misc/download-statement-export/{export_id}"
+        return api_response.api_success(
+            message="Da xuat file Markdown." if all_ok else "Da xuat file Markdown, mot so bai bi loi.",
+            rows=rows,
+            log="\n".join(log_lines),
+            meta={"count": len(rows), "export_id": export_id},
+            download_url=download_url,
+            ok=all_ok,
+        )
+    except Exception as exc:
+        return api_response.api_error(str(exc))
+
+
+@app.get("/api/misc/download-statement-export/<export_id>")
+def api_misc_download_statement_export(export_id: str):
+    try:
+        path = misc_markdown_export_dir(export_id) / "hncode_statements.md"
+        if not path.exists():
+            raise RuntimeError("Khong tim thay file Markdown da xuat.")
+        return send_file(path, mimetype="text/markdown; charset=utf-8", as_attachment=True, download_name=path.name)
+    except Exception as exc:
+        return api_response.api_error(str(exc), status=404)
 
 
 @app.post("/api/upload-quiz")

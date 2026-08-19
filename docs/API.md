@@ -83,6 +83,35 @@ Service/parser liên quan:
 
 - `services/hncode.py`
 - `services/hnoj.py`
+- `services/misc.py`: chuẩn hóa link/mã bài HNCode.
+
+Response ngoài `rows` còn có:
+
+- `codes_text`: mỗi dòng một mã bài.
+- `links_text`: mỗi dòng một link `/problem/<ma_bai>`.
+- `source_links_text`: với HNCode contest là link dạng `/contest/<contest>/problems/<ma_bai>`.
+
+### `POST /api/misc/export-hncode-statements`
+
+Nhận một hoặc nhiều mã bài/link HNCode, tự nhận dạng:
+
+- `ma_bai`
+- `https://hncode.edu.vn/problem/ma_bai`
+- `https://hncode.edu.vn/contest/<contest>/problems/ma_bai`
+
+Payload:
+
+```json
+{
+  "items": "ma_bai_1\nhttps://hncode.edu.vn/problem/ma_bai_2",
+  "account": {
+    "username": "...",
+    "password": "..."
+  }
+}
+```
+
+Response trả `download_url` để tải file `hncode_statements.md`, kèm `rows` trạng thái từng bài.
 
 ## Up nhiều bài
 

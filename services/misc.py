@@ -12,6 +12,48 @@ from pathlib import Path
 CODE_EXTENSIONS = {".py", ".cpp", ".cc", ".cxx", ".c", ".pas", ".java"}
 
 
+def extract_hncode_problem_code(value: str) -> str:
+    """Extract a HNCode problem code from a raw code or common HNCode URL."""
+    text = (value or "").strip()
+    if not text:
+        return ""
+    text = text.split("#", 1)[0].split("?", 1)[0].strip().rstrip("/")
+    patterns = [
+        r"/contest/[^/\s]+/problems/([A-Za-z0-9_-]+)",
+        r"/contest/[^/\s]+/problem/([A-Za-z0-9_-]+)",
+        r"/problem/([A-Za-z0-9_-]+)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    if re.fullmatch(r"[A-Za-z0-9_-]+", text):
+        return text
+    return ""
+
+
+def parse_hncode_problem_inputs(text: str) -> list[str]:
+    """Parse one or many HNCode problem links/codes, preserving first-seen order."""
+    seen = set()
+    codes: list[str] = []
+    for raw_line in (text or "").splitlines():
+        parts = re.split(r"[\s,;]+", raw_line.strip())
+        for part in parts:
+            code = extract_hncode_problem_code(part)
+            if code and code not in seen:
+                seen.add(code)
+                codes.append(code)
+    return codes
+
+
+def hncode_problem_url(base_url: str, code: str) -> str:
+    return f"{base_url.rstrip('/')}/problem/{code}"
+
+
+def hncode_contest_problem_url(base_url: str, contest_key: str, code: str) -> str:
+    return f"{base_url.rstrip('/')}/contest/{contest_key}/problems/{code}"
+
+
 def scratch_submission_score(student_dir: Path) -> int:
     history = student_dir / "$History"
     score = 0

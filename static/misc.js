@@ -368,15 +368,18 @@ document.getElementById("runCodeList").onclick = async () => {
       account: accountPayload(site),
     });
     document.getElementById("codeListOutput").value = data.codes_text || "";
+    document.getElementById("codeListLinksOutput").value = data.links_text || data.source_links_text || "";
     const rows = data.rows || [];
     document.getElementById("codeListSummary").innerHTML = `<div class="note">Tìm thấy ${rows.length} bài.</div>
       <table>
-        <thead><tr><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm</th></tr></thead>
+        <thead><tr><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm</th><th>Link</th><th>Link trong contest</th></tr></thead>
         <tbody>${rows.map(row => `<tr>
           <td>${row.index || row.order || ""}</td>
-          <td><code>${escapeHtml(row.code || "")}</code></td>
+          <td>${row.link ? `<a href="${escapeHtml(row.link)}" target="_blank" rel="noopener"><code>${escapeHtml(row.code || "")}</code></a>` : `<code>${escapeHtml(row.code || "")}</code>`}</td>
           <td>${escapeHtml(row.title || "")}</td>
           <td>${escapeHtml(row.points || row.score || "")}</td>
+          <td>${row.link ? `<a href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : ""}</td>
+          <td>${row.source_link ? `<a href="${escapeHtml(row.source_link)}" target="_blank" rel="noopener">Link</a>` : ""}</td>
         </tr>`).join("")}</tbody>
       </table>`;
     log(data.log || `Đã lấy ${rows.length} mã bài.`);
@@ -387,6 +390,44 @@ document.getElementById("runCodeList").onclick = async () => {
   }
 };
 syncCodeListType();
+
+document.getElementById("fillStatementExportFromCodeList").onclick = () => {
+  const codes = document.getElementById("codeListOutput").value.trim();
+  const links = document.getElementById("codeListLinksOutput").value.trim();
+  document.getElementById("statementExportItems").value = codes || links;
+};
+document.getElementById("runStatementExport").onclick = async () => {
+  try {
+    status("running");
+    saveAccounts();
+    log("Đang xuất đề bài HNCode ra Markdown...");
+    const data = await postJson("/api/misc/export-hncode-statements", {
+      items: document.getElementById("statementExportItems").value,
+      account: accountPayload("hncode"),
+    });
+    const rows = data.rows || [];
+    const downloadHtml = data.download_url
+      ? `<a class="action primary" href="${escapeHtml(data.download_url)}" target="_blank" rel="noopener" download="hncode_statements.md">Tải file Markdown</a>`
+      : "";
+    document.getElementById("statementExportSummary").innerHTML = `<div class="note">${escapeHtml(data.message || "")}</div>
+      <div class="actions">${downloadHtml}</div>
+      <table>
+        <thead><tr><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Trạng thái</th><th>Link</th></tr></thead>
+        <tbody>${rows.map(row => `<tr>
+          <td>${row.index || ""}</td>
+          <td><code>${escapeHtml(row.code || "")}</code></td>
+          <td>${escapeHtml(row.name || "")}</td>
+          <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}</td>
+          <td>${row.link ? `<a href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : ""}</td>
+        </tr>`).join("")}</tbody>
+      </table>`;
+    log(data.log || data.message || "Đã xuất file Markdown.");
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
 
 document.getElementById("chooseLastSubZip").onclick = () => document.getElementById("lastSubZipFile").click();
 document.getElementById("lastSubZipFile").addEventListener("change", event => {

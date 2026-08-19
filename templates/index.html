@@ -496,7 +496,21 @@
           </div>
           <label>Danh sách mã bài</label>
           <textarea id="codeListOutput" rows="6" readonly placeholder="Mã bài sẽ hiện ở đây, mỗi dòng một mã."></textarea>
+          <label>Danh sách link bài</label>
+          <textarea id="codeListLinksOutput" rows="6" readonly placeholder="Link bài sẽ hiện ở đây, mỗi dòng một link."></textarea>
           <div id="codeListSummary"></div>
+        </div>
+
+        <div class="tool-card">
+          <h3 class="tool-title">Xuất đề bài HNCode ra Markdown</h3>
+          <p class="tool-subtitle">Nhập mã bài hoặc link HNCode, mỗi dòng một bài. Tool tự nhận các link dạng <code>/problem/ma_bai</code> và <code>/contest/contest/problems/ma_bai</code>, sau đó trả về một file Markdown gồm các đề bài.</p>
+          <label>Link hoặc mã bài HNCode</label>
+          <textarea id="statementExportItems" rows="7" placeholder="abc_problem&#10;https://hncode.edu.vn/problem/abc_problem&#10;https://hncode.edu.vn/contest/contest_key/problems/abc_problem"></textarea>
+          <div class="actions">
+            <button class="action" type="button" id="fillStatementExportFromCodeList">Lấy từ danh sách mã bài ở trên</button>
+            <button class="action primary" type="button" id="runStatementExport">Xuất file Markdown</button>
+          </div>
+          <div id="statementExportSummary"></div>
         </div>
 
         <div class="tool-card">

@@ -67,6 +67,7 @@ Endpoint cần test thêm:
 
 ```text
 POST /api/misc/list-problem-codes
+POST /api/misc/export-hncode-statements
 POST /api/prepare-contest-to-lesson
 POST /api/prepare-hncode-grading
 ```
