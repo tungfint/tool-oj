@@ -90,6 +90,8 @@ Endpoint cần test:
 POST /api/misc/list-problem-codes
 POST /api/prepare-contest-to-lesson
 POST /api/confirm-contest-to-lesson
+POST /api/prepare-lesson-from-list
+POST /api/confirm-lesson-from-list
 POST /api/prepare-course-clone
 POST /api/confirm-course-clone
 ```

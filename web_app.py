@@ -320,6 +320,7 @@ prepared_transfers: dict[str, dict] = {}
 prepared_contest_transfers: dict[str, dict] = {}
 prepared_quizzes: dict[str, dict] = {}
 prepared_lesson_copies: dict[str, dict] = {}
+prepared_lesson_updates: dict[str, dict] = {}
 prepared_course_clones: dict[str, dict] = {}
 prepared_hncode_grading: dict[str, dict] = {}
 prepared_ai_normalize: dict[str, dict] = {}
@@ -2127,6 +2128,129 @@ def api_confirm_course_clone():
         )
     except Exception as exc:
         return api_response.api_error(str(exc), rows=result_rows)
+
+
+@app.post("/api/prepare-lesson-from-list")
+def api_prepare_lesson_from_list():
+    payload = request.get_json(force=True)
+    account = payload.get("account", {})
+    try:
+        course_slug, lesson_id = extract_hncode_lesson_ref(payload.get("lesson_url", ""))
+        codes = misc_service.parse_hncode_problem_inputs(payload.get("problems", ""))
+        if not codes:
+            raise RuntimeError("Không đọc được mã bài nào. Hãy nhập mỗi mã hoặc link bài trên một dòng.")
+        default_score = str(payload.get("default_score") or "100").strip() or "100"
+        session = login_hncode(
+            TARGETS["hncode"]["base_url"],
+            account.get("username", ""),
+            account.get("password", ""),
+        )
+        edit_url = hncode_lesson_edit_url(course_slug, lesson_id)
+        lesson_page = session.get(edit_url, timeout=30)
+        if not lesson_page.ok:
+            raise RuntimeError(f"Không mở được lesson đích: HTTP {lesson_page.status_code}")
+        current_rows = lesson_problem_rows_from_page(lesson_page.text, lesson_id)
+        existing_ids = {str(row["problem"]) for row in current_rows if row.get("problem")}
+
+        def resolve_problem(code: str) -> tuple[str, str]:
+            problem_id = admin_problem_id(session, TARGETS["hncode"]["base_url"], code) or ""
+            if not problem_id:
+                return "", code
+            saved_code, title = admin_problem_code_name_by_id(
+                session, TARGETS["hncode"]["base_url"], problem_id
+            )
+            return problem_id, title or saved_code or code
+
+        rows = lesson_service.build_problem_list_rows(
+            codes,
+            default_score=default_score,
+            existing_problem_ids=existing_ids,
+            resolve_problem=resolve_problem,
+        )
+        lesson_link = hncode_lesson_url(course_slug, lesson_id)
+        log_lines = [
+            "Chuẩn bị tạo Lesson HNCode từ danh sách bài",
+            f"Lesson: {lesson_link}",
+            f"Đã đọc {len(codes)} mã bài.",
+        ]
+        for row in rows:
+            log_lines.append(f"{row['index']}. {row['code']} - {row['title']} - {row['status']}")
+        prepare_id = uuid.uuid4().hex
+        prepared_lesson_updates[prepare_id] = {
+            "created_at": time.time(),
+            "course_slug": course_slug,
+            "lesson_id": lesson_id,
+            "rows": rows,
+        }
+        return api_response.api_success(
+            message="Đã chuẩn bị danh sách bài cho Lesson",
+            rows=rows,
+            log="\n".join(log_lines),
+            prepare_id=prepare_id,
+            can_add=any(row.get("selected") for row in rows),
+            lesson_link=lesson_link,
+            meta={"course_slug": course_slug, "lesson_id": lesson_id},
+        )
+    except Exception as exc:
+        return api_response.api_error(str(exc))
+
+
+@app.post("/api/confirm-lesson-from-list")
+def api_confirm_lesson_from_list():
+    payload = request.get_json(force=True)
+    state = prepared_lesson_updates.get(payload.get("prepare_id", ""))
+    if not state:
+        return api_response.api_error("Dữ liệu chuẩn bị Lesson đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
+    requested_rows = payload.get("rows", [])
+    result_rows, selected_refs = lesson_service.merge_requested_lesson_copy_rows(state["rows"], requested_rows)
+    lesson_link = hncode_lesson_url(state["course_slug"], state["lesson_id"])
+    log_lines = ["Tạo Lesson HNCode từ danh sách bài", f"Lesson: {lesson_link}"]
+    try:
+        invalid_selected = [row for row in result_rows if row.get("selected") and not row.get("problem_id")]
+        for row in invalid_selected:
+            row["status"] = "✗ Không tìm thấy bài trong admin HNCode"
+            row["error"] = "Không thể thêm mã bài chưa tồn tại trên HNCode."
+            log_lines.append(f"✗ {row.get('code')}: {row['error']}")
+        if selected_refs:
+            account = payload.get("account", {})
+            session = login_hncode(
+                TARGETS["hncode"]["base_url"],
+                account.get("username", ""),
+                account.get("password", ""),
+            )
+            lesson_link = copy_hncode_contest_to_lesson(
+                session, state["course_slug"], state["lesson_id"], selected_refs
+            )
+            selected_ids = {str(row.get("problem_id")) for row in selected_refs}
+            for row in result_rows:
+                if row.get("selected") and str(row.get("problem_id")) in selected_ids:
+                    row["status"] = "✓ Đã thêm"
+                    row["link"] = lesson_link
+                    log_lines.append(f"✓ {row.get('code')}: đã thêm vào lesson.")
+        for row in result_rows:
+            if row.get("status") == "Bỏ qua":
+                log_lines.append(f"- {row.get('code')}: bỏ qua.")
+            elif row.get("status") == "Đã có trong lesson":
+                log_lines.append(f"- {row.get('code')}: đã có trong lesson.")
+        if not selected_refs and not invalid_selected:
+            log_lines.append("Không có bài mới được chọn để thêm.")
+        ok = not invalid_selected and all(
+            not row.get("selected") or row.get("status", "").startswith("✓")
+            for row in result_rows
+        )
+        return api_response.api_success(
+            message="Đã thêm bài vào Lesson" if ok else "Thêm bài vào Lesson có lỗi",
+            rows=result_rows,
+            log="\n".join(log_lines),
+            link=lesson_link,
+            ok=ok,
+        )
+    except Exception as exc:
+        for row in result_rows:
+            if row.get("selected") and not row.get("status", "").startswith("✓"):
+                row["status"] = "✗ Lỗi"
+                row["error"] = str(exc)
+        return api_response.api_error(str(exc), rows=result_rows, log="\n".join(log_lines))
 
 
 @app.post("/api/prepare-contest-to-lesson")

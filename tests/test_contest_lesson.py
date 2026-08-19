@@ -65,6 +65,29 @@ class ContestLessonTests(unittest.TestCase):
         self.assertEqual(rows[2]["status"], "Đã có trong lesson")
         self.assertFalse(rows[2]["selected"])
 
+    def test_build_problem_list_rows(self):
+        resolved = {
+            "new_problem": ("201", "Bài mới"),
+            "old_problem": ("101", "Bài đã có"),
+            "missing_problem": ("", "missing_problem"),
+        }
+
+        rows = lesson_service.build_problem_list_rows(
+            ["new_problem", "old_problem", "missing_problem"],
+            default_score="80",
+            existing_problem_ids={"101"},
+            resolve_problem=lambda code: resolved[code],
+        )
+
+        self.assertEqual([row["index"] for row in rows], [1, 2, 3])
+        self.assertEqual(rows[0]["title"], "Bài mới")
+        self.assertEqual(rows[0]["score"], "80")
+        self.assertTrue(rows[0]["selected"])
+        self.assertEqual(rows[1]["status"], "Đã có trong lesson")
+        self.assertFalse(rows[1]["selected"])
+        self.assertIn("Không tìm thấy", rows[2]["status"])
+        self.assertFalse(rows[2]["selected"])
+
     def test_merge_requested_lesson_copy_rows(self):
         saved = [
             {"code": "a", "score": "100", "problem_id": "1", "selected": True, "status": "✓ Sẵn sàng"},
@@ -113,6 +136,66 @@ class ContestLessonTests(unittest.TestCase):
         self.assertTrue(data["can_copy"])
         self.assertEqual(data["rows"][0]["status"], "✓ Sẵn sàng")
         self.assertEqual(data["rows"][1]["status"], "Đã có trong lesson")
+
+    def test_prepare_lesson_from_problem_list_api_with_mock_session(self):
+        ids = {"new_problem": "201", "old_problem": "101"}
+        names = {"201": ("new_problem", "Bài mới"), "101": ("old_problem", "Bài cũ")}
+
+        with patch.object(web_app, "login_hncode", return_value=FakeSession()), \
+             patch.object(web_app, "admin_problem_id", side_effect=lambda _session, _base, code: ids.get(code, "")), \
+             patch.object(web_app, "admin_problem_code_name_by_id", side_effect=lambda _session, _base, problem_id: names.get(problem_id, ("", ""))):
+            response = web_app.app.test_client().post(
+                "/api/prepare-lesson-from-list",
+                json={
+                    "lesson_url": "https://hncode.edu.vn/course/demo/lesson/3123",
+                    "problems": "https://hncode.edu.vn/problem/new_problem\nold_problem\nmissing_problem",
+                    "default_score": "70",
+                    "account": {"username": "fake", "password": "fake"},
+                },
+            )
+
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["can_add"])
+        self.assertEqual([row["code"] for row in data["rows"]], ["new_problem", "old_problem", "missing_problem"])
+        self.assertEqual(data["rows"][0]["score"], "70")
+        self.assertEqual(data["rows"][1]["status"], "Đã có trong lesson")
+        self.assertIn("Không tìm thấy", data["rows"][2]["status"])
+
+    def test_confirm_lesson_from_problem_list_api_without_live_admin(self):
+        ids = {"new_problem": "201"}
+        client = web_app.app.test_client()
+        with patch.object(web_app, "login_hncode", return_value=FakeSession()), \
+             patch.object(web_app, "admin_problem_id", side_effect=lambda _session, _base, code: ids.get(code, "")), \
+             patch.object(web_app, "admin_problem_code_name_by_id", return_value=("new_problem", "Bài mới")):
+            prepared = client.post(
+                "/api/prepare-lesson-from-list",
+                json={
+                    "lesson_url": "https://hncode.edu.vn/course/demo/lesson/3123",
+                    "problems": "new_problem",
+                    "default_score": "60",
+                    "account": {"username": "fake", "password": "fake"},
+                },
+            ).get_json()
+
+        with patch.object(web_app, "login_hncode", return_value=FakeSession()), \
+             patch.object(web_app, "copy_hncode_contest_to_lesson", return_value="https://hncode.edu.vn/course/demo/lesson/3123"):
+            response = client.post(
+                "/api/confirm-lesson-from-list",
+                json={
+                    "prepare_id": prepared["prepare_id"],
+                    "account": {"username": "fake", "password": "fake"},
+                    "rows": [{"code": "new_problem", "selected": True, "score": "60"}],
+                },
+            )
+
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["rows"][0]["status"], "✓ Đã thêm")
+        self.assertEqual(data["rows"][0]["score"], "60")
+        self.assertEqual(data["rows"][0]["link"], "https://hncode.edu.vn/course/demo/lesson/3123")
 
 
 if __name__ == "__main__":

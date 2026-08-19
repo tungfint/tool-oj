@@ -321,6 +321,14 @@ Nhập:
 
 Sau khi tạo xong, người dùng có thể vào admin của web đích để chỉnh setup chi tiết hơn.
 
+## Tab Tạo Lesson
+
+- Nhập link lesson HNCode đã có và danh sách mã bài hoặc link bài.
+- Tool giữ đúng thứ tự nhập, nhận cả link `/problem/<ma_bai>` và `/contest/<contest>/problems/<ma_bai>`.
+- Bấm `Chuẩn bị dữ liệu` để xem tên bài, điểm và trạng thái trước khi thêm.
+- Bài đã có trong lesson hoặc không tồn tại trên HNCode được báo rõ và tự động bỏ qua.
+- Có thể sửa điểm từng bài hoặc áp dụng một mức điểm cho toàn bộ bảng.
+
 ## Tab Contest → Lesson
 
 Tab này sao chép danh sách bài từ một contest HNCode/HNOJ vào một lesson HNCode.

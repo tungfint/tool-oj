@@ -228,6 +228,16 @@ Service nền:
 
 - `services/contest.py`: parse mã contest, nhận diện nguồn HNCode/HNOJ từ URL, build URL contest.
 
+## Tạo Lesson từ danh sách bài
+
+### `POST /api/prepare-lesson-from-list`
+
+Nhận `lesson_url`, `problems`, `default_score` và tài khoản HNCode. `problems` có thể gồm mã bài hoặc link bài, mỗi mục trên một dòng. API so sánh với lesson hiện tại và trả bảng từng bài trước khi lưu.
+
+### `POST /api/confirm-lesson-from-list`
+
+Nhận `prepare_id` và các dòng đã chọn, sau đó thêm bài vào lesson theo đúng thứ tự. Bài đã có hoặc không tồn tại được giữ nguyên trạng thái và bỏ qua.
+
 ## Contest sang Lesson
 
 ### `POST /api/prepare-contest-to-lesson`
@@ -240,7 +250,7 @@ Thêm bài vào lesson HNCode. Nếu nguồn là HNOJ và bài chưa có ở HNC
 
 Service nền:
 
-- `services/lesson.py`: parse URL lesson, build URL lesson/edit lesson, parse/build formset lesson, build bảng chuẩn bị Contest -> Lesson và merge dòng xác nhận.
+- `services/lesson.py`: parse URL lesson, build URL lesson/edit lesson, parse/build formset lesson, build bảng từ danh sách mã bài hoặc Contest -> Lesson và merge dòng xác nhận.
 
 ## Clone Course
 

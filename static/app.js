@@ -5,6 +5,7 @@ let preparedTransfer = null;
 let preparedContestTransfer = null;
 let preparedQuiz = null;
 let preparedContestLessonCopy = null;
+let preparedLessonUpdate = null;
 let preparedCourseClone = null;
 let preparedGrading = null;
 let preparedAiNormalize = null;
@@ -285,6 +286,7 @@ document.getElementById("contestSource").addEventListener("change", checkContest
 document.getElementById("contestDest").addEventListener("change", checkContestLogins);
 document.getElementById("contestCodes").addEventListener("blur", checkContestLogins);
 document.getElementById("createContestTarget").addEventListener("change", checkCreateContestLogin);
+document.getElementById("lessonCreateUrl").addEventListener("blur", checkLessonCreateLogin);
 document.getElementById("lessonCopySource").addEventListener("change", checkLessonCopyLogin);
 document.getElementById("lessonCopyContestUrl").addEventListener("blur", () => {
   const value = document.getElementById("lessonCopyContestUrl").value.toLowerCase();
@@ -295,7 +297,7 @@ document.getElementById("lessonCopyContestUrl").addEventListener("blur", () => {
 renderLanguages();
 renderSingleLanguages();
 renderTransferLanguages();
-setTimeout(() => { checkUploadLogin(); checkSingleUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); checkLessonCopyLogin(); checkCourseCloneLogin(); }, 300);
+setTimeout(() => { checkUploadLogin(); checkSingleUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); checkLessonCreateLogin(); checkLessonCopyLogin(); checkCourseCloneLogin(); }, 300);
 
 function selectedLanguages() {
   return [...document.querySelectorAll("#languages input:checked")].map(item => item.value);
@@ -382,6 +384,10 @@ function checkLessonCopyLogin() {
   checkLogin(source, "lessonCopySourceLogin");
   checkLogin("hncode", "lessonCopyLogin");
 }
+function checkLessonCreateLogin() {
+  document.getElementById("lessonCreateUserMirror").value = accountFields.hncode_user.value || "hncode";
+  checkLogin("hncode", "lessonCreateLogin");
+}
 function checkCourseCloneLogin() {
   document.getElementById("courseCloneUserMirror").value = accountFields.hncode_user.value || "hncode";
   checkLogin("hncode", "courseCloneLogin");
@@ -455,7 +461,9 @@ function collectRows(selector) {
   }));
 }
 function setRowSelection(selector, checked) {
-  document.querySelectorAll(selector + " .row-selected").forEach(item => { item.checked = checked; });
+  document.querySelectorAll(selector + " .row-selected").forEach(item => {
+    if (!item.disabled) item.checked = checked;
+  });
 }
 function markRowsProcessing(selector, text="Đang xử lý...") {
   for (const tr of document.querySelectorAll(selector + " tbody tr")) {

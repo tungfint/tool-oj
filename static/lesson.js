@@ -1,3 +1,100 @@
+document.getElementById("prepareLessonCreate").onclick = async () => {
+  try {
+    status("running");
+    log("Đang kiểm tra lesson và danh sách bài HNCode...");
+    saveAccounts();
+    const data = await postJson("/api/prepare-lesson-from-list", {
+      account: accountPayload("hncode"),
+      lesson_url: document.getElementById("lessonCreateUrl").value.trim(),
+      problems: document.getElementById("lessonCreateProblems").value,
+      default_score: document.getElementById("lessonCreateDefaultScore").value.trim() || "100",
+    });
+    preparedLessonUpdate = data.prepare_id;
+    renderLessonCreateTable(data.rows || []);
+    document.getElementById("confirmLessonCreate").disabled = !data.can_add;
+    log(data.log || data.message);
+    status(data.can_add ? "ready" : "done", data.can_add ? "ok" : "warn");
+  } catch (err) {
+    preparedLessonUpdate = null;
+    document.getElementById("confirmLessonCreate").disabled = true;
+    document.getElementById("lessonCreateTable").innerHTML = "";
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+document.getElementById("confirmLessonCreate").onclick = async () => {
+  try {
+    if (!preparedLessonUpdate) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi thêm bài vào Lesson.");
+    status("running");
+    log("Đang thêm danh sách bài vào Lesson HNCode...");
+    markRowsProcessing("#lessonCreateTable", "Đang thêm...");
+    saveAccounts();
+    const res = await fetch("/api/confirm-lesson-from-list", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        prepare_id: preparedLessonUpdate,
+        account: accountPayload("hncode"),
+        rows: collectLessonCreateRows(),
+      }),
+    });
+    const data = await parseJsonResponse(res);
+    applyLessonCreateStatuses(data.rows || []);
+    if (!res.ok) throw new Error(data.error || "Không cập nhật được Lesson.");
+    log(data.log || data.message);
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+document.getElementById("fillLessonCreateScores").onclick = () => {
+  const value = document.getElementById("lessonCreateDefaultScore").value.trim();
+  if (!value) {
+    log("Hãy nhập điểm mặc định trước khi áp dụng.");
+    status("failed", "err");
+    return;
+  }
+  document.querySelectorAll("#lessonCreateTable .row-score").forEach(input => { input.value = value; });
+  append(`Đã áp dụng điểm ${value} cho tất cả bài trong bảng Lesson.`);
+};
+
+function renderLessonCreateTable(rows) {
+  document.getElementById("lessonCreateTable").innerHTML = `<div class="table-tools">
+    <button class="action" type="button" onclick="setRowSelection('#lessonCreateTable', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#lessonCreateTable', false)">Bỏ chọn tất cả</button>
+  </div><table>
+    <thead><tr><th>STT</th><th>Chọn</th><th>Mã bài</th><th>Tên bài</th><th>Điểm lesson</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map((row, index) => `<tr data-code="${escapeHtml(row.code)}">
+      <td class="row-index">${index + 1}</td>
+      <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.selected ? "" : "disabled"}></td>
+      <td><a class="problem-link" href="https://hncode.edu.vn/problem/${escapeHtml(row.code)}" target="_blank" rel="noopener">${escapeHtml(row.code)}</a></td>
+      <td>${escapeHtml(row.title || "")}</td>
+      <td><input type="text" class="row-score" value="${escapeHtml(row.score || "100")}"></td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function collectLessonCreateRows() {
+  return [...document.querySelectorAll("#lessonCreateTable tbody tr")].map(tr => ({
+    code: tr.dataset.code,
+    selected: tr.querySelector(".row-selected").checked,
+    score: tr.querySelector(".row-score").value.trim(),
+  }));
+}
+
+function applyLessonCreateStatuses(rows) {
+  const byCode = new Map(rows.map(row => [row.code, row]));
+  for (const tr of document.querySelectorAll("#lessonCreateTable tbody tr")) {
+    const row = byCode.get(tr.dataset.code);
+    if (!row) continue;
+    const detail = row.error ? "\n" + row.error : "";
+    setStatusCell(tr.querySelector(".row-status"), (row.status || "") + detail, row.link || "");
+  }
+}
+
 document.getElementById("prepareContestLessonCopy").onclick = async () => {
   try {
     status("running");

@@ -79,6 +79,42 @@ def remove_lesson_item_fields(data: list[tuple[str, str]], lesson_id: str) -> li
     return [(name, value) for name, value in data if not any(name.startswith(prefix) for prefix in prefixes)]
 
 
+def build_problem_list_rows(
+    codes: list[str],
+    *,
+    default_score: str,
+    existing_problem_ids: set[str],
+    resolve_problem,
+) -> list[dict]:
+    """Build preview rows for adding an ordered list of problems to a lesson."""
+    rows: list[dict] = []
+    for index, code in enumerate(codes, 1):
+        problem_id, title = resolve_problem(code)
+        problem_id = str(problem_id or "")
+        if not problem_id:
+            status_text = "✗ Không tìm thấy bài trong admin HNCode"
+            selected = False
+        elif problem_id in existing_problem_ids:
+            status_text = "Đã có trong lesson"
+            selected = False
+        else:
+            status_text = "✓ Sẵn sàng"
+            selected = True
+        rows.append(
+            {
+                "index": index,
+                "source_code": code,
+                "code": code,
+                "title": title or code,
+                "score": str(default_score or "100"),
+                "problem_id": problem_id,
+                "selected": selected,
+                "status": status_text,
+            }
+        )
+    return rows
+
+
 def build_contest_to_lesson_rows(
     contest_rows: list[dict],
     *,

@@ -10,10 +10,13 @@
 </head>
 <body>
   <header>
-    <h1>Tool HNCode</h1>
+    <div class="brand-block">
+      <h1>Tool HNCode</h1>
+      <span>Tự động hóa bài tập, contest và khóa học</span>
+    </div>
     <div class="nav">
       <div class="nav-group">
-        <span class="nav-label">Chung</span>
+        <span class="nav-label">Hệ thống</span>
         <button type="button" class="active" data-panel="accounts">Tài khoản & Hướng dẫn</button>
       </div>
       <div class="nav-group">
@@ -21,18 +24,19 @@
         <button type="button" data-panel="upload">Up nhiều bài</button>
         <button type="button" data-panel="single-upload">Up 1 bài</button>
         <button type="button" data-panel="transfer">Chuyển bài</button>
+        <button type="button" data-panel="ai-normalize">AI chuẩn hóa đề</button>
       </div>
       <div class="nav-group">
-        <span class="nav-label">Contest / Course</span>
+        <span class="nav-label">Contest & Lesson</span>
         <button type="button" data-panel="contest-transfer">Chuyển contest</button>
         <button type="button" data-panel="contest-create">Tạo contest</button>
+        <button type="button" data-panel="lesson-create">Tạo Lesson</button>
         <button type="button" data-panel="contest-lesson-copy">Contest → Lesson</button>
-        <button type="button" data-panel="course-clone">Clone Course</button>
       </div>
       <div class="nav-group">
-        <span class="nav-label">Khác</span>
+        <span class="nav-label">Khóa học & Tiện ích</span>
+        <button type="button" data-panel="course-clone">Clone Course</button>
         <button type="button" data-panel="quiz-upload">Up Quiz</button>
-        <button type="button" data-panel="ai-normalize">AI chuẩn hóa đề</button>
         <button type="button" data-panel="misc-tools">Tool lẻ</button>
       </div>
     </div>
@@ -341,6 +345,33 @@
         <div class="actions">
           <button class="action primary" type="button" id="createContestButton">Tạo contest</button>
         </div>
+      </div>
+
+      <div class="panel" id="panel-lesson-create">
+        <h2>Tạo Lesson từ danh sách bài</h2>
+        <p>Thêm các bài HNCode vào một lesson đã có theo đúng thứ tự nhập. Tool nhận cả mã bài và link bài; bài đã có trong lesson được giữ nguyên và tự động bỏ qua.</p>
+        <div class="grid-2">
+          <div>
+            <label>Link lesson HNCode</label>
+            <input id="lessonCreateUrl" type="text" placeholder="https://hncode.edu.vn/course/<course>/lesson/<id>">
+          </div>
+          <div>
+            <label>HNCode user</label>
+            <input id="lessonCreateUserMirror" type="text" value="hncode" readonly>
+            <span id="lessonCreateLogin" class="login-badge">Chưa kiểm tra</span>
+          </div>
+        </div>
+        <label>Danh sách mã bài hoặc link bài</label>
+        <textarea id="lessonCreateProblems" style="min-height:170px" placeholder="tonghaiso&#10;https://hncode.edu.vn/problem/dayden&#10;https://hncode.edu.vn/contest/demo/problems/muahang"></textarea>
+        <div class="row" style="margin-top:12px">
+          <div style="max-width:180px"><label>Điểm mặc định</label><input id="lessonCreateDefaultScore" type="text" value="100"></div>
+          <button class="action" type="button" id="fillLessonCreateScores">Áp dụng điểm cho tất cả bài</button>
+        </div>
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareLessonCreate">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmLessonCreate" disabled>Thêm bài vào Lesson</button>
+        </div>
+        <div id="lessonCreateTable"></div>
       </div>
 
       <div class="panel" id="panel-contest-lesson-copy">
