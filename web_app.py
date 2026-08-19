@@ -1758,54 +1758,79 @@ def api_misc_list_problem_codes():
 
     try:
         auth_note = ""
+        groups: list[dict] = []
+        rows: list[dict] = []
+        base_url = ""
+        source_values = [line.strip() for line in source_url.splitlines() if line.strip()]
+        if not source_values:
+            raise RuntimeError("Hãy nhập URL Contest / Lesson.")
+        if source_type != "contest" and len(source_values) > 1:
+            raise RuntimeError("Chỉ hỗ trợ nhập nhiều nguồn khi loại nguồn là Contest.")
         if site == "hncode":
             session, auth_note = optional_read_session(TARGETS["hncode"]["base_url"], account)
+            base_url = TARGETS["hncode"]["base_url"]
             if source_type == "lesson":
-                course_slug, lesson_id = extract_hncode_lesson_ref(source_url)
-                rows = hncode_lesson_problem_code_rows(session, course_slug, lesson_id)
+                course_slug, lesson_id = extract_hncode_lesson_ref(source_values[0])
+                group_rows = hncode_lesson_problem_code_rows(session, course_slug, lesson_id)
                 source_label = f"HNCode Lesson: {course_slug}/lesson/{lesson_id}"
                 source_key = ""
+                groups.append({"source": source_label, "source_key": source_key, "rows": group_rows})
             else:
-                contest_key = extract_hncode_contest_key(source_url)
-                rows = hncode_contest_problem_rows(session, contest_key)
-                source_label = f"HNCode Contest: {contest_key}"
-                source_key = contest_key
-            base_url = TARGETS["hncode"]["base_url"]
+                for source_value in source_values:
+                    contest_key = extract_hncode_contest_key(source_value)
+                    group_rows = hncode_contest_problem_rows(session, contest_key)
+                    source_label = f"HNCode Contest: {contest_key}"
+                    groups.append({"source": source_label, "source_key": contest_key, "rows": group_rows})
         elif site == "hnoj":
             if source_type != "contest":
                 raise RuntimeError("HNOJ hiện chỉ hỗ trợ lấy mã bài từ Contest.")
             session, auth_note = optional_read_session(TARGETS["hnoj"]["base_url"], account)
-            contest_key = extract_hncode_contest_key(source_url)
-            rows = hnoj_contest_problem_rows(session, contest_key)
-            source_label = f"HNOJ Contest: {contest_key}"
-            source_key = contest_key
             base_url = TARGETS["hnoj"]["base_url"]
+            for source_value in source_values:
+                contest_key = extract_hncode_contest_key(source_value)
+                group_rows = hnoj_contest_problem_rows(session, contest_key)
+                source_label = f"HNOJ Contest: {contest_key}"
+                groups.append({"source": source_label, "source_key": contest_key, "rows": group_rows})
         else:
             raise RuntimeError("Nguồn không hợp lệ. Hãy chọn HNCode hoặc HNOJ.")
-        for index, row in enumerate(rows, 1):
-            row["index"] = index
-            row["link"] = row.get("link") or misc_service.hncode_problem_url(base_url, row["code"])
-            if site == "hncode" and source_type == "contest" and source_key:
-                row["source_link"] = row.get("source_link") or misc_service.hncode_contest_problem_url(base_url, source_key, row["code"])
-            else:
-                row["source_link"] = row.get("source_link") or row["link"]
-        codes_text = "\n".join(row["code"] for row in rows)
+        codes_groups: list[str] = []
+        links_groups: list[str] = []
+        source_links_groups: list[str] = []
+        log_lines = []
+        for group_order, group in enumerate(groups, 1):
+            group_source = group["source"]
+            group_key = group["source_key"]
+            group_rows = group["rows"]
+            for index, row in enumerate(group_rows, 1):
+                row["index"] = index
+                row["group_index"] = group_order
+                row["source_label"] = group_source
+                row["link"] = row.get("link") or misc_service.hncode_problem_url(base_url, row["code"])
+                if site == "hncode" and source_type == "contest" and group_key:
+                    row["source_link"] = row.get("source_link") or misc_service.hncode_contest_problem_url(base_url, group_key, row["code"])
+                else:
+                    row["source_link"] = row.get("source_link") or row["link"]
+            rows.extend(group_rows)
+            codes_groups.append("\n".join(row["code"] for row in group_rows))
+            links_groups.append("\n".join(row["link"] for row in group_rows))
+            source_links_groups.append("\n".join(row["source_link"] for row in group_rows))
+            log_lines.extend([f"Nguồn: {group_source}", f"Số bài: {len(group_rows)}", "Danh sách mã bài:", codes_groups[-1]])
+            if group_order < len(groups):
+                log_lines.append("-----------")
+        separator = "\n-----------\n"
+        codes_text = separator.join(codes_groups)
         compact_text = " ".join(row["code"] for row in rows)
-        links_text = "\n".join(row["link"] for row in rows)
-        source_links_text = "\n".join(row["source_link"] for row in rows)
-        log_lines = [
-            f"Nguồn: {source_label}",
-            f"Số bài: {len(rows)}",
-            "Danh sách mã bài:",
-            codes_text,
-        ]
+        links_text = separator.join(links_groups)
+        source_links_text = separator.join(source_links_groups)
         if auth_note:
             log_lines.insert(1, auth_note)
+        source_label = "; ".join(group["source"] for group in groups)
         return api_response.api_success(
-            message=f"Đã lấy {len(rows)} mã bài.",
+            message=f"Đã lấy {len(rows)} mã bài từ {len(groups)} nguồn.",
             rows=rows,
             log="\n".join(log_lines),
-            meta={"source": source_label, "count": len(rows), "auth_note": auth_note},
+            meta={"source": source_label, "count": len(rows), "group_count": len(groups), "auth_note": auth_note},
+            groups=groups,
             codes_text=codes_text,
             compact_text=compact_text,
             links_text=links_text,

@@ -74,6 +74,36 @@ class HncodeMiscExportTests(unittest.TestCase):
         self.assertEqual(data["codes_text"], "public_one")
         self.assertIn("doc trang public", data["meta"]["auth_note"])
 
+    def test_list_problem_codes_accepts_multiple_contests_and_resets_index(self):
+        def fake_rows(_session, contest_key):
+            if contest_key == "contest_a":
+                return [
+                    {"code": "a_one", "title": "A One", "points": "100"},
+                    {"code": "a_two", "title": "A Two", "points": "100"},
+                ]
+            return [{"code": "b_one", "title": "B One", "points": "100"}]
+
+        with patch.object(web_app, "login_hncode", return_value=object()), patch.object(
+            web_app, "hncode_contest_problem_rows", side_effect=fake_rows
+        ):
+            response = self.client.post(
+                "/api/misc/list-problem-codes",
+                json={
+                    "site": "hncode",
+                    "source_type": "contest",
+                    "url": "https://hncode.edu.vn/contest/contest_a\nhttps://hncode.edu.vn/contest/contest_b",
+                    "account": {"username": "fake", "password": "fake"},
+                },
+            )
+
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["meta"]["group_count"], 2)
+        self.assertEqual(data["codes_text"], "a_one\na_two\n-----------\nb_one")
+        self.assertEqual([row["index"] for row in data["rows"]], [1, 2, 1])
+        self.assertEqual(data["rows"][2]["source_label"], "HNCode Contest: contest_b")
+
     def test_export_hncode_statements_writes_markdown_without_live_login(self):
         snapshots = {
             "p_one": {"name": "Bai mot", "statement": "Noi dung bai mot."},

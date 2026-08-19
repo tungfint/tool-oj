@@ -370,10 +370,12 @@ document.getElementById("runCodeList").onclick = async () => {
     document.getElementById("codeListOutput").value = data.codes_text || "";
     document.getElementById("codeListLinksOutput").value = data.links_text || data.source_links_text || "";
     const rows = data.rows || [];
-    document.getElementById("codeListSummary").innerHTML = `<div class="note">Tìm thấy ${rows.length} bài.</div>
+    const groupCount = data.meta && data.meta.group_count || 1;
+    document.getElementById("codeListSummary").innerHTML = `<div class="note">Tìm thấy ${rows.length} bài từ ${groupCount} nguồn.</div>
       <table>
-        <thead><tr><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm</th><th>Link</th><th>Link trong contest</th></tr></thead>
+        <thead><tr><th>Nguồn</th><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm</th><th>Link</th><th>Link trong contest</th></tr></thead>
         <tbody>${rows.map(row => `<tr>
+          <td>${escapeHtml(row.source_label || "")}</td>
           <td>${row.index || row.order || ""}</td>
           <td>${row.link ? `<a href="${escapeHtml(row.link)}" target="_blank" rel="noopener"><code>${escapeHtml(row.code || "")}</code></a>` : `<code>${escapeHtml(row.code || "")}</code>`}</td>
           <td>${escapeHtml(row.title || "")}</td>

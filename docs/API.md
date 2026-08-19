@@ -79,6 +79,8 @@ Giá trị hỗ trợ:
 - `site=hncode`, `source_type=lesson`
 - `site=hnoj`, `source_type=contest`
 
+Với `source_type=contest`, trường `url` có thể chứa nhiều contest, mỗi dòng một link/mã contest. Response sẽ tách từng nhóm bằng dòng `-----------`; STT trong `rows` được đánh lại từ 1 cho mỗi contest.
+
 Service/parser liên quan:
 
 - `services/hncode.py`
