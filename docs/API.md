@@ -336,26 +336,34 @@ Trả `prepare_id` và bảng rows.
 
 ### `POST /api/ai/normalize`
 
-Goi AI bang API key nguoi dung nhap, tra ve Markdown de bai, points, tags, solution, nhan xet test va issues theo tung bai. Test tu dong mock endpoint nay, khong goi mang that.
+Endpoint đồng bộ tương thích ngược, dùng chủ yếu cho test nội bộ. Giao diện web không gọi endpoint này cho tác vụ dài vì có thể vượt timeout của proxy/Cloudflare.
+
+### `POST /api/ai/normalize-start`
+
+Bắt đầu chuẩn hóa AI ở chế độ nền và trả ngay HTTP `202` cùng `job_id`. Giao diện đọc tiến độ tại `GET /api/progress/<job_id>` cho đến khi `finished=true`, tránh lỗi Cloudflare `524` khi OpenRouter xử lý lâu.
+
+Kết quả progress có `done`, `total`, `rows`, `log`, `message`, `finished`, `ok`. Mỗi bài được cập nhật trạng thái ngay khi hoàn tất.
+
+Trạng thái chuẩn bị AI được lưu tại `.runtime/ai_normalize/<prepare_id>/state.json`, do đó các Gunicorn worker khác vẫn đọc được phiên chuẩn bị và kết quả đã sinh.
 
 Payload chinh:
 
-- `provider`: `google` hoac `openrouter`. Neu bo trong thi dung `google`.
-- `api_key`: API key tuong ung provider dang chon.
-- `model`: model can dung.
-  - Google AI mac dinh: `gemini-3.5-flash`.
-  - OpenRouter mac dinh: `deepseek/deepseek-v4-flash-0731` (DeepSeek V4 Flash 0731).
+- `provider`: `google` hoặc `openrouter`. Nếu bỏ trống thì dùng `google`.
+- `api_key`: API key tương ứng provider đang chọn. Key chỉ được giữ trong request/job đang chạy, không ghi vào state/progress.
+- `model`: model cần dùng.
+  - Google AI mặc định: `gemini-3.5-flash`.
+  - OpenRouter mặc định: `deepseek/deepseek-v4-flash-0731` (DeepSeek V4 Flash 0731).
 
-OpenRouter dung endpoint OpenAI-compatible `https://openrouter.ai/api/v1/chat/completions` voi Bearer token. Voi OpenRouter/model DeepSeek hien tool gui phan text cua prompt; neu nguon la anh/PDF scan chua OCR thi nen dung Google AI/Gemini hoac dan text da OCR.
+OpenRouter dùng endpoint OpenAI-compatible `https://openrouter.ai/api/v1/chat/completions` với Bearer token. Tool tự thử lại một lần với lỗi tạm thời `408`, `429`, `500`, `502`, `503`, `504` hoặc lỗi kết nối/timeout. Với OpenRouter/model DeepSeek, tool gửi phần text của prompt; nếu nguồn là ảnh/PDF scan chưa OCR thì nên dùng Google AI/Gemini hoặc dán text đã OCR.
 
 ### `POST /api/ai/validate-statement`
 
-Kiem tra nhanh Markdown AI tra ve: dong dau metadata, ma bai, diem, ky hieu cong thuc `$`/`~`, phan than de.
+Kiểm tra nhanh Markdown AI trả về: dòng đầu metadata, mã bài, điểm, ký hiệu công thức `$`/`~`, phần thân đề.
 
-Service nen:
+Service nền:
 
-- `services/ai_assistant.py`: doc file, build prompt theo tai lieu chuan hoa, goi Google Gemini REST `generateContent` hoac OpenRouter `chat/completions`, parse JSON AI tra ve va validate Markdown.
-- Tool dung API key do nguoi dung nhap, luu tam trong `localStorage` cua trinh duyet neu nguoi dung bam luu; khong dang nhap hoac luu mat khau Google/Gemini web.
+- `services/ai_assistant.py`: đọc file, build prompt theo tài liệu chuẩn hóa, gọi Google Gemini REST `generateContent` hoặc OpenRouter `chat/completions`, parse JSON AI trả về và validate Markdown.
+- Tool dùng API key do người dùng nhập, lưu tạm trong `localStorage` của trình duyệt nếu người dùng bấm lưu; không đăng nhập hoặc lưu mật khẩu Google/Gemini web.
 ### `POST /api/misc/last-submissions`
 
 Nhận zip/folder data contest, trả zip chứa lần nộp cuối.

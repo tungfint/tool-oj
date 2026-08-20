@@ -1,4 +1,5 @@
 import json
+import time
 import unittest
 from unittest.mock import patch
 
@@ -248,6 +249,24 @@ Cho file `PHANLOAI.INP` chứa dữ liệu.
         self.assertEqual(captured["headers"]["Authorization"], "Bearer sk-or-v1-fake")
         self.assertEqual(captured["json"]["model"], "deepseek/deepseek-v4-flash-0731")
 
+    def test_openrouter_generate_retries_temporary_server_error(self):
+        class FakeResponse:
+            def __init__(self, status_code: int):
+                self.status_code = status_code
+                self.ok = status_code == 200
+                self.text = "temporary" if not self.ok else "{}"
+
+            def json(self):
+                return {"choices": [{"message": {"content": '{"code":"ok"}'}}]}
+
+        responses = [FakeResponse(503), FakeResponse(200)]
+        with patch.object(ai_service.requests, "post", side_effect=responses) as mocked_post, \
+             patch.object(ai_service.time, "sleep", return_value=None):
+            text = ai_service.openrouter_generate(api_key="fake", prompt="prompt")
+
+        self.assertEqual(text, '{"code":"ok"}')
+        self.assertEqual(mocked_post.call_count, 2)
+
 
 class AiAssistantApiTests(unittest.TestCase):
     def setUp(self):
@@ -341,6 +360,90 @@ Cho $a,b$.
         self.assertEqual(data["rows"][0]["status"], "✓ Đã chuẩn hóa")
         self.assertIn("$a,b$", data["rows"][0]["statement_markdown"])
         self.assertIn("statement_link", data["rows"][0])
+
+    def test_ai_prepared_state_can_reload_from_disk(self):
+        prepare = self.client.post(
+            "/api/ai/prepare-normalize",
+            json={
+                "source_mode": "file",
+                "target": "hncode",
+                "source_text": "Bài thử | ai_state_test | 800 | implementation\n\nNội dung.",
+                "problem_code": "ai_state_test",
+                "problem_name": "Bài thử",
+                "points": "800",
+                "tags": "implementation",
+            },
+        ).get_json()
+
+        web_app.prepared_ai_normalize.pop(prepare["prepare_id"], None)
+        response = self.client.get(prepare["rows"][0]["statement_link"])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Nội dung", response.get_data(as_text=True))
+        response.close()
+
+    def test_ai_normalize_background_job_finishes_without_long_http_request(self):
+        prepare = self.client.post(
+            "/api/ai/prepare-normalize",
+            json={
+                "source_mode": "file",
+                "target": "hncode",
+                "source_text": "Bài nền | ai_background | 800 | implementation\n\nNội dung.",
+                "problem_code": "ai_background",
+                "problem_name": "Bài nền",
+                "points": "800",
+                "tags": "implementation",
+            },
+        ).get_json()
+        fake_ai = json.dumps(
+            {
+                "code": "ai_background",
+                "name": "Bài nền",
+                "statement_markdown": "Bài nền | ai_background | 800 | implementation\n\nNội dung chuẩn hóa.",
+                "points": 800,
+                "tags": ["implementation"],
+                "solution_markdown": "",
+                "test_review": "",
+                "issues": [],
+                "confidence": "high",
+            },
+            ensure_ascii=False,
+        )
+
+        def delayed_ai(**_kwargs):
+            time.sleep(0.2)
+            return fake_ai
+
+        with patch.object(web_app.ai_service, "ai_generate", side_effect=delayed_ai):
+            started = self.client.post(
+                "/api/ai/normalize-start",
+                json={
+                    "prepare_id": prepare["prepare_id"],
+                    "provider": "openrouter",
+                    "api_key": "fake-key",
+                    "model": "deepseek/deepseek-v4-flash-0731",
+                    "options": {"target": "hncode", "statement": True, "metadata": True},
+                    "rows": prepare["rows"],
+                },
+            )
+            started_data = started.get_json()
+            self.assertEqual(started.status_code, 202)
+            self.assertTrue(started_data["ok"])
+            self.assertTrue(started_data["job_id"])
+
+            deadline = time.time() + 5
+            progress = {}
+            while time.time() < deadline:
+                progress = self.client.get(f"/api/progress/{started_data['job_id']}").get_json()
+                if progress.get("finished"):
+                    break
+                time.sleep(0.05)
+
+        self.assertTrue(progress.get("finished"), progress)
+        self.assertTrue(progress.get("ok"), progress)
+        self.assertEqual(progress["rows"][0]["code"], "ai_background")
+        self.assertIn(progress["rows"][0]["status"][:1], {"✓", "⚠"})
+        self.assertNotIn("fake-key", json.dumps(progress, ensure_ascii=False))
 
     def test_apply_normalize_uses_mocked_hncode_updates(self):
         prepare = self.client.post(

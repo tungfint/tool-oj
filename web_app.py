@@ -1350,6 +1350,39 @@ def ai_normalize_root(prepare_id: str) -> Path:
     return RUNTIME / "ai_normalize" / prepare_id
 
 
+def ai_normalize_state_path(prepare_id: str) -> Path:
+    return ai_normalize_root(prepare_id) / "state.json"
+
+
+def save_ai_normalize_state(prepare_id: str, state: dict) -> None:
+    root = ai_normalize_root(prepare_id)
+    root.mkdir(parents=True, exist_ok=True)
+    path = ai_normalize_state_path(prepare_id)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(path)
+    prepared_ai_normalize[prepare_id] = state
+
+
+def load_ai_normalize_state(prepare_id: str | None) -> dict | None:
+    if not prepare_id:
+        return None
+    state = prepared_ai_normalize.get(prepare_id)
+    if state:
+        return state
+    path = ai_normalize_state_path(prepare_id)
+    if not path.exists():
+        return None
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(state, dict):
+        return None
+    prepared_ai_normalize[prepare_id] = state
+    return state
+
+
 def write_ai_markdown_files(prepare_id: str, code: str, statement: str = "", solution: str = "") -> dict:
     root = ai_normalize_root(prepare_id)
     root.mkdir(parents=True, exist_ok=True)
@@ -1368,7 +1401,7 @@ def write_ai_markdown_files(prepare_id: str, code: str, statement: str = "", sol
 
 @app.get("/api/ai/file/<prepare_id>/<code>/<kind>")
 def api_ai_file(prepare_id: str, code: str, kind: str):
-    if prepare_id not in prepared_ai_normalize:
+    if not load_ai_normalize_state(prepare_id):
         return api_response.api_error("Dữ liệu AI đã hết hạn.", status=404)
     if kind not in {"statement", "solution"}:
         return api_response.api_error("Loại file không hợp lệ.", status=404)
@@ -1502,36 +1535,47 @@ def api_ai_prepare_normalize():
                 except Exception as exc:
                     rows.append({"original_code": code, "code": code, "name": "", "points": "", "tags": "", "test_count": "", "status": f"✗ {exc}", "can_normalize": False})
                     log_lines.append(f"✗ {code}: {exc}")
-        prepared_ai_normalize[prepare_id] = {"reference": read_normalize_reference(), "target": target, "snapshots": snapshots, "files": files, "rows": rows, "created_at": time.time()}
+        save_ai_normalize_state(prepare_id, {"reference": read_normalize_reference(), "target": target, "snapshots": snapshots, "files": files, "rows": rows, "created_at": time.time()})
         return api_response.api_success(message="Đã chuẩn bị dữ liệu AI", rows=rows, log="\n".join(log_lines), prepare_id=prepare_id)
     except Exception as exc:
         return api_response.api_error(str(exc))
 
 
-@app.post("/api/ai/normalize")
-def api_ai_normalize():
-    try:
-        payload = request.get_json(force=True)
-        prepare_id = payload.get("prepare_id")
-        if not prepare_id or prepare_id not in prepared_ai_normalize:
-            return api_response.api_error("Dữ liệu chuẩn bị AI đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
-        state = prepared_ai_normalize[prepare_id]
-        options = payload.get("options") or {}
-        target = options.get("target") or state.get("target") or "hncode"
-        rows = payload.get("rows") or state["rows"]
-        provider = (payload.get("provider") or "google").strip().lower()
-        api_key = payload.get("api_key") or ""
-        model = payload.get("model") or (ai_service.DEFAULT_OPENROUTER_MODEL if provider == "openrouter" else ai_service.DEFAULT_GEMINI_MODEL)
-        provider_label = "OpenRouter" if provider == "openrouter" else "Google AI"
-        result_rows = []
-        log_lines = [f"AI provider: {provider_label}; model: {model}."]
-        for row in rows:
-            result = dict(row)
-            original = row.get("original_code") or row.get("code")
-            if not row.get("selected", True) or not row.get("can_normalize", True):
-                result["status"] = "Bỏ qua"
-                result_rows.append(result)
-                continue
+def normalize_ai_payload(payload: dict, progress_id: str | None = None) -> dict:
+    prepare_id = payload.get("prepare_id")
+    state = load_ai_normalize_state(prepare_id)
+    if not state:
+        raise RuntimeError("Dữ liệu chuẩn bị AI đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
+    options = payload.get("options") or {}
+    target = options.get("target") or state.get("target") or "hncode"
+    rows = payload.get("rows") or state["rows"]
+    provider = (payload.get("provider") or "google").strip().lower()
+    api_key = payload.get("api_key") or ""
+    model = payload.get("model") or (ai_service.DEFAULT_OPENROUTER_MODEL if provider == "openrouter" else ai_service.DEFAULT_GEMINI_MODEL)
+    provider_label = "OpenRouter" if provider == "openrouter" else "Google AI"
+    result_rows: list[dict] = []
+    log_lines = [f"AI provider: {provider_label}; model: {model}."]
+    total = len(rows)
+    progress_update(progress_id, phase="ai-normalize", done=0, total=total, rows=rows, log="\n".join(log_lines), message="Bắt đầu chuẩn hóa bằng AI")
+    for index, row in enumerate(rows):
+        result = dict(row)
+        original = row.get("original_code") or row.get("code")
+        if not row.get("selected", True) or not row.get("can_normalize", True):
+            result["status"] = "Bỏ qua"
+            result_rows.append(result)
+        else:
+            current = dict(row)
+            current["status"] = "Đang gọi AI..."
+            progress_rows = result_rows + [current] + [dict(item) for item in rows[index + 1 :]]
+            progress_update(
+                progress_id,
+                phase="ai-normalize",
+                done=index,
+                total=total,
+                rows=progress_rows,
+                log="\n".join(log_lines),
+                message=f"{row.get('code')}: đang gọi {provider_label}",
+            )
             try:
                 snapshot = state["snapshots"].get(original) or state["snapshots"].get(row.get("code"))
                 if not snapshot:
@@ -1582,9 +1626,73 @@ def api_ai_normalize():
                 result["error"] = str(exc)
                 log_lines.append(f"✗ {row.get('code')}: {exc}")
             result_rows.append(result)
-        ok = all(not str(row.get("status", "")).startswith("✗") for row in result_rows)
-        state["rows"] = result_rows
-        return api_response.api_success(message="Đã chạy chuẩn hóa AI", rows=result_rows, log="\n".join(log_lines), ok=ok)
+        progress_update(
+            progress_id,
+            phase="ai-normalize",
+            done=index + 1,
+            total=total,
+            rows=result_rows + [dict(item) for item in rows[index + 1 :]],
+            log="\n".join(log_lines),
+            message=f"{row.get('code')}: {result.get('status')}",
+        )
+    ok = all(not str(row.get("status", "")).startswith("✗") for row in result_rows)
+    state["rows"] = result_rows
+    save_ai_normalize_state(prepare_id, state)
+    return {"message": "Đã chạy chuẩn hóa AI", "rows": result_rows, "log": "\n".join(log_lines), "ok": ok}
+
+
+@app.post("/api/ai/normalize")
+def api_ai_normalize():
+    try:
+        result = normalize_ai_payload(request.get_json(force=True))
+        return api_response.api_success(**result)
+    except Exception as exc:
+        return api_response.api_error(str(exc))
+
+
+def run_ai_normalize_job(payload: dict, progress_id: str) -> None:
+    try:
+        result = normalize_ai_payload(payload, progress_id)
+        progress_update(progress_id, rows=result["rows"], log=result["log"], done=len(result["rows"]), total=len(result["rows"]))
+        progress_finish(progress_id, result["ok"], result["message"])
+    except Exception as exc:
+        progress_update(progress_id, log=f"✗ {exc}", message=str(exc))
+        progress_finish(progress_id, False, str(exc))
+
+
+@app.post("/api/ai/normalize-start")
+def api_ai_normalize_start():
+    try:
+        payload = request.get_json(force=True)
+        prepare_id = payload.get("prepare_id")
+        if not load_ai_normalize_state(prepare_id):
+            return api_response.api_error("Dữ liệu chuẩn bị AI đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
+        progress_id = uuid.uuid4().hex
+        rows = payload.get("rows") or []
+        progress_update(
+            progress_id,
+            phase="ai-normalize",
+            done=0,
+            total=len(rows),
+            rows=rows,
+            message="Đã xếp hàng chuẩn hóa AI",
+        )
+        worker = threading.Thread(
+            target=run_ai_normalize_job,
+            args=(dict(payload), progress_id),
+            daemon=True,
+            name=f"ai-normalize-{progress_id[:8]}",
+        )
+        worker.start()
+        return api_response.api_success(
+            message="Đã bắt đầu chuẩn hóa AI ở chế độ nền",
+            rows=rows,
+            log="Tool đang xử lý nền; giao diện sẽ tự cập nhật tiến độ.",
+            status=202,
+            job_id=progress_id,
+            prepare_id=prepare_id,
+            meta={"background": True},
+        )
     except Exception as exc:
         return api_response.api_error(str(exc))
 
@@ -1627,9 +1735,9 @@ def api_ai_apply_normalize():
     try:
         payload = request.get_json(force=True)
         prepare_id = payload.get("prepare_id")
-        if not prepare_id or prepare_id not in prepared_ai_normalize:
+        state = load_ai_normalize_state(prepare_id)
+        if not state:
             return api_response.api_error("Dữ liệu chuẩn bị AI đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại.")
-        state = prepared_ai_normalize[prepare_id]
         target = payload.get("target") or state.get("target") or "hncode"
         if target != "hncode":
             return api_response.api_error("Hiện chỉ hỗ trợ cập nhật trực tiếp lên HNCode. HNOJ/TinHocTre nên đưa sang Up 1 bài để kiểm tra trước.")
@@ -1695,6 +1803,7 @@ def api_ai_apply_normalize():
                 log_lines.append(f"✗ {code or original}: {exc}")
             result_rows.append(result)
         state["rows"] = result_rows
+        save_ai_normalize_state(prepare_id, state)
         ok = all(not str(row.get("status", "")).startswith("✗") for row in result_rows)
         return api_response.api_success(message="Đã cập nhật web từ kết quả AI", rows=result_rows, log="\n".join(log_lines), ok=ok)
     except Exception as exc:

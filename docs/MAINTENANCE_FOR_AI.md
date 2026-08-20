@@ -115,6 +115,8 @@ services/ai_assistant.py
 web_app.py: /api/ai/prepare-file
 web_app.py: /api/ai/prepare-normalize
 web_app.py: /api/ai/normalize
+web_app.py: /api/ai/normalize-start
+web_app.py: /api/progress/<job_id>
 web_app.py: /api/ai/validate-statement
 static/misc.js
 templates/index.html: panel-ai-normalize
@@ -122,10 +124,12 @@ templates/index.html: panel-ai-normalize
 
 Nguyên tắc:
 
-- Chỉ dùng Google AI API key do người dùng nhập.
+- Chỉ dùng API key Google AI/OpenRouter do người dùng nhập.
 - Không đăng nhập hoặc lưu mật khẩu Google/Gemini web.
 - Test tự động phải mock API, không gọi Google AI thật.
 - Kết quả AI chỉ nên đưa ra bảng để giáo viên kiểm tra trước; không tự ghi đè HNCode nếu chưa có nút xác nhận riêng.
+- Tác vụ gọi AI phải chạy qua `/api/ai/normalize-start` và progress polling; không đưa luồng dài trở lại request đồng bộ vì Cloudflare có thể trả `524`.
+- Không ghi API key vào file state/progress hoặc log. State chuẩn bị AI có thể lưu JSON để dùng chung giữa nhiều Gunicorn worker.
 
 Test nhanh:
 
@@ -279,7 +283,7 @@ systemctl is-active tool-oj.service
 Panel AI có ba bước:
 
 1. `Chuẩn bị dữ liệu`: đọc bài hoặc file nguồn, tạo bảng và link mở file `.md` tạm.
-2. `Chuẩn hóa bằng AI`: gọi Google AI API bằng API key người dùng nhập, cập nhật bảng và file `.md` kết quả.
+2. `Chuẩn hóa bằng AI`: tạo job nền, gọi Google AI/OpenRouter bằng API key người dùng nhập, cập nhật tiến độ, bảng và file `.md` kết quả.
 3. `Chuẩn hoá`: nếu chưa chuẩn bị/chưa gọi AI thì tự chạy các bước trước, sau đó gọi `/api/ai/apply-normalize` để cập nhật HNCode.
 
 Khi sửa phần này cần nhớ:

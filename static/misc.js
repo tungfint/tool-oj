@@ -58,7 +58,7 @@ function renderAiNormalizeTable(rows) {
     <thead><tr><th>STT</th><th>${AI_TEXT.selected}</th><th>${AI_TEXT.code}</th><th>${AI_TEXT.name}</th><th>${AI_TEXT.statement}</th><th>Solution</th><th>Point</th><th>${AI_TEXT.status}</th><th>${AI_TEXT.result}</th></tr></thead>
     <tbody>${aiNormalizeRows.map((row, index) => `<tr data-index="${index}" data-original="${escapeHtml(row.original_code || row.code || "")}">
       <td class="row-index">${index + 1}</td>
-      <td><input type="checkbox" class="row-selected" ${row.can_normalize === false ? "" : "checked"} ${row.can_normalize === false ? "disabled" : ""}></td>
+      <td><input type="checkbox" class="row-selected" ${row.can_normalize === false || row.selected === false ? "" : "checked"} ${row.can_normalize === false ? "disabled" : ""}></td>
       <td><input class="mini-input row-code" value="${escapeHtml(row.code || "")}"></td>
       <td><input class="mini-input row-name" value="${escapeHtml(row.name || "")}"></td>
       <td>${row.statement_link ? `<a href="${escapeHtml(row.statement_link)}" target="_blank" rel="noopener">${AI_TEXT.openMd}</a>` : ""}</td>
@@ -166,13 +166,33 @@ async function prepareAiNormalizeFlow() {
   status("ready", "ok");
   return data;
 }
+async function waitForAiNormalizeJob(jobId) {
+  let failedPolls = 0;
+  while (true) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const res = await fetch(`/api/progress/${jobId}`, {cache: "no-store"});
+      const data = await parseJsonResponse(res);
+      if (!res.ok) throw new Error(apiErrorMessage(data));
+      failedPolls = 0;
+      if (data.rows && data.rows.length) applyAiRows(data.rows);
+      if (data.log) log(data.log);
+      else if (data.message || data.total) log(progressMessage(data));
+      status(data.finished ? (data.ok ? "done" : "failed") : `${data.done || 0}/${data.total || 0}`, data.finished ? (data.ok ? "ok" : "err") : "");
+      if (data.finished) return data;
+    } catch (err) {
+      failedPolls += 1;
+      if (failedPolls >= 6) throw err;
+    }
+  }
+}
 async function runAiNormalizeFlow() {
   if (!preparedAiNormalize) await prepareAiNormalizeFlow();
   if (!currentAiApiKey()) throw new Error(AI_TEXT.needApiKey);
   status("running");
   markRowsProcessing("#aiNormalizeTable", AI_TEXT.callingAi);
   log(AI_TEXT.callingAiLog);
-  const data = await postJson("/api/ai/normalize", {
+  const started = await postJson("/api/ai/normalize-start", {
     prepare_id: preparedAiNormalize,
     provider: document.getElementById("aiProvider").value,
     api_key: currentAiApiKey(),
@@ -180,8 +200,9 @@ async function runAiNormalizeFlow() {
     options: aiOptions(),
     rows: collectAiRows(),
   });
+  const data = await waitForAiNormalizeJob(started.job_id);
   applyAiRows(data.rows || []);
-  log(data.log);
+  log(data.log || data.message);
   status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
   return data;
 }

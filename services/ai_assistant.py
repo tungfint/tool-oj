@@ -12,6 +12,7 @@ import base64
 import json
 import mimetypes
 import re
+import time
 import unicodedata
 import zipfile
 from pathlib import Path
@@ -530,19 +531,36 @@ def openrouter_generate(
         "top_p": 0.9,
         "response_format": {"type": "json_object"},
     }
-    response = requests.post(
-        OPENROUTER_CHAT_COMPLETIONS_URL,
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://hncode.edu.vn",
-            "X-OpenRouter-Title": "Tool HNCode",
-        },
-        json=payload,
-        timeout=timeout,
-    )
-    if not response.ok:
-        raise RuntimeError(f"OpenRouter API lỗi HTTP {response.status_code}: {response.text[:800]}")
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://hncode.edu.vn",
+        "X-OpenRouter-Title": "Tool HNCode",
+    }
+    response = None
+    last_error = ""
+    for attempt in range(2):
+        try:
+            response = requests.post(
+                OPENROUTER_CHAT_COMPLETIONS_URL,
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+            )
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+            if attempt == 0:
+                time.sleep(2)
+                continue
+            raise RuntimeError(f"OpenRouter không phản hồi sau khi thử lại: {last_error}") from exc
+        if response.ok:
+            break
+        last_error = f"HTTP {response.status_code}: {response.text[:800]}"
+        if response.status_code not in {408, 429, 500, 502, 503, 504} or attempt > 0:
+            raise RuntimeError(f"OpenRouter API lỗi {last_error}")
+        time.sleep(2)
+    if response is None or not response.ok:
+        raise RuntimeError(f"OpenRouter API không dùng được sau khi thử lại: {last_error}")
     data = response.json()
     choices = data.get("choices") or []
     if not choices:
