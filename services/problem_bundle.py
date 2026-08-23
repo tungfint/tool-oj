@@ -44,7 +44,7 @@ def metadata_from_statement(statement_path: Path, defaults: dict) -> dict:
 
 def split_combined_markdown_bundles(markdown_path: Path, source_dir: Path) -> list[ProblemBundle]:
     text = read_text_smart(markdown_path)
-    matches = list(re.finditer(r"(?m)^#\s*(?:Bài\s+(\d+)\.\s*)?(.+?)\s*\|\s*([A-Za-z0-9_-]+)(?:\s*\|.*)?\s*$", text))
+    matches = list(re.finditer(r"(?m)^#\s*(?:(?:Bài|BÃ i)\s+(\d+)\.\s*)?(.+?)\s*\|\s*([A-Za-z0-9_-]+)(?P<meta>\s*\|.*)?\s*$", text))
     if not matches:
         raise RuntimeError("Không tìm thấy bài nào. Mỗi bài cần bắt đầu dạng: # Bài 1. Tên bài | ma_bai | điểm | tags")
     bundles: list[ProblemBundle] = []
@@ -53,6 +53,7 @@ def split_combined_markdown_bundles(markdown_path: Path, source_dir: Path) -> li
         number = int(match.group(1) or idx + 1)
         name = match.group(2).strip()
         code = match.group(3).strip()
+        extra_meta = (match.group("meta") or "").strip()
         if code in seen:
             raise RuntimeError(f"Mã bài bị trùng trong file Markdown: {code}")
         seen.add(code)
@@ -60,7 +61,7 @@ def split_combined_markdown_bundles(markdown_path: Path, source_dir: Path) -> li
         body_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
         body = text[body_start:body_end].strip()
         statement_path = source_dir / f"{number}_{code}.md"
-        statement_path.write_text(f"{name} | {code}\n\n{body}\n", encoding="utf-8")
+        statement_path.write_text(f"{name} | {code}{(' ' + extra_meta) if extra_meta else ''}\n\n{body}\n", encoding="utf-8")
         bundles.append(ProblemBundle(number, code, name, statement_path, None, None, None, None))
     return bundles
 

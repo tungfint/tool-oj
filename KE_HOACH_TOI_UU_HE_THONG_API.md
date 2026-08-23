@@ -262,12 +262,12 @@ find_problem_admin_id(session, code)
 
 Nên làm trước vì đây là chỗ vừa phát sinh lỗi thật.
 
-Tr?ng th?i hi?n t?i:
+Trạng thái hiện tại:
 
-- ?? t?o `services/hncode.py` ?? gom parser/link helper c?a HNCode.
-- `web_app.py` ?? chuy?n c?c h?m ??c contest/lesson/admin problem ID sang g?i service chung, gi? wrapper c? ?? c?c API hi?n c? kh?ng ??i contract.
-- Parser contest HNCode ?? h? tr? ranking/header m?i v? link d?ng `/contest/<contest>/problems/<ma_bai>` ho?c `/problem/<ma_bai>`.
-- ?? test v?i `https://hncode.edu.vn/contest/nt26exam01`: l?y ???c 14 b?i, ??ng t?n b?i v? ?i?m.
+- Đã tạo `services/hncode.py` để gom parser/link helper của HNCode.
+- `web_app.py` đã chuyển các hàm đọc contest/lesson/admin problem ID sang gọi service chung, giữ wrapper cũ để các API hiện có không đổi contract.
+- Parser contest HNCode đã hỗ trợ ranking/header mới và link dạng `/contest/<contest>/problems/<ma_bai>` hoặc `/problem/<ma_bai>`.
+- Đã test với `https://hncode.edu.vn/contest/nt26exam01`: lấy được 14 bài, đúng tên bài và điểm.
 
 ## Giai đoạn 2: Tách phần upload/chuyển bài
 
@@ -295,13 +295,13 @@ submit_trial_solution(target, code, solution_file)
 
 Làm sau giai đoạn 1 vì phần này rộng, dễ đụng nhiều chức năng.
 
-Tr?ng th?i hi?n t?i:
+Trạng thái hiện tại:
 
-- ?? t?o `services/problem_bundle.py` ?? gom ph?n ??c b? b?i, t?ch Markdown t?ng h?p, ??c metadata `T?n b?i | M? b?i | ?i?m | Tags`, ch?y gentest/zip test cho lu?ng up b?i.
-- ?? t?o `services/problem_upload.py` cho helper upload d?ng chung HNCode/HNOJ: chu?n h?a m? b?i, memory limit, link b?i/test, upload test, n?p th?, ch?n language submit.
-- `web_app.py` ?? gi? c?c h?m wrapper c? nh?ng chuy?n helper HNCode/HNOJ sang g?i service m?i, ?? UI/API hi?n t?i kh?ng ??i contract.
-- ?? test `services/problem_bundle.py` v?i `samples/bo_mau_1_bai_tonghaiso.zip`: ??c ???c 1 b?i, 10 test, ??ng ?i?m/tags.
-- Ph?m vi l?n n?y ch? ?p d?ng HNCode v? HNOJ; TinHocTre gi? nguy?n lu?ng c? v? c?n ph? thu?c cookie/WAF ri?ng.
+- Đã tạo `services/problem_bundle.py` để gom phần đọc bộ bài, tách Markdown tổng hợp, đọc metadata `Tên bài | Mã bài | Điểm | Tags`, chạy gentest/zip test cho luồng up bài.
+- Đã tạo `services/problem_upload.py` cho helper upload dùng chung HNCode/HNOJ: chuẩn hóa mã bài, memory limit, link bài/test, upload test, nộp thử, chọn language submit.
+- `web_app.py` đã giữ các hàm wrapper cũ nhưng chuyển helper HNCode/HNOJ sang gọi service mới, để UI/API hiện tại không đổi contract.
+- Đã test `services/problem_bundle.py` với `samples/bo_mau_1_bai_tonghaiso.zip`: đọc được 1 bài, 10 test, đúng điểm/tags.
+- Phạm vi lần này chỉ áp dụng HNCode và HNOJ; TinHocTre giữ nguyên luồng cũ vì còn phụ thuộc cookie/WAF riêng.
 
 ## Giai đoạn 3: Chuẩn hóa job/progress
 
@@ -336,6 +336,13 @@ Job chuẩn:
 - Cảnh báo AI code
 - Clone course
 
+Trạng thái hiện tại:
+
+- Đã tạo `services/jobs.py` để chuẩn hóa ghi/đọc tiến độ theo `job_id`, `phase`, `done`, `total`, `rows`, `log`, `message`, `status`.
+- `web_app.py` đã chuyển `progress_update`, `progress_finish`, `valid_progress_id`, `progress_path` sang wrapper gọi service mới.
+- Endpoint `/api/progress/<progress_id>` vẫn giữ nguyên cho giao diện hiện tại, nhưng dữ liệu trả về có thêm `job_id`, `status`, `created_at`, `updated_at`.
+- Service vẫn tương thích các trường cũ `finished` và `ok`, nên JS hiện tại không cần đổi.
+
 ## Giai đoạn 4: Tách giao diện thành client sạch
 
 Mục tiêu: JS chỉ gọi API và render.
@@ -351,6 +358,14 @@ templates/index.html
 ```
 
 Hiện tại HTML/JS/CSS nằm nhiều trong `web_app.py`, AI đọc sẽ bị nặng. Tách ra sẽ dễ sửa giao diện hơn.
+
+Trạng thái hiện tại:
+
+- Đã tách HTML chính ra `templates/index.html`.
+- Đã tách CSS ra `static/styles.css`.
+- Đã tách JS giao diện ra `static/app.js`; template chỉ còn block `window.APP_CONFIG` nhỏ để truyền dữ liệu Jinja cho JS.
+- Route `/` đã chuyển từ `render_template_string` sang `render_template("index.html")`.
+- Chưa tách nhỏ `static/api.js` và `static/tables.js`; nên làm ở giai đoạn sau để tránh làm vỡ JS đang có nhiều phụ thuộc chéo.
 
 ## Giai đoạn 5: Viết test parser và test dữ liệu mẫu
 
@@ -375,6 +390,20 @@ def test_parse_hncode_ranking_problem_codes()
 def test_parse_hncode_lesson_problem_codes()
 def test_parse_hnoj_contest_problem_codes()
 ```
+
+Trạng thái hiện tại:
+
+- Đã tạo `tests/fixtures/` với 5 fixture HTML: contest HNCode cũ, contest HNCode mới, ranking HNCode, lesson HNCode, contest HNOJ.
+- Đã tạo `tests/test_parsers.py` bằng `unittest` chuẩn, không cần thêm dependency mới.
+- Đã thêm `services/hnoj.py` làm wrapper parser HNOJ để sau này nếu HNOJ đổi HTML thì sửa riêng tại service này.
+- Parser HNCode đã hỗ trợ link contest dạng `/contest/<contest>/problems/<ma_bai>` có hoặc không có dấu `/` phía sau mã bài.
+- Lệnh kiểm tra nhanh:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+Kết quả hiện tại: 5/5 test parser pass.
 
 ## VI. Tài liệu cần có để AI dễ đọc hiểu
 
@@ -439,17 +468,217 @@ Khi upload test lỗi:
 - kiểm tra format zip test
 ```
 
+Trạng thái hiện tại:
+
+- Đã tạo thư mục `docs/`.
+- Đã tạo `docs/API.md` ghi các endpoint đang có, payload chính, response và service liên quan.
+- Đã tạo `docs/HNCODE_NOTES.md` ghi domain, login, link contest/lesson, upload test, metadata, quy tắc mã bài và cách xử lý khi HNCode đổi HTML.
+- Đã tạo `docs/DATA_FORMATS.md` ghi format zip bộ bài, Markdown, gentest, test zip, quiz, tài khoản chấm bài và data contest.
+- Đã tạo `docs/MAINTENANCE_FOR_AI.md` ghi checklist sửa parser/upload/lesson, lệnh test và quy tắc commit/deploy.
+
 ## VII. Việc nên làm ngay tiếp theo
 
-Nên làm theo thứ tự:
+Checklist này đã hoàn tất ở các giai đoạn 1 đến 5 và phần bổ sung sau đó:
 
-1. Tạo thư mục `services/`.
-2. Tách HNCode parser đầu tiên.
-3. Tạo `docs/API.md`.
-4. Tạo `docs/HNCODE_NOTES.md`.
-5. Đổi các chức năng đang đọc contest HNCode sang service chung.
-6. Viết test fixtures cho HNCode contest cũ/mới.
-7. Sau khi ổn mới tách upload/chuyển bài.
+1. Tạo thư mục `services/`: đã làm.
+2. Tách HNCode parser đầu tiên: đã làm trong `services/hncode.py`.
+3. Tạo `docs/API.md`: đã làm.
+4. Tạo `docs/HNCODE_NOTES.md`: đã làm.
+5. Đổi các chức năng đang đọc contest HNCode sang service chung: đã làm phần chính qua `services/hncode.py`.
+6. Viết test fixtures cho HNCode contest cũ/mới: đã làm trong `tests/fixtures/` và `tests/test_parsers.py`.
+7. Sau khi ổn mới tách upload/chuyển bài: đã tách các phần nền sang:
+
+```text
+services/problem_bundle.py
+services/problem_upload.py
+services/problem_transfer.py
+```
+
+Trạng thái hiện tại:
+
+- `services/problem_transfer.py` đã gom phần build row chuẩn bị chuyển bài, row lỗi, áp thông tin bảng xuống `ProblemInfo`, và wrapper upload transfer cho DMOJ/HNCode/HNOJ/TinHocTre qua callback.
+- `web_app.py` vẫn giữ route Flask và callback form cụ thể để không đổi contract giao diện/API.
+- Đã thêm `tests/test_problem_transfer.py` để kiểm tra service chuyển bài.
+- Lệnh `python -m unittest discover -s tests -v` hiện có 8 test pass.
+
+Phần nên làm tiếp theo sau checklist này:
+
+1. Chuẩn hóa response API: gom dần các endpoint về dạng `ok/message/rows/log/errors/meta` thay vì lúc thì `error`, lúc thì `ok=false`.
+2. Tách tiếp logic contest/lesson/course khỏi `web_app.py` sang `services/contest.py`, `services/lesson.py`, `services/course.py`.
+3. Tách `static/app.js` thành module nhỏ: `api.js`, `progress.js`, `upload.js`, `transfer.js`, `contest.js`, `lesson.js`, `misc.js`.
+4. Thêm test API Flask cho các endpoint không cần đăng nhập thật: `/`, `/api/prepare-upload`, parser list problem code với fixture.
+5. Sau khi có test nền, mới refactor các luồng live như Clone Course, Contest -> Lesson, Chấm bài.
+
+
+## VII.B. Các nhiệm vụ bổ sung sau mục VII
+
+Trạng thái hiện tại:
+
+1. Chuẩn hóa response API: đã thêm `services/api_response.py` với `api_success()` và `api_error()`. Một số endpoint nền đã chuyển sang response có `ok/message/rows/log/errors/meta` nhưng vẫn giữ field cũ như `error`, `prepare_id`, `codes_text` để không làm hỏng giao diện hiện tại.
+2. Tách contest/lesson/course: đã thêm `services/contest.py`, `services/lesson.py`, `services/course.py`; `web_app.py` đã chuyển các wrapper parse URL/link course/contest/lesson sang gọi service mới. Các luồng live lớn vẫn còn callback/form trong `web_app.py` để tránh đổi hành vi quá mạnh.
+3. Tách JS: đã tách `static/app.js` thành các file `api.js`, `progress.js`, `upload.js`, `transfer.js`, `contest.js`, `lesson.js`, `misc.js`; `templates/index.html` đã load các file này theo thứ tự.
+4. Test API Flask nền: đã thêm `tests/test_api.py` kiểm tra `/`, static modules, `/api/prepare-upload` với bộ mẫu và `/api/misc/list-problem-codes` bằng fixture/mock session, không cần login thật.
+5. Refactor live sau khi có test nền: chưa đụng sâu các luồng Clone Course, Contest -> Lesson, Chấm bài ngoài việc tách helper nền. Các luồng này nên được refactor từng phần tiếp theo sau khi thêm fixture/form test riêng.
+
+Lệnh kiểm tra hiện tại:
+
+```powershell
+python -m unittest discover -s tests -v
+python -m py_compile web_app.py services\api_response.py services\contest.py services\lesson.py services\course.py services\hncode.py services\hnoj.py services\problem_bundle.py services\problem_upload.py services\problem_transfer.py services\jobs.py
+node --check static\api.js
+node --check static\progress.js
+node --check static\app.js
+node --check static\upload.js
+node --check static\transfer.js
+node --check static\contest.js
+node --check static\lesson.js
+node --check static\misc.js
+```
+
+
+## VII.C. Chặng 1: Refactor Contest -> Lesson
+
+Trạng thái hiện tại:
+
+- Đã tách phần parse/build dữ liệu Contest -> Lesson sang `services/lesson.py`.
+- `services/lesson.py` hiện có các helper: `parse_lesson_problem_rows`, `append_lesson_problem_formset`, `remove_lesson_item_fields`, `build_contest_to_lesson_rows`, `merge_requested_lesson_copy_rows`.
+- `web_app.py` vẫn giữ route `/api/prepare-contest-to-lesson` và `/api/confirm-contest-to-lesson`, nhưng đã gọi service để build bảng/merge dữ liệu. Phần live chuyển bài HNOJ sang HNCode và POST form lesson vẫn giữ callback hiện tại để không đổi hành vi admin form.
+- Đã thêm `tests/test_contest_lesson.py` để test parse lesson form, build rows, merge rows và API prepare bằng mock session, không cần login thật.
+- Test hiện tại: 16/16 pass.
+
+## VII.D. Chặng 2: Refactor Clone Course
+
+Trạng thái hiện tại:
+
+- Đã tách phần parser/build dữ liệu Clone Course sang `services/course.py`.
+- `services/course.py` hiện có các helper: `parse_course_lessons_from_html`, `parse_course_contests_from_html`, `default_clone_contest_key`, `build_course_clone_rows`, `merge_requested_course_clone_rows`.
+- `web_app.py` vẫn giữ route `/api/prepare-course-clone` và `/api/confirm-course-clone`, nhưng route chuẩn bị đã gọi service để parse/build bảng, route xác nhận đã gọi service để merge rows người dùng gửi lên.
+- Phần live admin clone lesson/contest vẫn giữ trong `web_app.py` để không đổi hành vi form admin hiện tại.
+- Đã thêm fixture/mock cho danh sách lesson, danh sách contest, tạo mã contest đích mặc định, build rows chuẩn bị Clone Course và API prepare bằng mock session, không cần login thật.
+
+Lệnh test riêng cho chặng này:
+
+```powershell
+python -m unittest tests.test_course_clone -v
+```
+
+## VII.E. Chặng 3: Refactor Chấm bài HNCode
+
+Trạng thái hiện tại:
+
+- Đã tách phần xử lý dữ liệu chấm bài HNCode sang `services/grading.py`.
+- `services/grading.py` hiện có các helper: `read_accounts`, `normalize_key`, `source_root`, `map_problem_code`, `collect_submission_files`, `build_prepare_row`, `merge_requested_rows`, `parse_ranking_table`, `write_excel`.
+- `web_app.py` vẫn giữ endpoint `/api/prepare-hncode-grading`, `/api/confirm-hncode-grading`, `/api/download-hncode-grading/<prepare_id>` để không đổi giao diện/API hiện tại.
+- Phần test không submit live, chỉ kiểm tra đọc CSV, chuẩn hóa tên, map file vào bài contest, build rows chuẩn bị chấm, merge lựa chọn và xuất Excel mẫu.
+- Phần live login/join/submit/poll vẫn giữ callback hiện tại trong `web_app.py`; có thể tách tiếp ở chặng sau khi có fixture form submit riêng.
+
+Lệnh test riêng cho chặng này:
+
+```powershell
+python -m unittest tests.test_grading -v
+```
+
+## VII.F. Chặng 4: Chuẩn hóa response API
+
+Trạng thái hiện tại:
+
+- Đã dùng `services/api_response.py` cho các nhóm endpoint ưu tiên: `prepare/confirm-transfer`, `prepare/confirm-contest-transfer`, `prepare/confirm-contest-to-lesson`, `prepare/confirm-course-clone`, `prepare/confirm-hncode-grading`.
+- Response mới có đủ các field nền: `ok`, `message`, `rows`, `log`, `errors`, `meta`.
+- Vẫn giữ các field cũ mà frontend đang dùng như `error`, `prepare_id`, `download_url`, `problems`, `accounts`, `lesson_link`, `course_link`, `link`.
+- Đã sửa thêm lỗi phụ ở `/api/confirm-contest-transfer`: `prepare_id` không hợp lệ không còn gây HTTP 500, mà trả lỗi chuẩn HTTP 400.
+- Đã thêm/cập nhật test Flask không cần login thật cho lỗi validate, dữ liệu chuẩn bị hết hạn, response chuẩn của Contest → Lesson và Clone Course mock.
+
+Lệnh test liên quan:
+
+```powershell
+python -m unittest tests.test_api tests.test_contest_lesson tests.test_course_clone -v
+```
+
+## VII.G. Chặng 5: Test format dữ liệu Up bài
+
+Trạng thái hiện tại:
+
+- Đã thêm `tests/test_problem_bundle.py`.
+- Test offline các format: zip 1 bài chuẩn, zip nhiều bài, Markdown tổng hợp nhiều bài, metadata dòng đầu `Tên bài | Mã bài | Điểm | Tags`, `gentest_<ma_bai>.py`, `<ma_bai>.zip` test sẵn, thiếu solution vẫn chuẩn bị được, thiếu test/thiếu output báo lỗi rõ.
+- Đã sửa `services/problem_bundle.py` để Markdown tổng hợp giữ lại metadata `Điểm | Tags` khi tách thành từng file bài.
+- Đã cập nhật `docs/DATA_FORMATS.md` về hành vi thiếu solution, thiếu test và format Markdown tổng hợp.
+
+Lệnh test riêng:
+
+```powershell
+python -m unittest tests.test_problem_bundle -v
+```
+
+## VII.H. Chặng 6: Tách Quiz và Tool lẻ
+
+Trạng thái hiện tại:
+
+- Đã thêm `services/quiz.py` để parse Markdown quiz, validate câu hỏi và build rows chuẩn bị upload.
+- Đã thêm `services/misc.py` cho các helper offline của Tool lẻ: chọn last submission Scratch, phân tích code zip, token/fingerprint phục vụ cảnh báo AI và chép code.
+- `web_app.py` vẫn giữ endpoint/giao diện hiện tại, các hàm cũ chuyển dần thành wrapper gọi service để giảm rủi ro.
+- Đã thêm `tests/test_quiz_misc.py` cho parse quiz markdown, validate lỗi quiz, chuẩn bị rows quiz, chọn last submissions và phân tích input code zip không cần live data.
+
+Lệnh test riêng:
+
+```powershell
+python -m unittest tests.test_quiz_misc -v
+```
+
+## VII.I. Chặng 7: Tách TinHocTre riêng
+
+Trạng thái hiện tại:
+
+- Đã thêm `services/tinhoctre.py` để gom helper riêng của TinHocTre: build URL admin/bài/test, normalize đề bài `$` -> `~`, nhận diện WAF/challenge, nhận diện redirect login, parse lỗi form cơ bản, lưu/đọc cookie tạm và apply cookie vào session.
+- `web_app.py` vẫn giữ endpoint/giao diện/cơ chế Edge-cookie hiện tại. Các hàm TinHocTre trong `web_app.py` chuyển thành wrapper gọi service để không đổi hành vi API.
+- Không hard-code cookie. Cookie vẫn lấy từ ô Cookie TinHocTre hoặc browser local/Edge như trước.
+- Đã thêm `tests/test_tinhoctre.py` cho các phần không cần login thật: normalize statement, build URL, detect WAF/challenge, detect login redirect, parse lỗi form, lưu/đọc/apply cookie và nhận diện form admin tạo bài.
+
+Lệnh test riêng:
+
+```powershell
+python -m unittest tests.test_tinhoctre -v
+```
+
+## VII.J. Chặng 8: Rà soát UI sau refactor
+
+Trạng thái hiện tại:
+
+- Đã thêm `tests/test_ui_smoke.py` để rà soát các lỗi UI dễ phát sinh sau khi tách JS/backend:
+  - Trang `/` render được.
+  - Tải đủ các module `static/api.js`, `progress.js`, `app.js`, `upload.js`, `transfer.js`, `contest.js`, `lesson.js`, `misc.js`.
+  - Tất cả `document.getElementById(...)` trong JS đều có phần tử tương ứng trong HTML.
+  - Các endpoint `/api/...` được JS gọi đều tồn tại trong Flask routes.
+  - Chuẩn bị dữ liệu offline cho Up nhiều bài, Up 1 bài và Quiz vẫn chạy được.
+- Các chức năng live lớn đã có test nền ở các chặng trước: Chuyển bài, Chuyển contest, Contest -> Lesson, Clone Course, Chấm bài, Tool lẻ.
+- Trong phiên rà soát này runtime không có browser instance khả dụng để lấy console trực tiếp; kiểm tra thay thế bằng HTTP 200, static JS syntax, route mapping và UI smoke test.
+
+Lệnh test riêng:
+
+```powershell
+python -m unittest tests.test_ui_smoke -v
+```
+
+## VII.K. Bổ sung: AI chuẩn hóa đề bài
+
+Trạng thái hiện tại:
+
+- Đã thêm `services/ai_assistant.py` để đọc file đề rời, build prompt chuẩn hóa theo tài liệu `MO_TA_CHUAN_HOA_BAI_HNCODE_CHO_AI.md`, gọi Google AI API bằng API key người dùng nhập, parse JSON AI trả về và validate Markdown.
+- Đã thêm panel `AI chuẩn hóa đề` trên giao diện:
+  - Nhập Google AI API key và model.
+  - Chọn format đích HNCode/HNOJ.
+  - Nhập danh sách mã bài HNCode để tool tự đọc đề hiện tại.
+  - Hoặc chọn file/nội dung rời: Markdown, TXT, PDF, DOCX, ảnh.
+  - Chọn phần cần chuẩn hóa: đề bài, metadata, solutions, nhận xét test.
+  - Bấm `Chuẩn bị dữ liệu`, sau đó `Chuẩn hóa bằng AI`.
+  - Xem Markdown/solutions/issues và đưa kết quả sang `Up 1 bài` để kiểm tra tiếp.
+- Không dùng mật khẩu Google/Gemini web. Tool chỉ dùng API key chính thức, không hard-code key vào repo.
+- Đã thêm `tests/test_ai_assistant.py`; các test mock lời gọi AI nên không tốn API thật.
+
+Lệnh test riêng:
+
+```powershell
+python -m unittest tests.test_ai_assistant tests.test_ui_smoke -v
+```
 
 ## VIII. Việc chưa nên làm ngay
 
@@ -474,3 +703,15 @@ Mục tiêu cuối cùng:
 - API gọi được tự động.
 - Code dễ đọc cho AI.
 - Khi HNCode/HNOJ/TinHocTre đổi giao diện, chỉ sửa đúng một service.
+
+## VII.L. Bổ sung: hoàn thiện AI chuẩn hóa và cập nhật HNCode
+
+Trạng thái hiện tại:
+
+- Đã thêm nút mắt ẩn/hiện cho các ô mật khẩu và Google AI API key.
+- Model Google AI chuyển sang danh sách chọn cố định để tránh gõ sai tên model.
+- Bảng chuẩn bị AI hiển thị checkbox, mã bài, tên bài, link đề bài `.md`, link solution `.md`, point và trạng thái.
+- Mã bài, tên bài, point có thể sửa trực tiếp trước khi chạy AI hoặc cập nhật web.
+- Đã thêm endpoint `/api/ai/apply-normalize` để ghi kết quả AI lên HNCode sau khi xác nhận.
+- Nút `Chuẩn hoá` trên UI tự chạy đủ chuỗi chuẩn bị dữ liệu, chuẩn hóa bằng AI, rồi cập nhật web nếu người dùng bấm trực tiếp.
+- Đã bổ sung test mock cho endpoint apply, không gọi live HNCode thật.

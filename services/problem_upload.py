@@ -12,6 +12,9 @@ from upload_hncode_batch import test_cases_from_files
 from upload_tinhoctre_batch import GeneratedTests, ProblemBundle, clean_statement, csrf_token, form_errors, read_text_smart, statement_body_text
 
 
+HNCODE_LIKE_TARGETS = {"hncode", "tinhoctre"}
+
+
 def language_ids_for_target(target_info: dict, names: list[str]) -> list[str]:
     mapping = target_info["languages"]
     return [mapping[name] for name in names if mapping.get(name)]
@@ -35,16 +38,17 @@ def memory_limit_to_kb(value: object) -> str:
 
 def normalize_problem_code_for_target(code: str, target: str) -> str:
     code = (code or "").strip().lower()
-    if target == "hncode":
+    if target in HNCODE_LIKE_TARGETS:
         code = re.sub(r"[^a-z0-9_]+", "", code)
     return code
 
 
 def validate_problem_code_for_target(code: str, target: str) -> None:
-    if target == "hncode" and not re.fullmatch(r"[a-z0-9_]+", code or ""):
+    if target in HNCODE_LIKE_TARGETS and not re.fullmatch(r"[a-z0-9_]+", code or ""):
         normalized = normalize_problem_code_for_target(code, target)
         hint = f" Gợi ý mã hợp lệ: {normalized}" if normalized else ""
-        raise RuntimeError(f"HNCode cho phép mã bài gồm chữ thường, số và dấu gạch dưới (^[a-z0-9_]+$).{hint}")
+        label = "HNCode/TinHocTre" if target == "tinhoctre" else "HNCode"
+        raise RuntimeError(f"{label} cho phép mã bài gồm chữ thường, số và dấu gạch dưới (^[a-z0-9_]+$).{hint}")
 
 
 def problem_url(base_url: str, code: str) -> str:
@@ -57,7 +61,7 @@ def test_data_url(base_url: str, code: str) -> str:
 
 def statement_for_target(target: str, statement: str, *, skip_title_line: bool = False) -> str:
     text = statement_body_text(statement, skip_title_line=skip_title_line) if skip_title_line else clean_statement(statement)
-    if target == "hncode":
+    if target in HNCODE_LIKE_TARGETS:
         return text.replace("~", "$")
     return text.replace("$", "~")
 
@@ -75,7 +79,7 @@ def problem_exists_for_target(session, target: str, base_url: str, code: str) ->
 
 def resolve_problem_code_for_upload(session, target: str, base_url: str, raw_code: str) -> tuple[str, str]:
     code = (raw_code or "").strip().lower()
-    if target != "hncode":
+    if target not in HNCODE_LIKE_TARGETS:
         return code, ""
     normalized = normalize_problem_code_for_target(code, target)
     if code and code != normalized and problem_exists_for_target(session, target, base_url, code):

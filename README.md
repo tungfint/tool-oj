@@ -6,6 +6,8 @@ Project hỗ trợ chuẩn bị dữ liệu, tạo bài mới, upload test, nộ
 - HNCode: `https://hncode.edu.vn`
 - TinHocTre: `https://tinhoctre.vn`
 
+Ba trang hiện dùng chung tài khoản admin nhập trong tab `Tài khoản & Hướng dẫn`. Tool không hard-code mật khẩu trong source.
+
 Tool ưu tiên tạo bài qua admin form:
 
 - `https://hnoj.edu.vn/admin/judge/problem/add/`
@@ -37,8 +39,8 @@ Giao diện dùng favicon từ `static/favicon-HNCode.svg`.
 
 Quy tắc ký tự công thức trong đề bài:
 
-- Khi up hoặc chuyển bài lên `HNOJ` và `TinHocTre`, đề bài dùng `~` thay cho `$`.
-- Khi up hoặc chuyển bài lên `HNCode`, đề bài dùng `$` thay cho `~`.
+- Khi up hoặc chuyển bài lên `HNOJ`, đề bài dùng `~` thay cho `$`.
+- Khi up hoặc chuyển bài lên `HNCode` và `TinHocTre`, đề bài dùng `$` thay cho `~`.
 
 ## Chạy giao diện web
 
@@ -96,6 +98,11 @@ Luồng sử dụng:
    - Người tạo (Creators): mặc định `mrtee`.
    - Dạng đề (Problem types): `Chưa phân loại`.
    - Nhóm bài (Problem group): `Chưa phân loại`.
+
+Mặc định khi không có `Problem types` hoặc `Problem group`, hoặc tag không khớp với form của trang đích:
+
+- HNCode: `problemtype = 591`, `problemgroup = 105`.
+- TinHocTre: `problemtype = 13`, `problemgroup = 13`.
 5. Chọn nhu cầu nộp thử:
    - `Nộp bài chấm thử C++`: dùng `sol_<ma_bai>.cpp`.
    - `Nộp bài chấm thử Python`: dùng `sol_<ma_bai>.py`.
@@ -265,28 +272,11 @@ Luồng sử dụng:
 Khi chuyển thành công, cột trạng thái có chữ `Link` để mở trang bài ở hệ thống đích.
 Nếu mã bài đích đã tồn tại, dòng đó sẽ báo `Bài đã tồn tại`, bị bỏ qua và các dòng khác vẫn tiếp tục chuyển.
 
-Riêng nguồn `TinHocTre`, tool đăng nhập qua `/accounts/login/` thay vì admin form `/admin/judge/problem/add/`. Nếu TinHocTre bật WAF/challenge và không trả form đăng nhập, hãy dùng ô `Cookie TinHocTre` trong tab `Tài khoản & Hướng dẫn`:
-
-1. Mở `https://tinhoctre.vn` trên trình duyệt và đăng nhập admin.
-2. Mở DevTools `F12` → tab `Network`.
-3. Bấm vào một request tới `tinhoctre.vn`, ví dụ `/problem/<ma_bai>/edit`.
-4. Trong `Request Headers`, copy nguyên dòng `Cookie`.
-5. Dán vào ô `Cookie TinHocTre`, bấm `Lưu tạm`, rồi chạy lại `Chuyển bài`.
-
-Trên máy local có thể dùng cách tiện hơn:
-
-1. Bấm `Mở Edge đăng nhập TinHocTre`.
-2. Đăng nhập trong cửa sổ Edge vừa mở và đảm bảo truy cập được `https://tinhoctre.vn/admin/judge/problem/add/`.
-3. Quay lại tool, bấm `Lấy cookie từ Edge`.
-4. Tool tự điền Cookie TinHocTre, lưu tạm và kiểm tra cookie mở được form admin tạo bài.
-
-Tool ưu tiên Edge profile mặc định để dùng lại mật khẩu đã lưu trong Edge. Nếu bấm `Lấy cookie từ Edge` không kết nối được, hãy đóng hết cửa sổ Edge đang mở rồi bấm `Mở Edge đăng nhập TinHocTre` lại.
-
-Nhanh nhất: bấm `Lấy cookie nhanh từ Edge`. Tool sẽ tự đóng Edge, mở lại Edge bằng profile mặc định, lấy Cookie TinHocTre và kiểm tra quyền admin. Edge thường khôi phục lại các tab cũ sau khi mở lại.
+TinHocTre hiện dùng hệ thống mới tương tự HNCode. Tool đăng nhập trực tiếp bằng tài khoản trong tab `Tài khoản & Hướng dẫn` và dùng admin form `/admin/judge/problem/add/`; luồng cookie/Edge cũ không còn nằm trong giao diện chính.
 
 ## Tab Chuyển contest
 
-Tab này dùng cho các contest kiểu DMOJ/VNOJ trên `HNOJ`, `HNCode`, `TinHocTre`, và nguồn phụ `HNOJ Contest` (`https://contest.hnoj.edu.vn`).
+Tab này dùng cho các contest trên 3 hệ thống chính: `HNOJ`, `HNCode`, `TinHocTre`.
 
 Luồng sử dụng:
 
@@ -406,17 +396,22 @@ Với HNCode Lesson, đổi `source_type` thành `lesson`.
 
 ## Tab Up Quiz
 
-Tab này up danh sách câu hỏi lên HNCode Quiz qua form:
+Tab này up danh sách câu hỏi lên Quiz. Trên giao diện chọn được web đích:
 
 ```text
-https://oj.hncode.edu.vn/quiz/questions/create/
+HNCode: https://hncode.edu.vn/quiz/questions/create/
+TinHocTre: https://tinhoctre.vn/quiz/questions/create/
 ```
 
-Tool hỗ trợ 4 loại câu hỏi:
+Với `HNCode`, tool dùng tài khoản HNCode trong tab `Tài khoản & Hướng dẫn`.
+Với `TinHocTre`, tool dùng tài khoản TinHocTre trong tab `Tài khoản & Hướng dẫn`.
+
+Tool hỗ trợ 5 loại câu hỏi:
 
 - `MC`: Trắc nghiệm 1 đáp án.
 - `MA`: Trắc nghiệm nhiều đáp án.
 - `SA`: Trả lời ngắn.
+- `FB`: Điền vào chỗ trống.
 - `TF`: Đúng / Sai.
 
 Nhãn để trống. Hai lựa chọn `Xáo trộn lựa chọn` và `Công khai` được chọn trực tiếp trên giao diện.
@@ -457,12 +452,36 @@ Tính 6 * 7.
 - 42
 - bốn mươi hai
 ---
+Loại: FB
+Tiêu đề: Điền vào chỗ trống
+Nội dung:
+An và Bình có $5$ viên bi. An có hơn Bình đúng $1$ viên bi.
+Vậy An có \_\_\_(1)\_\_\_ viên bi và Bình có \_\_\_(2)\_\_\_ viên bi.
+Đáp án:
+- Số bi của An: 3
+- Số bi của Bình: 2
+---
+Loại: FB
+Tiêu đề: Nhiều cách nhập đáp án
+Nội dung:
+Điền kết quả đúng vào hai chỗ trống:
+$2 + 3 =$ \_\_\_(1)\_\_\_ và tên ngôn ngữ lập trình Python viết thường là \_\_\_(2)\_\_\_.
+Đáp án:
+- Ô 1: 5 | năm
+- Ô 2: python
+Giải thích:
+Mỗi dòng đáp án tương ứng một ô trống. Các đáp án đúng thay thế cho cùng một ô có thể ngăn bằng dấu `|`, `,` hoặc `;`.
+---
 Loại: TF
 Tiêu đề: Đúng sai
 Nội dung:
 Python là một ngôn ngữ lập trình.
 Đáp án: Đúng
 ```
+
+Với `FB`, trong `Nội dung` đánh dấu ô trống theo dạng `\_\_\_(1)\_\_\_`, `\_\_\_(2)\_\_\_`, ... để hệ thống nhận đúng vị trí cần điền.
+Mỗi dòng trong phần `Đáp án` có dạng `Nhãn: đáp án`, ví dụ `Ô 1: 5 | năm`. Nếu không ghi nhãn, tool tự đặt `Ô 1:`, `Ô 2:`, ...
+Nếu một ô có nhiều đáp án đúng, ngăn các đáp án bằng `|`, `,` hoặc `;`. Tool chấm không phân biệt hoa/thường.
 
 ## Script dòng lệnh
 

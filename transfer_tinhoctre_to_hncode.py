@@ -180,6 +180,18 @@ def all_input_values(page: str, name: str) -> list[str]:
     return values
 
 
+def select_option_values(page: str, name: str) -> list[str]:
+    match = re.search(r"<select\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>(.*?)</select>", page, re.S)
+    if not match:
+        return []
+    values: list[str] = []
+    for option in re.finditer(r"<option\b([^>]*)>", match.group(1), re.S):
+        value = re.search(r"value=[\"']([^\"']*)", option.group(1))
+        if value:
+            values.append(html.unescape(value.group(1)))
+    return values
+
+
 def login_tinhoctre(base_url: str, username: str, password: str, problem_code: str) -> requests.Session:
     s = session()
     login_url = urljoin(base_url, f"/accounts/login/?next=/problem/{problem_code}")
@@ -408,12 +420,26 @@ def create_hncode_problem(
     public: bool,
     allow_all_languages: bool,
     allowed_language_ids: Iterable[str] | None = None,
+    default_type_id: str = "",
+    default_group_id: str = "",
 ) -> str:
     add_url = urljoin(base_url, "/admin/judge/problem/add/")
     page = request_with_retry(dest, "GET", add_url, action="mở form tạo bài HNCode")
     require(page.ok, f"HNCode add page failed: HTTP {page.status_code}")
 
     langs = all_input_values(page.text, "allowed_languages")
+    valid_type_values = select_option_values(page.text, "types")
+    valid_group_values = select_option_values(page.text, "group")
+    type_ids = [value.strip() for value in str(type_id or "").split(",") if value.strip()]
+    if valid_type_values:
+        type_ids = [value for value in type_ids if value in valid_type_values]
+        if not type_ids and default_type_id:
+            type_ids = [default_type_id]
+    elif not type_ids and default_type_id:
+        type_ids = [default_type_id]
+    resolved_group_id = str(group_id or default_group_id or "")
+    if valid_group_values and resolved_group_id not in valid_group_values:
+        resolved_group_id = default_group_id if default_group_id in valid_group_values else resolved_group_id
     data: list[tuple[str, str]] = [
         ("csrfmiddlewaretoken", csrf_token(page.text)),
         ("code", dest_code),
@@ -426,7 +452,7 @@ def create_hncode_problem(
         ("submission_source_visibility_mode", selected_option(page.text, "submission_source_visibility_mode", "F") or "F"),
         ("testcase_visibility_mode", selected_option(page.text, "testcase_visibility_mode", "C") or "C"),
         ("testcase_result_visibility_mode", selected_option(page.text, "testcase_result_visibility_mode", "V") or "V"),
-        ("group", group_id),
+        ("group", resolved_group_id),
         ("points", info.points),
         ("time_limit", info.time_limit),
         ("memory_limit", info.memory_limit),
@@ -454,7 +480,6 @@ def create_hncode_problem(
         ("translations-MAX_NUM_FORMS", "1"),
         ("_continue", "Save and continue editing"),
     ]
-    type_ids = [value.strip() for value in str(type_id or "").split(",") if value.strip()]
     data.extend(("types", value) for value in type_ids)
     if public:
         data.append(("is_public", "on"))

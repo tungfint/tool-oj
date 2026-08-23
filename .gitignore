@@ -6,10 +6,24 @@ __pycache__/
 
 *_upload_artifacts/
 transfer_artifacts/
+outputs/
 
 *.zip
 *.7z
 *.rar
+*.bak_before_*
+
+# Local scratch/deploy helpers, often containing machine-specific paths or secrets.
+check.py
+fix_*.py
+patch_*.py
+update_web_app.py
+deploy_vps.py
+scratch_ssh.py
+quiz_helpers.py
+out.txt
+vps_backup.tar.gz
+samples/bo_mau_1_bai_tonghaiso/
 
 .env
 .env.*
