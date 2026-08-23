@@ -22,7 +22,6 @@ from dataclasses import replace
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote, urljoin
-from services.quiz import find_image_in_dir, upload_quiz_image
 from urllib.request import urlopen
 from http.cookies import SimpleCookie
 
@@ -46,7 +45,6 @@ from transfer_tinhoctre_to_hncode import (
     upload_hncode_tests,
 )
 from upload_tinhoctre_batch import (
-
     GeneratedTests,
     ProblemBundle,
     USER_AGENT,
@@ -134,145 +132,145 @@ CONTEST_TARGETS = {
     **TARGETS,
 }
 
-PROMPT_GUIDE = """Vá»›i má»—i bÃ i trong danh sÃ¡ch dÆ°á»›i Ä‘Ã¢y, hÃ£y táº¡o Ä‘á»§ 4 file:
+PROMPT_GUIDE = """Với mỗi bài trong danh sách dưới đây, hãy tạo đủ 4 file:
 
 1. File sinh test:
-   - TÃªn file: gentest_<ma_bai>.py
-   - VÃ­ dá»¥: gentest_tht26_tongbi.py
+   - Tên file: gentest_<ma_bai>.py
+   - Ví dụ: gentest_tht26_tongbi.py
 
-2. File lá»i giáº£i Python:
-   - TÃªn file: sol_<ma_bai>.py
-   - VÃ­ dá»¥: sol_tht26_tongbi.py
+2. File lời giải Python:
+   - Tên file: sol_<ma_bai>.py
+   - Ví dụ: sol_tht26_tongbi.py
 
-3. File lá»i giáº£i C++:
-   - TÃªn file: sol_<ma_bai>.cpp
-   - VÃ­ dá»¥: sol_tht26_tongbi.cpp
+3. File lời giải C++:
+   - Tên file: sol_<ma_bai>.cpp
+   - Ví dụ: sol_tht26_tongbi.cpp
 
-4. File Ä‘á» bÃ i Markdown:
-   - TÃªn file: <ma_bai>.md
-   - VÃ­ dá»¥: tht26_tongbi.md
-   - DÃ²ng Ä‘áº§u tiÃªn cá»§a file pháº£i cÃ³ Ä‘Ãºng cáº¥u trÃºc:
-     TÃªn bÃ i | MÃ£ bÃ i
-   - VÃ­ dá»¥:
-     Tá»•ng bi | tht26_tongbi
-   - Sau dÃ²ng Ä‘áº§u tiÃªn lÃ  toÃ n bá»™ ná»™i dung Ä‘á» bÃ i.
+4. File đề bài Markdown:
+   - Tên file: <ma_bai>.md
+   - Ví dụ: tht26_tongbi.md
+   - Dòng đầu tiên của file phải có đúng cấu trúc:
+     Tên bài | Mã bài
+   - Ví dụ:
+     Tổng bi | tht26_tongbi
+   - Sau dòng đầu tiên là toàn bộ nội dung đề bài.
 
-YÃªu cáº§u Ä‘á»‘i vá»›i file sinh test:
+Yêu cầu đối với file sinh test:
 
-- File sinh test lÃ  file Python.
-- Trong file sinh test pháº£i nhÃºng lá»i giáº£i chuáº©n báº±ng C++ Ä‘á»ƒ sinh output.
-- Khi cháº¡y file sinh test, chÆ°Æ¡ng trÃ¬nh tá»± táº¡o thÆ° má»¥c test cho bÃ i tÆ°Æ¡ng á»©ng.
-- TÃªn thÆ° má»¥c test nÃªn lÃ  mÃ£ bÃ i, vÃ­ dá»¥:
+- File sinh test là file Python.
+- Trong file sinh test phải nhúng lời giải chuẩn bằng C++ để sinh output.
+- Khi chạy file sinh test, chương trình tự tạo thư mục test cho bài tương ứng.
+- Tên thư mục test nên là mã bài, ví dụ:
   tht26_tongbi/
-- CÃ¡c file test trong thÆ° má»¥c cÃ³ dáº¡ng:
+- Các file test trong thư mục có dạng:
   01.inp, 01.out
   02.inp, 02.out
   ...
-- Sau khi sinh test, file sinh test tá»± nÃ©n thÆ° má»¥c test thÃ nh:
+- Sau khi sinh test, file sinh test tự nén thư mục test thành:
   tht26_tongbi.zip
 
-YÃªu cáº§u Ä‘á»‘i vá»›i bá»™ test:
+Yêu cầu đối với bộ test:
 
-- Bá»™ test pháº£i Ä‘á»§ máº¡nh, phá»§ Ä‘á»§ cÃ¡c trÆ°á»ng há»£p Ä‘áº·c biá»‡t vÃ  trÆ°á»ng há»£p biÃªn.
-- Dá»¯ liá»‡u pháº£i Ä‘Ãºng giá»›i háº¡n cá»§a Ä‘á» bÃ i.
-- Náº¿u Ä‘á» cÃ³ subtask, sá»‘ lÆ°á»£ng test pháº£i phÃ¢n bá»‘ Ä‘Ãºng theo tá»‰ lá»‡ subtask.
-- Náº¿u bÃ i Ä‘Æ¡n giáº£n, chá»‰ cáº§n khoáº£ng 10 test.
-- Náº¿u bÃ i cáº§n nhiá»u trÆ°á»ng há»£p Ä‘á»ƒ kiá»ƒm tra cháº·t cháº½ hÆ¡n, cÃ³ thá»ƒ sinh khoáº£ng 20 test hoáº·c nhiá»u hÆ¡n.
-- Cáº§n cÃ³ 01 test vÃ­ dá»¥, cÃ¡c test nhá», test biÃªn, test ngáº«u nhiÃªn cÃ³ kiá»ƒm soÃ¡t, test Ä‘á»§ cÃ¡c trÆ°á»ng há»£p vÃ  test lá»›n.
+- Bộ test phải đủ mạnh, phủ đủ các trường hợp đặc biệt và trường hợp biên.
+- Dữ liệu phải đúng giới hạn của đề bài.
+- Nếu đề có subtask, số lượng test phải phân bố đúng theo tỉ lệ subtask.
+- Nếu bài đơn giản, chỉ cần khoảng 10 test.
+- Nếu bài cần nhiều trường hợp để kiểm tra chặt chẽ hơn, có thể sinh khoảng 20 test hoặc nhiều hơn.
+- Cần có 01 test ví dụ, các test nhỏ, test biên, test ngẫu nhiên có kiểm soát, test đủ các trường hợp và test lớn.
 
-Sau khi táº¡o xong, hÃ£y nÃ©n toÃ n bá»™ cÃ¡c file Ä‘Ã£ táº¡o thÃ nh má»™t file zip duy nháº¥t vÃ  gá»­i láº¡i cho tÃ´i.
+Sau khi tạo xong, hãy nén toàn bộ các file đã tạo thành một file zip duy nhất và gửi lại cho tôi.
 
-VÃ­ dá»¥ vá»›i bÃ i:
+Ví dụ với bài:
 
-Tá»•ng bi | tht26_tongbi
+Tổng bi | tht26_tongbi
 
-Cáº§n táº¡o 4 file:
+Cần tạo 4 file:
 
 - gentest_tht26_tongbi.py
 - sol_tht26_tongbi.py
 - sol_tht26_tongbi.cpp
 - tht26_tongbi.md
 
-HÃ£y thá»±c hiá»‡n cho toÃ n bá»™ cÃ¡c bÃ i Ä‘Æ°á»£c cung cáº¥p bÃªn dÆ°á»›i."""
+Hãy thực hiện cho toàn bộ các bài được cung cấp bên dưới."""
 
-QUIZ_FORMAT_GUIDE = """# Format soáº¡n danh sÃ¡ch quiz
+QUIZ_FORMAT_GUIDE = """# Format soạn danh sách quiz
 
-Má»—i cÃ¢u há»i tÃ¡ch nhau báº±ng má»™t dÃ²ng chá»‰ gá»“m `---`.
+Mỗi câu hỏi tách nhau bằng một dòng chỉ gồm `---`.
 
-CÃ¡c loáº¡i há»£p lá»‡:
-- `MC` hoáº·c `Tráº¯c nghiá»‡m 1 Ä‘Ã¡p Ã¡n`
-- `MA` hoáº·c `Tráº¯c nghiá»‡m nhiá»u Ä‘Ã¡p Ã¡n`
-- `SA` hoáº·c `Tráº£ lá»i ngáº¯n`
-- `FB` hoáº·c `Äiá»n vÃ o chá»— trá»‘ng`
-- `TF` hoáº·c `ÄÃºng / Sai`
+Các loại hợp lệ:
+- `MC` hoặc `Trắc nghiệm 1 đáp án`
+- `MA` hoặc `Trắc nghiệm nhiều đáp án`
+- `SA` hoặc `Trả lời ngắn`
+- `FB` hoặc `Điền vào chỗ trống`
+- `TF` hoặc `Đúng / Sai`
 
-Máº«u:
+Mẫu:
 
-Loáº¡i: MC
-TiÃªu Ä‘á»: CÃ¢u há»i vÃ­ dá»¥ 1
-Ná»™i dung:
-Trong Python, hÃ m nÃ o dÃ¹ng Ä‘á»ƒ in ra mÃ n hÃ¬nh?
-Lá»±a chá»n:
+Loại: MC
+Tiêu đề: Câu hỏi ví dụ 1
+Nội dung:
+Trong Python, hàm nào dùng để in ra màn hình?
+Lựa chọn:
 - A. input()
 - B. print()
 - C. len()
 - D. range()
-ÄÃ¡p Ã¡n: B
-Giáº£i thÃ­ch:
-`print()` dÃ¹ng Ä‘á»ƒ in dá»¯ liá»‡u ra mÃ n hÃ¬nh.
+Đáp án: B
+Giải thích:
+`print()` dùng để in dữ liệu ra màn hình.
 ---
-Loáº¡i: MA
-TiÃªu Ä‘á»: Sá»‘ nguyÃªn tá»‘
-Ná»™i dung:
-Nhá»¯ng sá»‘ nÃ o sau Ä‘Ã¢y lÃ  sá»‘ nguyÃªn tá»‘?
-Lá»±a chá»n:
+Loại: MA
+Tiêu đề: Số nguyên tố
+Nội dung:
+Những số nào sau đây là số nguyên tố?
+Lựa chọn:
 - A. 2
 - B. 3
 - C. 4
 - D. 9
-ÄÃ¡p Ã¡n: A, B
+Đáp án: A, B
 ---
-Loáº¡i: SA
-TiÃªu Ä‘á»: Káº¿t quáº£ phÃ©p tÃ­nh
-Ná»™i dung:
-TÃ­nh 6 * 7.
-ÄÃ¡p Ã¡n:
+Loại: SA
+Tiêu đề: Kết quả phép tính
+Nội dung:
+Tính 6 * 7.
+Đáp án:
 - 42
-- bá»‘n mÆ°Æ¡i hai
+- bốn mươi hai
 ---
-Loáº¡i: FB
-TiÃªu Ä‘á»: Äiá»n vÃ o chá»— trá»‘ng
-Ná»™i dung:
-An vÃ  BÃ¬nh cÃ³ $5$ viÃªn bi. An cÃ³ hÆ¡n BÃ¬nh Ä‘Ãºng $1$ viÃªn bi.
-Váº­y An cÃ³ \\_\\_\\_(1)\\_\\_\\_ viÃªn bi vÃ  BÃ¬nh cÃ³ \\_\\_\\_(2)\\_\\_\\_ viÃªn bi.
-ÄÃ¡p Ã¡n:
-- Sá»‘ bi cá»§a An: 3
-- Sá»‘ bi cá»§a BÃ¬nh: 2
+Loại: FB
+Tiêu đề: Điền vào chỗ trống
+Nội dung:
+An và Bình có $5$ viên bi. An có hơn Bình đúng $1$ viên bi.
+Vậy An có \\_\\_\\_(1)\\_\\_\\_ viên bi và Bình có \\_\\_\\_(2)\\_\\_\\_ viên bi.
+Đáp án:
+- Số bi của An: 3
+- Số bi của Bình: 2
 ---
-Loáº¡i: FB
-TiÃªu Ä‘á»: Nhiá»u cÃ¡ch nháº­p Ä‘Ã¡p Ã¡n
-Ná»™i dung:
-Äiá»n káº¿t quáº£ Ä‘Ãºng vÃ o hai chá»— trá»‘ng:
-$2 + 3 =$ \\_\\_\\_(1)\\_\\_\\_ vÃ  tÃªn ngÃ´n ngá»¯ láº­p trÃ¬nh Python viáº¿t thÆ°á»ng lÃ  \\_\\_\\_(2)\\_\\_\\_.
-ÄÃ¡p Ã¡n:
-- Ã” 1: 5 | nÄƒm
-- Ã” 2: python
-Giáº£i thÃ­ch:
-Má»—i dÃ²ng Ä‘Ã¡p Ã¡n tÆ°Æ¡ng á»©ng má»™t Ã´ trá»‘ng. CÃ¡c Ä‘Ã¡p Ã¡n Ä‘Ãºng thay tháº¿ cho cÃ¹ng má»™t Ã´ cÃ³ thá»ƒ ngÄƒn báº±ng dáº¥u `|`, `,` hoáº·c `;`.
+Loại: FB
+Tiêu đề: Nhiều cách nhập đáp án
+Nội dung:
+Điền kết quả đúng vào hai chỗ trống:
+$2 + 3 =$ \\_\\_\\_(1)\\_\\_\\_ và tên ngôn ngữ lập trình Python viết thường là \\_\\_\\_(2)\\_\\_\\_.
+Đáp án:
+- Ô 1: 5 | năm
+- Ô 2: python
+Giải thích:
+Mỗi dòng đáp án tương ứng một ô trống. Các đáp án đúng thay thế cho cùng một ô có thể ngăn bằng dấu `|`, `,` hoặc `;`.
 ---
-Loáº¡i: TF
-TiÃªu Ä‘á»: ÄÃºng sai
-Ná»™i dung:
-Python lÃ  má»™t ngÃ´n ngá»¯ láº­p trÃ¬nh.
-ÄÃ¡p Ã¡n: ÄÃºng
+Loại: TF
+Tiêu đề: Đúng sai
+Nội dung:
+Python là một ngôn ngữ lập trình.
+Đáp án: Đúng
 
-Ghi chÃº:
-- NhÃ£n quiz Ä‘á»ƒ trá»‘ng.
-- `XÃ¡o trá»™n lá»±a chá»n` vÃ  `CÃ´ng khai` chá»n trÃªn giao diá»‡n tool.
-- Vá»›i cÃ¢u `FB`, trong `Ná»™i dung` Ä‘Ã¡nh dáº¥u Ã´ trá»‘ng theo dáº¡ng `\\_\\_\\_(1)\\_\\_\\_`, `\\_\\_\\_(2)\\_\\_\\_`, ... Ä‘á»ƒ há»‡ thá»‘ng nháº­n Ä‘Ãºng vá»‹ trÃ­ cáº§n Ä‘iá»n.
-- Vá»›i cÃ¢u `FB`, má»—i dÃ²ng Ä‘Ã¡p Ã¡n cÃ³ dáº¡ng `NhÃ£n: Ä‘Ã¡p Ã¡n`, vÃ­ dá»¥ `Ã” 1: 5 | nÄƒm`. Náº¿u khÃ´ng ghi nhÃ£n, tool tá»± Ä‘áº·t `Ã” 1:`, `Ã” 2:`, ...
-- Vá»›i cÃ¢u `FB`, nhiá»u Ä‘Ã¡p Ã¡n Ä‘Ãºng cho cÃ¹ng má»™t Ã´ cÃ³ thá»ƒ ngÄƒn báº±ng `|`, `,` hoáº·c `;`. Tool cháº¥m khÃ´ng phÃ¢n biá»‡t hoa/thÆ°á»ng.
-- Vá»›i cÃ¢u `TF`, tool tá»± táº¡o hai lá»±a chá»n `ÄÃºng` vÃ  `Sai`.
+Ghi chú:
+- Nhãn quiz để trống.
+- `Xáo trộn lựa chọn` và `Công khai` chọn trên giao diện tool.
+- Với câu `FB`, trong `Nội dung` đánh dấu ô trống theo dạng `\\_\\_\\_(1)\\_\\_\\_`, `\\_\\_\\_(2)\\_\\_\\_`, ... để hệ thống nhận đúng vị trí cần điền.
+- Với câu `FB`, mỗi dòng đáp án có dạng `Nhãn: đáp án`, ví dụ `Ô 1: 5 | năm`. Nếu không ghi nhãn, tool tự đặt `Ô 1:`, `Ô 2:`, ...
+- Với câu `FB`, nhiều đáp án đúng cho cùng một ô có thể ngăn bằng `|`, `,` hoặc `;`. Tool chấm không phân biệt hoa/thường.
+- Với câu `TF`, tool tự tạo hai lựa chọn `Đúng` và `Sai`.
 """
 
 app = Flask(__name__)
@@ -299,25 +297,25 @@ QUESTION_TYPE_ALIASES = {
     "mc": "MC",
     "trac nghiem 1 dap an": "MC",
     "trac nghiem mot dap an": "MC",
-    "tráº¯c nghiá»‡m 1 Ä‘Ã¡p Ã¡n": "MC",
-    "tráº¯c nghiá»‡m má»™t Ä‘Ã¡p Ã¡n": "MC",
+    "trắc nghiệm 1 đáp án": "MC",
+    "trắc nghiệm một đáp án": "MC",
     "ma": "MA",
     "trac nghiem nhieu dap an": "MA",
-    "tráº¯c nghiá»‡m nhiá»u Ä‘Ã¡p Ã¡n": "MA",
+    "trắc nghiệm nhiều đáp án": "MA",
     "sa": "SA",
     "tra loi ngan": "SA",
-    "tráº£ lá»i ngáº¯n": "SA",
+    "trả lời ngắn": "SA",
     "fb": "FB",
     "dien vao cho trong": "FB",
-    "Ä‘iá»n vÃ o chá»— trá»‘ng": "FB",
+    "điền vào chỗ trống": "FB",
     "fill blank": "FB",
     "fill in blank": "FB",
     "fill in the blank": "FB",
     "tf": "TF",
     "dung sai": "TF",
     "dung / sai": "TF",
-    "Ä‘Ãºng sai": "TF",
-    "Ä‘Ãºng / sai": "TF",
+    "đúng sai": "TF",
+    "đúng / sai": "TF",
 }
 
 HNCODE_TYPE_ALIASES = {
@@ -330,43 +328,43 @@ HNCODE_TYPE_ALIASES = {
     "dp": "172",
     "dynamic programming": "172",
     "quy hoach dong": "172",
-    "quy hoáº¡ch Ä‘á»™ng": "172",
+    "quy hoạch động": "172",
     "two pointers": "196",
     "two-pointers": "196",
     "two_pointers": "196",
     "2 pointers": "196",
     "implementation": "340",
     "cai dat": "340",
-    "cÃ i Ä‘áº·t": "340",
+    "cài đặt": "340",
     "math": "175",
     "toan": "175",
-    "toÃ¡n": "175",
+    "toán": "175",
     "greedy": "171",
     "tham lam": "171",
     "strings": "176",
     "string": "176",
     "chuoi": "176",
-    "chuá»—i": "176",
+    "chuỗi": "176",
 }
 
 QUIZ_FIELD_ALIASES = {
-    "loáº¡i": "type",
+    "loại": "type",
     "loai": "type",
     "type": "type",
-    "tiÃªu Ä‘á»": "title",
+    "tiêu đề": "title",
     "tieu de": "title",
     "title": "title",
-    "ná»™i dung": "content",
+    "nội dung": "content",
     "noi dung": "content",
     "content": "content",
-    "lá»±a chá»n": "choices",
+    "lựa chọn": "choices",
     "lua chon": "choices",
     "choices": "choices",
-    "Ä‘Ã¡p Ã¡n": "answer",
+    "đáp án": "answer",
     "dap an": "answer",
     "answer": "answer",
     "answers": "answer",
-    "giáº£i thÃ­ch": "explanation",
+    "giải thích": "explanation",
     "giai thich": "explanation",
     "explanation": "explanation",
 }
@@ -375,13 +373,13 @@ QUIZ_FIELD_ALIASES = {
 def normalize_key_text(value: str) -> str:
     value = value.strip().lower()
     replacements = {
-        "Ã¡Ã áº£Ã£áº¡Äƒáº¯áº±áº³áºµáº·Ã¢áº¥áº§áº©áº«áº­": "a",
-        "Ã©Ã¨áº»áº½áº¹Ãªáº¿á»á»ƒá»…á»‡": "e",
-        "Ã­Ã¬á»‰Ä©á»‹": "i",
-        "Ã³Ã²á»Ãµá»Ã´á»‘á»“á»•á»—á»™Æ¡á»›á»á»Ÿá»¡á»£": "o",
-        "ÃºÃ¹á»§Å©á»¥Æ°á»©á»«á»­á»¯á»±": "u",
-        "Ã½á»³á»·á»¹á»µ": "y",
-        "Ä‘": "d",
+        "áàảãạăắằẳẵặâấầẩẫậ": "a",
+        "éèẻẽẹêếềểễệ": "e",
+        "íìỉĩị": "i",
+        "óòỏõọôốồổỗộơớờởỡợ": "o",
+        "úùủũụưứừửữự": "u",
+        "ýỳỷỹỵ": "y",
+        "đ": "d",
     }
     for chars, repl in replacements.items():
         for ch in chars:
@@ -391,7 +389,7 @@ def normalize_key_text(value: str) -> str:
 
 
 def quiz_field_from_line(line: str) -> tuple[str, str] | None:
-    match = re.match(r"^\s*([^:ï¼š]{1,40})\s*[:ï¼š]\s*(.*)$", line)
+    match = re.match(r"^\s*([^:：]{1,40})\s*[:：]\s*(.*)$", line)
     if not match:
         return None
     raw_key = match.group(1).strip()
@@ -418,9 +416,9 @@ def parse_choice_lines(text: str) -> list[dict]:
         line = line.strip()
         if not line:
             continue
-        match = re.match(r"^(?:[-*]\s*)?([A-Za-z0-9]+)\s*[\.\):ï¼š-]\s*(.+)$", line)
+        match = re.match(r"^(?:[-*]\s*)?([A-Za-z0-9]+)\s*[\.\):：-]\s*(.+)$", line)
         if not match:
-            raise RuntimeError(f"Lá»±a chá»n khÃ´ng Ä‘Ãºng dáº¡ng `- A. Ná»™i dung`: {line}")
+            raise RuntimeError(f"Lựa chọn không đúng dạng `- A. Nội dung`: {line}")
         choices.append({"id": match.group(1).strip(), "text": match.group(2).strip()})
     return choices
 
@@ -444,9 +442,9 @@ def parse_fill_blank_answers(text: str) -> list[dict]:
         line = re.sub(r"^\s*[-*]\s*", "", raw_line).strip()
         if not line:
             continue
-        label = f"Ã” {len(blanks) + 1}:"
+        label = f"Ô {len(blanks) + 1}:"
         answer_text = line
-        match = re.match(r"^(.{1,80}?)\s*[:ï¼š]\s*(.+)$", line)
+        match = re.match(r"^(.{1,80}?)\s*[:：]\s*(.+)$", line)
         if match:
             label = match.group(1).strip()
             if not label.endswith(":"):
@@ -454,7 +452,7 @@ def parse_fill_blank_answers(text: str) -> list[dict]:
             answer_text = match.group(2).strip()
         answers = [item.strip() for item in re.split(r"[,;|]", answer_text) if item.strip()]
         if not answers:
-            raise RuntimeError(f"ÄÃ¡p Ã¡n Ä‘iá»n vÃ o chá»— trá»‘ng chÆ°a há»£p lá»‡: {raw_line}")
+            raise RuntimeError(f"Đáp án điền vào chỗ trống chưa hợp lệ: {raw_line}")
         blanks.append({"label": label, "answers": answers})
     return blanks
 
@@ -474,45 +472,45 @@ def parse_quiz_markdown(text: str) -> list[dict]:
                 fields[current] = (fields[current] + "\n" + line).strip("\n")
         qtype = QUESTION_TYPE_ALIASES.get(fields["type"].strip().lower()) or QUESTION_TYPE_ALIASES.get(normalize_key_text(fields["type"]))
         if not qtype:
-            raise RuntimeError(f"CÃ¢u {index}: Loáº¡i cÃ¢u há»i khÃ´ng há»£p lá»‡: {fields['type']!r}")
+            raise RuntimeError(f"Câu {index}: Loại câu hỏi không hợp lệ: {fields['type']!r}")
         content = fields["content"].strip()
         if not content:
-            raise RuntimeError(f"CÃ¢u {index}: thiáº¿u Ná»™i dung.")
-        title = fields["title"].strip() or re.sub(r"\s+", " ", content)[:80] or f"CÃ¢u há»i {index}"
+            raise RuntimeError(f"Câu {index}: thiếu Nội dung.")
+        title = fields["title"].strip() or re.sub(r"\s+", " ", content)[:80] or f"Câu hỏi {index}"
         choices = parse_choice_lines(fields["choices"]) if fields["choices"].strip() else []
         answers = split_answers(fields["answer"])
         if qtype in {"MC", "MA"}:
             if not choices:
-                raise RuntimeError(f"CÃ¢u {index}: cÃ¢u tráº¯c nghiá»‡m cáº§n cÃ³ Lá»±a chá»n.")
+                raise RuntimeError(f"Câu {index}: câu trắc nghiệm cần có Lựa chọn.")
             if not answers:
-                raise RuntimeError(f"CÃ¢u {index}: cÃ¢u tráº¯c nghiá»‡m cáº§n cÃ³ ÄÃ¡p Ã¡n.")
+                raise RuntimeError(f"Câu {index}: câu trắc nghiệm cần có Đáp án.")
             valid_ids = {choice["id"] for choice in choices}
             missing = [answer for answer in answers if answer not in valid_ids]
             if missing:
-                raise RuntimeError(f"CÃ¢u {index}: Ä‘Ã¡p Ã¡n {', '.join(missing)} khÃ´ng cÃ³ trong lá»±a chá»n.")
+                raise RuntimeError(f"Câu {index}: đáp án {', '.join(missing)} không có trong lựa chọn.")
             correct = {"answers": answers if qtype == "MA" else (answers[0] if answers else "")}
         elif qtype == "SA":
             if not answers:
-                raise RuntimeError(f"CÃ¢u {index}: cÃ¢u tráº£ lá»i ngáº¯n cáº§n cÃ³ Ã­t nháº¥t má»™t ÄÃ¡p Ã¡n.")
+                raise RuntimeError(f"Câu {index}: câu trả lời ngắn cần có ít nhất một Đáp án.")
             choices = []
             correct = {"type": "exact", "answers": answers, "case_sensitive": False}
             grading_strategy = "all_or_nothing"
         elif qtype == "FB":
             blanks = parse_fill_blank_answers(fields["answer"])
             if not blanks:
-                raise RuntimeError(f"CÃ¢u {index}: cÃ¢u Ä‘iá»n vÃ o chá»— trá»‘ng cáº§n cÃ³ Ã­t nháº¥t má»™t dÃ²ng ÄÃ¡p Ã¡n.")
+                raise RuntimeError(f"Câu {index}: câu điền vào chỗ trống cần có ít nhất một dòng Đáp án.")
             choices = None
             correct = {"type": "exact", "case_sensitive": False, "blanks": blanks}
             grading_strategy = "correct_only"
         else:
             if not choices:
-                choices = [{"id": "T", "text": "ÄÃºng"}, {"id": "F", "text": "Sai"}]
+                choices = [{"id": "T", "text": "Đúng"}, {"id": "F", "text": "Sai"}]
             if not answers:
-                raise RuntimeError(f"CÃ¢u {index}: cÃ¢u ÄÃºng/Sai cáº§n cÃ³ ÄÃ¡p Ã¡n.")
+                raise RuntimeError(f"Câu {index}: câu Đúng/Sai cần có Đáp án.")
             raw = normalize_key_text(answers[0] if answers else "")
             correct_id = "T" if raw in {"dung", "true", "t", "1", "yes"} else "F" if raw in {"sai", "false", "f", "0", "no"} else answers[0] if answers else ""
             if correct_id not in {choice["id"] for choice in choices}:
-                raise RuntimeError(f"CÃ¢u {index}: Ä‘Ã¡p Ã¡n ÄÃºng/Sai pháº£i lÃ  ÄÃºng hoáº·c Sai.")
+                raise RuntimeError(f"Câu {index}: đáp án Đúng/Sai phải là Đúng hoặc Sai.")
             correct = {"answers": correct_id}
             grading_strategy = "all_or_nothing"
         if qtype in {"MC", "MA"}:
@@ -530,7 +528,7 @@ def parse_quiz_markdown(text: str) -> list[dict]:
             }
         )
     if not items:
-        raise RuntimeError("ChÆ°a cÃ³ cÃ¢u há»i nÃ o trong ná»™i dung quiz.")
+        raise RuntimeError("Chưa có câu hỏi nào trong nội dung quiz.")
     return items
 
 
@@ -539,7 +537,7 @@ def prepare_quiz_items(text: str) -> tuple[list[dict], list[dict]]:
     valid_questions = []
     blocks = split_quiz_blocks(text)
     if not blocks:
-        raise RuntimeError("ChÆ°a cÃ³ cÃ¢u há»i nÃ o trong ná»™i dung quiz.")
+        raise RuntimeError("Chưa có câu hỏi nào trong nội dung quiz.")
     for index, block in enumerate(blocks, 1):
         try:
             question = parse_quiz_markdown(block)[0]
@@ -550,7 +548,7 @@ def prepare_quiz_items(text: str) -> tuple[list[dict], list[dict]]:
                     "index": index,
                     "title": question["title"],
                     "type": question["type"],
-                    "status": "âœ“ Há»£p lá»‡",
+                    "status": "✓ Hợp lệ",
                     "error": "",
                     "can_upload": True,
                 }
@@ -559,9 +557,9 @@ def prepare_quiz_items(text: str) -> tuple[list[dict], list[dict]]:
             rows.append(
                 {
                     "index": index,
-                    "title": f"CÃ¢u {index}",
+                    "title": f"Câu {index}",
                     "type": "",
-                    "status": "âœ— Lá»—i",
+                    "status": "✗ Lỗi",
                     "error": str(exc),
                     "can_upload": False,
                 }
@@ -571,7 +569,7 @@ def prepare_quiz_items(text: str) -> tuple[list[dict], list[dict]]:
 
 def quiz_target_info(target: str) -> dict:
     if target not in QUIZ_TARGETS:
-        raise RuntimeError("Web up quiz khÃ´ng há»£p lá»‡.")
+        raise RuntimeError("Web up quiz không hợp lệ.")
     return QUIZ_TARGETS[target]
 
 
@@ -596,9 +594,9 @@ def create_quiz_question(session, base_url: str, question: dict, *, shuffle_choi
     create_url = urljoin(base_url, "/quiz/questions/create/")
     page = session.get(create_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form táº¡o quiz: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được form tạo quiz: HTTP {page.status_code}")
     if "/accounts/login" in page.url or "/admin/login" in page.url:
-        raise RuntimeError("Session quiz Ä‘Ã£ háº¿t háº¡n hoáº·c tÃ i khoáº£n khÃ´ng cÃ³ quyá»n má»Ÿ form táº¡o quiz.")
+        raise RuntimeError("Session quiz đã hết hạn hoặc tài khoản không có quyền mở form tạo quiz.")
     data = {
         "csrfmiddlewaretoken": csrf_token(page.text),
         "title": question["title"],
@@ -616,13 +614,13 @@ def create_quiz_question(session, base_url: str, question: dict, *, shuffle_choi
         data["is_public"] = "on"
     result = session.post(create_url, data=data, headers={"Referer": create_url}, allow_redirects=True, timeout=30)
     if not result.ok:
-        raise RuntimeError(f"Táº¡o quiz lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Tạo quiz lỗi HTTP {result.status_code}")
     errors = form_errors(result.text)
     if errors:
-        raise RuntimeError("Form táº¡o quiz bÃ¡o lá»—i: " + "; ".join(errors))
+        raise RuntimeError("Form tạo quiz báo lỗi: " + "; ".join(errors))
     match = re.search(r"/quiz/questions/(\d+)/", result.url)
     if not match:
-        raise RuntimeError(f"Táº¡o quiz chÆ°a tráº£ vá» trang cÃ¢u há»i: {result.url}")
+        raise RuntimeError(f"Tạo quiz chưa trả về trang câu hỏi: {result.url}")
     return urljoin(base_url, f"/quiz/questions/{match.group(1)}/")
 
 
@@ -649,7 +647,7 @@ def safe_extract_zip(zip_path: Path, dest: Path) -> None:
         for member in zf.infolist():
             target = (dest / member.filename).resolve()
             if dest_resolved not in target.parents and target != dest_resolved:
-                raise RuntimeError(f"File zip cÃ³ Ä‘Æ°á»ng dáº«n khÃ´ng an toÃ n: {member.filename}")
+                raise RuntimeError(f"File zip có đường dẫn không an toàn: {member.filename}")
         zf.extractall(dest)
 
 
@@ -843,22 +841,22 @@ def analyze_code_text(text: str, ext: str) -> dict:
     score = 0
     if phrase_hits:
         score += min(24, 8 + 4 * len(phrase_hits))
-        reasons.append("CÃ³ chÃº thÃ­ch/cá»¥m tá»« giáº£i thÃ­ch kiá»ƒu AI: " + ", ".join(phrase_hits[:4]))
+        reasons.append("Có chú thích/cụm từ giải thích kiểu AI: " + ", ".join(phrase_hits[:4]))
     if comment_ratio >= 0.18 and len(lines) >= 25:
         score += 12
-        reasons.append("Tá»‰ lá»‡ chÃº thÃ­ch cao báº¥t thÆ°á»ng")
+        reasons.append("Tỉ lệ chú thích cao bất thường")
     if features["long_identifier_ratio"] >= 0.22 and len(identifiers) >= 20:
         score += 10
-        reasons.append("Nhiá»u tÃªn biáº¿n/hÃ m dÃ i, mÃ´ táº£ ráº¥t chuáº©n")
+        reasons.append("Nhiều tên biến/hàm dài, mô tả rất chuẩn")
     if ext == ".py" and features["function_count"] >= 2 and features["import_count"] >= 3 and len(lines) >= 35:
         score += 10
-        reasons.append("Python cÃ³ cáº¥u trÃºc/import khÃ¡ cÃ´ng nghiá»‡p")
+        reasons.append("Python có cấu trúc/import khá công nghiệp")
     if ext in {".cpp", ".cc", ".cxx", ".c"} and features["macro_count"] >= 6 and features["using_alias_count"] >= 4:
         score += 8
-        reasons.append("C++ dÃ¹ng template/macro dÃ y")
+        reasons.append("C++ dùng template/macro dày")
     if features["class_count"] >= 1 and len(lines) >= 45:
         score += 6
-        reasons.append("CÃ³ class/cáº¥u trÃºc lá»›n so vá»›i bÃ i thi láº­p trÃ¬nh phá»• thÃ´ng")
+        reasons.append("Có class/cấu trúc lớn so với bài thi lập trình phổ thông")
     features["code_ai_score"] = min(score, 45)
     features["code_reasons"] = reasons
     features["style_bucket"] = compact_style_bucket(features)
@@ -930,12 +928,12 @@ def code_similarity_percent(a: dict, b: dict) -> float:
 
 def classify_copy_similarity(percent: float) -> str:
     if percent >= 88:
-        return "Ráº¥t giá»‘ng"
+        return "Rất giống"
     if percent >= 75:
-        return "Giá»‘ng nhiá»u"
+        return "Giống nhiều"
     if percent >= 62:
-        return "Cáº§n xem láº¡i"
-    return "Tháº¥p"
+        return "Cần xem lại"
+    return "Thấp"
 
 
 def detect_code_copy_pairs(finals: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -1006,22 +1004,22 @@ def detect_code_copy_pairs(finals: list[dict]) -> tuple[list[dict], list[dict]]:
         row["avg_percent"] = round(row["avg_percent"] / max(row["pair_count"], 1), 1)
         row["contests"] = ", ".join(sorted(row["contests"]))
         row["problems"] = "; ".join(row["problems"][:12])
-        if row["levels"].get("Ráº¥t giá»‘ng"):
-            row["level"] = "Ráº¥t giá»‘ng"
-        elif row["levels"].get("Giá»‘ng nhiá»u"):
-            row["level"] = "Giá»‘ng nhiá»u"
+        if row["levels"].get("Rất giống"):
+            row["level"] = "Rất giống"
+        elif row["levels"].get("Giống nhiều"):
+            row["level"] = "Giống nhiều"
         else:
-            row["level"] = "Cáº§n xem láº¡i"
+            row["level"] = "Cần xem lại"
         summaries.append(row)
     return summaries, detail_pairs
 
 
 def classify_ai_score(score: float) -> str:
     if score >= 60:
-        return "Kháº£ nÄƒng cao"
+        return "Khả năng cao"
     if score >= 45:
-        return "Kháº£ nÄƒng trung bÃ¬nh"
-    return "Kháº£ nÄƒng tháº¥p"
+        return "Khả năng trung bình"
+    return "Khả năng thấp"
 
 
 def safe_output_part(part: str) -> str:
@@ -1118,9 +1116,9 @@ def analyze_ai_code_records(records: list[dict]) -> dict:
         if dist >= 35:
             reason = []
             if first["ext"] != last["ext"]:
-                reason.append(f"Äá»•i ngÃ´n ngá»¯ {first['ext']} -> {last['ext']}")
+                reason.append(f"Đổi ngôn ngữ {first['ext']} -> {last['ext']}")
             if first["features"]["style_bucket"] != last["features"]["style_bucket"]:
-                reason.append(f"Äá»•i style {first['features']['style_bucket']} -> {last['features']['style_bucket']}")
+                reason.append(f"Đổi style {first['features']['style_bucket']} -> {last['features']['style_bucket']}")
             row = {
                 "contest": key[0],
                 "student_id": key[1],
@@ -1131,7 +1129,7 @@ def analyze_ai_code_records(records: list[dict]) -> dict:
                 "last_file": last["path"],
                 "first_local": first.get("local_path", ""),
                 "last_local": last.get("local_path", ""),
-                "reason": "; ".join(reason) or "Äá»™ lá»‡ch Ä‘áº·c trÆ°ng code lá»›n",
+                "reason": "; ".join(reason) or "Độ lệch đặc trưng code lớn",
             }
             shifts.append(row)
             shift_by_student[key[1]].append(row)
@@ -1151,19 +1149,19 @@ def analyze_ai_code_records(records: list[dict]) -> dict:
         reasons = []
         if len(languages) >= 2 and len(items) >= 3:
             inconsistency += min(18, 7 * (len(languages) - 1))
-            reasons.append("DÃ¹ng nhiá»u ngÃ´n ngá»¯ trong cÃ¡c bÃ i: " + ", ".join(languages))
+            reasons.append("Dùng nhiều ngôn ngữ trong các bài: " + ", ".join(languages))
         if len(buckets) >= 3 and len(items) >= 3:
             inconsistency += min(20, 6 * (len(buckets) - 2))
-            reasons.append("Template/phong cÃ¡ch giá»¯a cÃ¡c bÃ i khÃ¡c nhau")
+            reasons.append("Template/phong cách giữa các bài khác nhau")
         if max_pair >= 60:
             inconsistency += 16
-            reasons.append("CÃ³ cáº·p bÃ i cÃ¹ng thÃ­ sinh lá»‡ch phong cÃ¡ch ráº¥t máº¡nh")
+            reasons.append("Có cặp bài cùng thí sinh lệch phong cách rất mạnh")
         elif avg_pair >= 42:
             inconsistency += 10
-            reasons.append("Äá»™ lá»‡ch phong cÃ¡ch trung bÃ¬nh cao")
+            reasons.append("Độ lệch phong cách trung bình cao")
         if shift_by_student.get(student_id):
             inconsistency += min(24, 10 + 4 * len(shift_by_student[student_id]))
-            reasons.append("CÃ³ láº§n ná»™p cÃ¹ng bÃ i Ä‘á»•i phong cÃ¡ch/template rÃµ")
+            reasons.append("Có lần nộp cùng bài đổi phong cách/template rõ")
         top_code = max(code_scores) if code_scores else 0
         avg_code = sum(code_scores) / len(code_scores) if code_scores else 0
         score = min(100, round(top_code * 0.8 + avg_code * 0.35 + inconsistency, 1))
@@ -1182,7 +1180,7 @@ def analyze_ai_code_records(records: list[dict]) -> dict:
                 "style_count": len(buckets),
                 "max_pair_distance": round(max_pair, 1),
                 "avg_pair_distance": round(avg_pair, 1),
-                "reasons": "; ".join(dict.fromkeys(all_reasons)) or "Ãt dáº¥u hiá»‡u báº¥t thÆ°á»ng",
+                "reasons": "; ".join(dict.fromkeys(all_reasons)) or "Ít dấu hiệu bất thường",
                 "sample_files": "; ".join(item["path"] for item in sorted(items, key=lambda row: row["features"]["code_ai_score"], reverse=True)[:3]),
             }
         )
@@ -1256,28 +1254,28 @@ def write_ai_warning_excel(analysis: dict, output_path: Path) -> None:
 
     def add_sheet_link(sheet, row: int, label: str, sheet_name: str, note: str) -> None:
         sheet.cell(row=row, column=1, value=label)
-        set_hyperlink(sheet.cell(row=row, column=2), f"#'{sheet_name}'!A1", "Má»Ÿ sheet")
+        set_hyperlink(sheet.cell(row=row, column=2), f"#'{sheet_name}'!A1", "Mở sheet")
         sheet.cell(row=row, column=3, value=note)
 
     ws = wb.active
     ws.title = "Tong quan"
-    high = sum(1 for row in analysis["students"] if row["level"] == "Kháº£ nÄƒng cao")
-    medium = sum(1 for row in analysis["students"] if row["level"] == "Kháº£ nÄƒng trung bÃ¬nh")
-    low = sum(1 for row in analysis["students"] if row["level"] == "Kháº£ nÄƒng tháº¥p")
-    copy_very = sum(1 for row in analysis["copy_summaries"] if row["level"] == "Ráº¥t giá»‘ng")
-    copy_many = sum(1 for row in analysis["copy_summaries"] if row["level"] == "Giá»‘ng nhiá»u")
-    ws["A1"] = "Tá»•ng quan bÃ¡o cÃ¡o cáº£nh bÃ¡o AI code vÃ  chÃ©p code"
+    high = sum(1 for row in analysis["students"] if row["level"] == "Khả năng cao")
+    medium = sum(1 for row in analysis["students"] if row["level"] == "Khả năng trung bình")
+    low = sum(1 for row in analysis["students"] if row["level"] == "Khả năng thấp")
+    copy_very = sum(1 for row in analysis["copy_summaries"] if row["level"] == "Rất giống")
+    copy_many = sum(1 for row in analysis["copy_summaries"] if row["level"] == "Giống nhiều")
+    ws["A1"] = "Tổng quan báo cáo cảnh báo AI code và chép code"
     ws["A1"].font = Font(bold=True, size=14)
     overview_rows = [
-        ("Sá»‘ thÃ­ sinh", len(analysis["students"])),
-        ("Kháº£ nÄƒng AI cao", high),
-        ("Kháº£ nÄƒng AI trung bÃ¬nh", medium),
-        ("Kháº£ nÄƒng AI tháº¥p", low),
-        ("Sá»‘ file code phÃ¢n tÃ­ch", len(analysis["details"])),
-        ("Sá»‘ trÆ°á»ng há»£p Ä‘á»•i style cÃ¹ng bÃ i", len(analysis["shifts"])),
-        ("Sá»‘ cáº·p nghi chÃ©p code", len(analysis["copy_summaries"])),
-        ("Cáº·p ráº¥t giá»‘ng", copy_very),
-        ("Cáº·p giá»‘ng nhiá»u", copy_many),
+        ("Số thí sinh", len(analysis["students"])),
+        ("Khả năng AI cao", high),
+        ("Khả năng AI trung bình", medium),
+        ("Khả năng AI thấp", low),
+        ("Số file code phân tích", len(analysis["details"])),
+        ("Số trường hợp đổi style cùng bài", len(analysis["shifts"])),
+        ("Số cặp nghi chép code", len(analysis["copy_summaries"])),
+        ("Cặp rất giống", copy_very),
+        ("Cặp giống nhiều", copy_many),
     ]
     row_idx = 3
     for label, value in overview_rows:
@@ -1285,41 +1283,41 @@ def write_ai_warning_excel(analysis: dict, output_path: Path) -> None:
         ws.cell(row=row_idx, column=2, value=value)
         row_idx += 1
     row_idx += 1
-    ws.cell(row=row_idx, column=1, value="CÃ¡c sheet chi tiáº¿t").font = Font(bold=True)
+    ws.cell(row=row_idx, column=1, value="Các sheet chi tiết").font = Font(bold=True)
     row_idx += 1
-    add_sheet_link(ws, row_idx, "Cáº£nh bÃ¡o AI theo thÃ­ sinh", "Canh bao AI", "Má»©c cao/trung bÃ¬nh/tháº¥p vÃ  lÃ½ do")
+    add_sheet_link(ws, row_idx, "Cảnh báo AI theo thí sinh", "Canh bao AI", "Mức cao/trung bình/thấp và lý do")
     row_idx += 1
-    add_sheet_link(ws, row_idx, "ChÃ©p code tá»•ng há»£p", "Chep code tong hop", "Má»—i cáº·p thÃ­ sinh chá»‰ liá»‡t kÃª má»™t láº§n")
+    add_sheet_link(ws, row_idx, "Chép code tổng hợp", "Chep code tong hop", "Mỗi cặp thí sinh chỉ liệt kê một lần")
     row_idx += 1
-    add_sheet_link(ws, row_idx, "ChÃ©p code chi tiáº¿t", "Chep code chi tiet", "Chi tiáº¿t theo contest/bÃ i, cÃ³ % giá»‘ng nhau")
+    add_sheet_link(ws, row_idx, "Chép code chi tiết", "Chep code chi tiet", "Chi tiết theo contest/bài, có % giống nhau")
     row_idx += 1
-    add_sheet_link(ws, row_idx, "Chi tiáº¿t file code", "Chi tiet file code", "CÃ³ link má»Ÿ file code Ä‘Ã£ giáº£i nÃ©n")
+    add_sheet_link(ws, row_idx, "Chi tiết file code", "Chi tiet file code", "Có link mở file code đã giải nén")
     row_idx += 1
-    add_sheet_link(ws, row_idx, "Äá»•i style cÃ¹ng bÃ i", "Doi style cung bai", "CÃ¡c láº§n ná»™p cÃ¹ng bÃ i Ä‘á»•i template/phong cÃ¡ch")
+    add_sheet_link(ws, row_idx, "Đổi style cùng bài", "Doi style cung bai", "Các lần nộp cùng bài đổi template/phong cách")
     row_idx += 2
-    ws.cell(row=row_idx, column=1, value="Top cáº£nh bÃ¡o AI").font = Font(bold=True)
+    ws.cell(row=row_idx, column=1, value="Top cảnh báo AI").font = Font(bold=True)
     row_idx += 1
-    ws.append(["MÃ£ thÃ­ sinh", "Má»©c cáº£nh bÃ¡o", "Äiá»ƒm", "LÃ½ do"])
+    ws.append(["Mã thí sinh", "Mức cảnh báo", "Điểm", "Lý do"])
     for item in sorted(analysis["students"], key=lambda r: (-r["score"], r["student_id"]))[:15]:
         ws.append([item["student_id"], item["level"], item["score"], item["reasons"]])
     row_idx = ws.max_row + 2
-    ws.cell(row=row_idx, column=1, value="Top cáº·p nghi chÃ©p code").font = Font(bold=True)
+    ws.cell(row=row_idx, column=1, value="Top cặp nghi chép code").font = Font(bold=True)
     row_idx += 1
-    ws.append(["ThÃ­ sinh A", "ThÃ­ sinh B", "Má»©c", "% cao nháº¥t", "Sá»‘ bÃ i/cáº·p", "BÃ i liÃªn quan"])
+    ws.append(["Thí sinh A", "Thí sinh B", "Mức", "% cao nhất", "Số bài/cặp", "Bài liên quan"])
     for item in sorted(analysis["copy_summaries"], key=lambda r: (-r["max_percent"], -r["pair_count"], r["student_a"], r["student_b"]))[:15]:
         ws.append([item["student_a"], item["student_b"], item["level"], item["max_percent"], item["pair_count"], item["problems"]])
     autosize_worksheet(ws)
 
     ws = wb.create_sheet("Canh bao AI")
     headers = [
-        "MÃ£ thÃ­ sinh", "Má»©c cáº£nh bÃ¡o", "Äiá»ƒm nghi váº¥n", "Sá»‘ bÃ i final", "Sá»‘ Ä‘á»•i style trong history",
-        "NgÃ´n ngá»¯", "Sá»‘ nhÃ³m style", "Lá»‡ch lá»›n nháº¥t", "Lá»‡ch trung bÃ¬nh", "LÃ½ do", "File máº«u cáº§n xem",
+        "Mã thí sinh", "Mức cảnh báo", "Điểm nghi vấn", "Số bài final", "Số đổi style trong history",
+        "Ngôn ngữ", "Số nhóm style", "Lệch lớn nhất", "Lệch trung bình", "Lý do", "File mẫu cần xem",
     ]
     ws.append(headers)
     fills = {
-        "Kháº£ nÄƒng cao": PatternFill("solid", fgColor="FCA5A5"),
-        "Kháº£ nÄƒng trung bÃ¬nh": PatternFill("solid", fgColor="FDE68A"),
-        "Kháº£ nÄƒng tháº¥p": PatternFill("solid", fgColor="BBF7D0"),
+        "Khả năng cao": PatternFill("solid", fgColor="FCA5A5"),
+        "Khả năng trung bình": PatternFill("solid", fgColor="FDE68A"),
+        "Khả năng thấp": PatternFill("solid", fgColor="BBF7D0"),
     }
     for row in sorted(analysis["students"], key=lambda item: (-item["score"], item["student_id"])):
         ws.append([
@@ -1333,7 +1331,7 @@ def write_ai_warning_excel(analysis: dict, output_path: Path) -> None:
     autosize_worksheet(ws)
 
     ws = wb.create_sheet("Chep code tong hop")
-    ws.append(["ThÃ­ sinh A", "ThÃ­ sinh B", "Má»©c giá»‘ng", "% cao nháº¥t", "% trung bÃ¬nh", "Sá»‘ bÃ i/cáº·p giá»‘ng", "Contest", "BÃ i liÃªn quan"])
+    ws.append(["Thí sinh A", "Thí sinh B", "Mức giống", "% cao nhất", "% trung bình", "Số bài/cặp giống", "Contest", "Bài liên quan"])
     for row in sorted(analysis["copy_summaries"], key=lambda item: (-item["max_percent"], -item["pair_count"], item["student_a"], item["student_b"])):
         ws.append([
             row["student_a"], row["student_b"], row["level"], row["max_percent"], row["avg_percent"],
@@ -1345,66 +1343,66 @@ def write_ai_warning_excel(analysis: dict, output_path: Path) -> None:
 
     ws = wb.create_sheet("Chep code chi tiet")
     ws.append([
-        "Contest", "MÃ£ bÃ i", "NgÃ´n ngá»¯", "ThÃ­ sinh A", "ThÃ­ sinh B", "% giá»‘ng", "Má»©c",
-        "Fingerprint chung", "Token A", "Token B", "File A", "Má»Ÿ file A", "File B", "Má»Ÿ file B",
+        "Contest", "Mã bài", "Ngôn ngữ", "Thí sinh A", "Thí sinh B", "% giống", "Mức",
+        "Fingerprint chung", "Token A", "Token B", "File A", "Mở file A", "File B", "Mở file B",
     ])
     for row in sorted(analysis["copy_details"], key=lambda item: (-item["percent"], item["contest"], item["problem"], item["student_a"], item["student_b"])):
         ws.append([
             row["contest"], row["problem"], row["language"], row["student_a"], row["student_b"],
             row["percent"], row["level"], row["shared_fingerprints"], row["tokens_a"], row["tokens_b"],
-            row["file_a"], "Má»Ÿ file", row["file_b"], "Má»Ÿ file",
+            row["file_a"], "Mở file", row["file_b"], "Mở file",
         ])
-        set_hyperlink(ws.cell(ws.max_row, 12), row.get("local_a", ""), "Má»Ÿ file")
-        set_hyperlink(ws.cell(ws.max_row, 14), row.get("local_b", ""), "Má»Ÿ file")
+        set_hyperlink(ws.cell(ws.max_row, 12), row.get("local_a", ""), "Mở file")
+        set_hyperlink(ws.cell(ws.max_row, 14), row.get("local_b", ""), "Mở file")
     style_header(ws)
     ws.freeze_panes = "A2"
     autosize_worksheet(ws)
 
     ws = wb.create_sheet("Chi tiet file code")
     detail_headers = [
-        "Contest", "MÃ£ thÃ­ sinh", "MÃ£ bÃ i", "Loáº¡i", "File", "Má»Ÿ file", "NgÃ´n ngá»¯", "Äiá»ƒm dáº¥u hiá»‡u AI",
-        "NhÃ³m style", "Sá»‘ dÃ²ng", "Tá»‰ lá»‡ comment", "Macro", "Import", "HÃ m", "Äá»™ dÃ i tÃªn TB",
-        "Tá»‰ lá»‡ tÃªn dÃ i", "LÃ½ do",
+        "Contest", "Mã thí sinh", "Mã bài", "Loại", "File", "Mở file", "Ngôn ngữ", "Điểm dấu hiệu AI",
+        "Nhóm style", "Số dòng", "Tỉ lệ comment", "Macro", "Import", "Hàm", "Độ dài tên TB",
+        "Tỉ lệ tên dài", "Lý do",
     ]
     ws.append(detail_headers)
     for row in analysis["details"]:
         ws.append([
-            row["contest"], row["student_id"], row["problem"], row["kind"], row["file"], "Má»Ÿ file", row["ext"],
+            row["contest"], row["student_id"], row["problem"], row["kind"], row["file"], "Mở file", row["ext"],
             row["code_ai_score"], row["style_bucket"], row["line_count"], row["comment_ratio"],
             row["macro_count"], row["import_count"], row["function_count"], row["avg_identifier_len"],
             row["long_identifier_ratio"], row["reasons"],
         ])
-        set_hyperlink(ws.cell(ws.max_row, 6), row.get("local_path", ""), "Má»Ÿ file")
+        set_hyperlink(ws.cell(ws.max_row, 6), row.get("local_path", ""), "Mở file")
     style_header(ws)
     ws.freeze_panes = "A2"
     autosize_worksheet(ws)
 
     ws = wb.create_sheet("Doi style cung bai")
-    shift_headers = ["Contest", "MÃ£ thÃ­ sinh", "MÃ£ bÃ i", "Sá»‘ phiÃªn báº£n", "Äá»™ lá»‡ch", "File Ä‘áº§u", "Má»Ÿ file Ä‘áº§u", "File cuá»‘i", "Má»Ÿ file cuá»‘i", "LÃ½ do"]
+    shift_headers = ["Contest", "Mã thí sinh", "Mã bài", "Số phiên bản", "Độ lệch", "File đầu", "Mở file đầu", "File cuối", "Mở file cuối", "Lý do"]
     ws.append(shift_headers)
     for row in sorted(analysis["shifts"], key=lambda item: (-item["distance"], item["student_id"])):
         ws.append([
             row["contest"], row["student_id"], row["problem"], row["versions"], row["distance"],
-            row["first_file"], "Má»Ÿ file", row["last_file"], "Má»Ÿ file", row["reason"],
+            row["first_file"], "Mở file", row["last_file"], "Mở file", row["reason"],
         ])
-        set_hyperlink(ws.cell(ws.max_row, 7), row.get("first_local", ""), "Má»Ÿ file")
-        set_hyperlink(ws.cell(ws.max_row, 9), row.get("last_local", ""), "Má»Ÿ file")
+        set_hyperlink(ws.cell(ws.max_row, 7), row.get("first_local", ""), "Mở file")
+        set_hyperlink(ws.cell(ws.max_row, 9), row.get("last_local", ""), "Mở file")
     style_header(ws)
     ws.freeze_panes = "A2"
     autosize_worksheet(ws)
 
     ws = wb.create_sheet("Giai thich")
     notes = [
-        ["LÆ°u Ã½", "ÄÃ¢y lÃ  bÃ¡o cÃ¡o cáº£nh bÃ¡o/nghi váº¥n, khÃ´ng pháº£i káº¿t luáº­n cháº¯c cháº¯n thÃ­ sinh dÃ¹ng AI."],
-        ["Nguá»“n Ä‘iá»ƒm", "Äiá»ƒm káº¿t há»£p dáº¥u hiá»‡u trong tá»«ng file code, Ä‘á»™ lá»‡ch phong cÃ¡ch giá»¯a cÃ¡c bÃ i, vÃ  Ä‘á»•i phong cÃ¡ch trong history cÃ¹ng bÃ i."],
-        ["Kháº£ nÄƒng cao", "Äiá»ƒm nghi váº¥n tá»« 60 trá»Ÿ lÃªn."],
-        ["Kháº£ nÄƒng trung bÃ¬nh", "Äiá»ƒm nghi váº¥n tá»« 45 Ä‘áº¿n dÆ°á»›i 60."],
-        ["Kháº£ nÄƒng tháº¥p", "Äiá»ƒm nghi váº¥n dÆ°á»›i 45."],
-        ["NÃªn xem láº¡i", "Æ¯u tiÃªn má»Ÿ cÃ¡c file trong cá»™t File máº«u cáº§n xem vÃ  sheet Äá»•i style cÃ¹ng bÃ i."],
-        ["ChÃ©p code", "So khá»›p cÃ¡c cáº·p final/root cÃ¹ng contest vÃ  cÃ¹ng bÃ i. File quÃ¡ ngáº¯n khÃ´ng Ä‘Æ°á»£c cháº¥m Ä‘á»ƒ trÃ¡nh nhiá»…u."],
-        ["% giá»‘ng", "Dá»±a trÃªn token code Ä‘Ã£ bá» comment, chuáº©n hÃ³a tÃªn biáº¿n/háº±ng sá»‘ vÃ  so fingerprint k-gram."],
-        ["Link file", "BÃ¡o cÃ¡o cÃ³ link tá»›i thÆ° má»¥c code Ä‘Ã£ giáº£i nÃ©n trong .runtime/misc cá»§a tool local."],
-        ["KhÃ´ng phÃ¢n tÃ­ch", "File Scratch .sb3 lÃ  nhá»‹ phÃ¢n nÃªn khÃ´ng Ä‘Æ°á»£c cháº¥m báº±ng heuristic code vÄƒn báº£n."],
+        ["Lưu ý", "Đây là báo cáo cảnh báo/nghi vấn, không phải kết luận chắc chắn thí sinh dùng AI."],
+        ["Nguồn điểm", "Điểm kết hợp dấu hiệu trong từng file code, độ lệch phong cách giữa các bài, và đổi phong cách trong history cùng bài."],
+        ["Khả năng cao", "Điểm nghi vấn từ 60 trở lên."],
+        ["Khả năng trung bình", "Điểm nghi vấn từ 45 đến dưới 60."],
+        ["Khả năng thấp", "Điểm nghi vấn dưới 45."],
+        ["Nên xem lại", "Ưu tiên mở các file trong cột File mẫu cần xem và sheet Đổi style cùng bài."],
+        ["Chép code", "So khớp các cặp final/root cùng contest và cùng bài. File quá ngắn không được chấm để tránh nhiễu."],
+        ["% giống", "Dựa trên token code đã bỏ comment, chuẩn hóa tên biến/hằng số và so fingerprint k-gram."],
+        ["Link file", "Báo cáo có link tới thư mục code đã giải nén trong .runtime/misc của tool local."],
+        ["Không phân tích", "File Scratch .sb3 là nhị phân nên không được chấm bằng heuristic code văn bản."],
     ]
     for row in notes:
         ws.append(row)
@@ -1422,12 +1420,12 @@ def build_ai_warning_report(source_zips: list[Path], output_path: Path) -> dict:
     for zip_path in source_zips:
         records.extend(collect_code_records_from_zip(zip_path, extract_root))
     if not records:
-        raise RuntimeError("KhÃ´ng tÃ¬m tháº¥y file code vÄƒn báº£n (.py/.cpp/.pas/.c/.java) trong dá»¯ liá»‡u.")
+        raise RuntimeError("Không tìm thấy file code văn bản (.py/.cpp/.pas/.c/.java) trong dữ liệu.")
     analysis = analyze_ai_code_records(records)
     write_ai_warning_excel(analysis, output_path)
-    high = sum(1 for row in analysis["students"] if row["level"] == "Kháº£ nÄƒng cao")
-    medium = sum(1 for row in analysis["students"] if row["level"] == "Kháº£ nÄƒng trung bÃ¬nh")
-    low = sum(1 for row in analysis["students"] if row["level"] == "Kháº£ nÄƒng tháº¥p")
+    high = sum(1 for row in analysis["students"] if row["level"] == "Khả năng cao")
+    medium = sum(1 for row in analysis["students"] if row["level"] == "Khả năng trung bình")
+    low = sum(1 for row in analysis["students"] if row["level"] == "Khả năng thấp")
     return {
         "zip_count": len(source_zips),
         "code_file_count": len(records),
@@ -1438,8 +1436,8 @@ def build_ai_warning_report(source_zips: list[Path], output_path: Path) -> dict:
         "shift_count": len(analysis["shifts"]),
         "copy_pair_count": len(analysis["copy_summaries"]),
         "copy_detail_count": len(analysis["copy_details"]),
-        "copy_very_similar": sum(1 for row in analysis["copy_summaries"] if row["level"] == "Ráº¥t giá»‘ng"),
-        "copy_many": sum(1 for row in analysis["copy_summaries"] if row["level"] == "Giá»‘ng nhiá»u"),
+        "copy_very_similar": sum(1 for row in analysis["copy_summaries"] if row["level"] == "Rất giống"),
+        "copy_many": sum(1 for row in analysis["copy_summaries"] if row["level"] == "Giống nhiều"),
         "extracted_folder": str(extract_root),
         "filename": output_path.name,
     }
@@ -1546,25 +1544,25 @@ PAGE = r"""
     <div class="nav">
       <div class="nav-group">
         <span class="nav-label">Chung</span>
-        <button type="button" class="active" data-panel="accounts">TÃ i khoáº£n & HÆ°á»›ng dáº«n</button>
+        <button type="button" class="active" data-panel="accounts">Tài khoản & Hướng dẫn</button>
       </div>
       <div class="nav-group">
-        <span class="nav-label">BÃ i táº­p</span>
-        <button type="button" data-panel="upload">Up nhiá»u bÃ i</button>
-        <button type="button" data-panel="single-upload">Up 1 bÃ i</button>
-        <button type="button" data-panel="transfer">Chuyá»ƒn bÃ i</button>
+        <span class="nav-label">Bài tập</span>
+        <button type="button" data-panel="upload">Up nhiều bài</button>
+        <button type="button" data-panel="single-upload">Up 1 bài</button>
+        <button type="button" data-panel="transfer">Chuyển bài</button>
       </div>
       <div class="nav-group">
         <span class="nav-label">Contest / Course</span>
-        <button type="button" data-panel="contest-transfer">Chuyá»ƒn contest</button>
-        <button type="button" data-panel="contest-create">Táº¡o contest</button>
-        <button type="button" data-panel="contest-lesson-copy">Contest â†’ Lesson</button>
+        <button type="button" data-panel="contest-transfer">Chuyển contest</button>
+        <button type="button" data-panel="contest-create">Tạo contest</button>
+        <button type="button" data-panel="contest-lesson-copy">Contest → Lesson</button>
         <button type="button" data-panel="course-clone">Clone Course</button>
       </div>
       <div class="nav-group">
-        <span class="nav-label">KhÃ¡c</span>
+        <span class="nav-label">Khác</span>
         <button type="button" data-panel="quiz-upload">Up Quiz</button>
-        <button type="button" data-panel="misc-tools">Tool láº»</button>
+        <button type="button" data-panel="misc-tools">Tool lẻ</button>
       </div>
     </div>
   </header>
@@ -1572,12 +1570,12 @@ PAGE = r"""
   <main>
     <section>
       <div class="panel active" id="panel-accounts">
-        <h2>TÃ i khoáº£n & HÆ°á»›ng dáº«n</h2>
-        <p>LÆ°u táº¡m tÃ i khoáº£n trÃªn trÃ¬nh duyá»‡t mÃ¡y nÃ y. Khi cháº¡y tÃ¡c vá»¥, form sáº½ tá»± Ä‘iá»n cÃ¡c thÃ´ng tin Ä‘Ã£ lÆ°u.</p>
+        <h2>Tài khoản & Hướng dẫn</h2>
+        <p>Lưu tạm tài khoản trên trình duyệt máy này. Khi chạy tác vụ, form sẽ tự điền các thông tin đã lưu.</p>
         <div class="grid-3">
-          <div><label>HNOJ user</label><input id="acct_hnoj_user" type="text" value="MrTee"><span id="login_hnoj" class="login-badge">ChÆ°a kiá»ƒm tra</span></div>
-          <div><label>HNCode user</label><input id="acct_hncode_user" type="text" value="MrTee"><span id="login_hncode" class="login-badge">ChÆ°a kiá»ƒm tra</span></div>
-          <div><label>TinHocTre user</label><input id="acct_tinhoctre_user" type="text" value="MrTee"><span id="login_tinhoctre" class="login-badge">ChÆ°a kiá»ƒm tra</span></div>
+          <div><label>HNOJ user</label><input id="acct_hnoj_user" type="text" value="MrTee"><span id="login_hnoj" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>HNCode user</label><input id="acct_hncode_user" type="text" value="MrTee"><span id="login_hncode" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>TinHocTre user</label><input id="acct_tinhoctre_user" type="text" value="MrTee"><span id="login_tinhoctre" class="login-badge">Chưa kiểm tra</span></div>
         </div>
         <div class="grid-3">
           <div><label>HNOJ password</label><input id="acct_hnoj_pass" type="password"></div>
@@ -1586,411 +1584,411 @@ PAGE = r"""
         </div>
         <textarea id="acct_tinhoctre_cookie" class="hidden"></textarea>
         <div class="actions">
-          <button class="action primary" type="button" id="saveAccounts">LÆ°u táº¡m</button>
-          <button class="action" type="button" id="checkAccounts">Kiá»ƒm tra Ä‘Äƒng nháº­p</button>
-          <button class="action" type="button" id="clearAccounts">XÃ³a thÃ´ng tin Ä‘Ã£ lÆ°u</button>
+          <button class="action primary" type="button" id="saveAccounts">Lưu tạm</button>
+          <button class="action" type="button" id="checkAccounts">Kiểm tra đăng nhập</button>
+          <button class="action" type="button" id="clearAccounts">Xóa thông tin đã lưu</button>
         </div>
-        <button class="action" type="button" id="toggleGuide">áº¨n / Hiá»‡n hÆ°á»›ng dáº«n prompt</button>
+        <button class="action" type="button" id="toggleGuide">Ẩn / Hiện hướng dẫn prompt</button>
         <div class="guide hidden" id="promptGuide"><div class="sample">{{ prompt_guide }}</div></div>
       </div>
 
       <div class="panel" id="panel-upload">
-        <h2>Up nhiá»u bÃ i</h2>
-        <p>Chá»n web Ä‘Ã­ch, chá»n zip bá»™ bÃ i, báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u Ä‘á»ƒ xem báº£ng bÃ i trÆ°á»›c khi up tháº­t.</p>
+        <h2>Up nhiều bài</h2>
+        <p>Chọn web đích, chọn zip bộ bài, bấm Chuẩn bị dữ liệu để xem bảng bài trước khi up thật.</p>
         <div class="grid-2">
           <div>
-            <label>Web Ä‘Ã­ch</label>
+            <label>Web đích</label>
             <select id="uploadTarget">
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
-            </select><span id="uploadTargetLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span>
+            </select><span id="uploadTargetLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
           <div>
-            <label>File zip bá»™ bÃ i hoáº·c file Markdown tá»•ng há»£p</label>
+            <label>File zip bộ bài hoặc file Markdown tổng hợp</label>
             <div class="row">
               <div class="grow"><input id="uploadZip" type="text" value="{{ default_zip }}"></div>
-              <button class="action" type="button" id="chooseZip">Chá»n file</button>
-              <button class="action" type="button" id="useBatchSample">DÃ¹ng máº«u Tá»•ng hai sá»‘</button>
+              <button class="action" type="button" id="chooseZip">Chọn file</button>
+              <button class="action" type="button" id="useBatchSample">Dùng mẫu Tổng hai số</button>
               <input id="zipFileInput" class="hidden" type="file" accept=".zip,.md,application/zip,text/markdown,text/plain">
             </div>
           </div>
         </div>
         <div class="note" style="margin-top:12px">
-          <b>Cáº¥u trÃºc file zip bá»™ bÃ i:</b><br>
-          Má»—i bÃ i nÃªn cÃ³ Ä‘á»§ file <code>&lt;ma_bai&gt;.md</code>, <code>gentest_&lt;ma_bai&gt;.py</code> hoáº·c <code>&lt;ma_bai&gt;.zip</code>, <code>sol_&lt;ma_bai&gt;.md</code> vÃ  náº¿u cáº§n ná»™p thá»­ thÃ¬ cÃ³ <code>sol_&lt;ma_bai&gt;.cpp</code>, <code>sol_&lt;ma_bai&gt;.py</code>.<br>
-          File Markdown nÃªn cÃ³ dÃ²ng Ä‘áº§u <code>TÃªn bÃ i | MÃ£ bÃ i | Äiá»ƒm | CÃ¡c Tags</code>. File sinh test sáº½ táº¡o thÆ° má»¥c test vÃ  nÃ©n thÃ nh <code>&lt;ma_bai&gt;.zip</code>; náº¿u zip test cÃ³ sáºµn thÃ¬ tool dÃ¹ng trá»±c tiáº¿p. ThÃ´ng tin nÃ o thiáº¿u sáº½ Ä‘á»ƒ trá»‘ng hoáº·c dÃ¹ng máº·c Ä‘á»‹nh.
-          <br><b>RÃ ng buá»™c gentest:</b> nÃªn lÃ  Python, tÃªn <code>gentest_&lt;ma_bai&gt;.py</code>, tá»± táº¡o zip <code>&lt;ma_bai&gt;.zip</code> hoáº·c má»™t zip duy nháº¥t cÃ³ Ä‘á»§ cáº·p <code>.inp/.out</code>; khÃ´ng cáº§n input tÆ°Æ¡ng tÃ¡c; cháº¡y trong 120 giÃ¢y; náº¿u dÃ¹ng C++ trong gentest thÃ¬ mÃ¡y/VPS cáº§n cÃ³ <code>g++</code>.
-          <br><a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso.zip" target="_blank" rel="noopener">Táº£i máº«u bo_mau_1_bai_tonghaiso.zip</a>
+          <b>Cấu trúc file zip bộ bài:</b><br>
+          Mỗi bài nên có đủ file <code>&lt;ma_bai&gt;.md</code>, <code>gentest_&lt;ma_bai&gt;.py</code> hoặc <code>&lt;ma_bai&gt;.zip</code>, <code>sol_&lt;ma_bai&gt;.md</code> và nếu cần nộp thử thì có <code>sol_&lt;ma_bai&gt;.cpp</code>, <code>sol_&lt;ma_bai&gt;.py</code>.<br>
+          File Markdown nên có dòng đầu <code>Tên bài | Mã bài | Điểm | Các Tags</code>. File sinh test sẽ tạo thư mục test và nén thành <code>&lt;ma_bai&gt;.zip</code>; nếu zip test có sẵn thì tool dùng trực tiếp. Thông tin nào thiếu sẽ để trống hoặc dùng mặc định.
+          <br><b>Ràng buộc gentest:</b> nên là Python, tên <code>gentest_&lt;ma_bai&gt;.py</code>, tự tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất có đủ cặp <code>.inp/.out</code>; không cần input tương tác; chạy trong 120 giây; nếu dùng C++ trong gentest thì máy/VPS cần có <code>g++</code>.
+          <br><a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso.zip" target="_blank" rel="noopener">Tải mẫu bo_mau_1_bai_tonghaiso.zip</a>
         </div>
         <div class="grid-2">
-          <div><label>Giá»›i háº¡n thá»i gian</label><input id="timeLimit" type="text" value="1.0"></div>
-          <div><label>Giá»›i háº¡n bá»™ nhá»›</label><input id="memoryLimit" type="text" value="1048576"></div>
+          <div><label>Giới hạn thời gian</label><input id="timeLimit" type="text" value="1.0"></div>
+          <div><label>Giới hạn bộ nhớ</label><input id="memoryLimit" type="text" value="1048576"></div>
         </div>
-        <h3>NgÃ´n ngá»¯ cho phÃ©p</h3>
+        <h3>Ngôn ngữ cho phép</h3>
         <div id="languages" class="lang-list"></div>
 
         <div class="actions">
-          <button class="action" type="button" id="toggleAdvanced">Má»Ÿ rá»™ng thÃ´ng tin khÃ¡c</button>
+          <button class="action" type="button" id="toggleAdvanced">Mở rộng thông tin khác</button>
         </div>
         <div id="advancedUpload" class="hidden">
           <div class="grid-3">
-            <div><label>NgÆ°á»i táº¡o (Creators)</label><input id="creator" type="text" value="mrtee"></div>
-            <div><label>Äiá»ƒm máº·c Ä‘á»‹nh</label><input id="uploadPoints" type="text" value="100"></div>
-            <div><label>Dáº¡ng bÃ i táº­p / Tags máº·c Ä‘á»‹nh</label><input id="uploadTags" type="text" placeholder="ChÆ°a phÃ¢n loáº¡i, implementation, math, hoáº·c Type ID"></div>
+            <div><label>Người tạo (Creators)</label><input id="creator" type="text" value="mrtee"></div>
+            <div><label>Điểm mặc định</label><input id="uploadPoints" type="text" value="100"></div>
+            <div><label>Dạng bài tập / Tags mặc định</label><input id="uploadTags" type="text" placeholder="Chưa phân loại, implementation, math, hoặc Type ID"></div>
           </div>
           <div class="grid-3">
-            <label class="check"><input type="checkbox" id="uploadPartial" checked> Cho phÃ©p Ä‘iá»ƒm thÃ nh pháº§n</label>
-            <label class="check"><input type="checkbox" id="overwriteExisting"> Ghi Ä‘Ã¨ bÃ i Ä‘Ã£ cÃ³</label>
-            <label class="check"><input type="checkbox" id="overwriteStatement"> Ghi Ä‘Ã¨ Ä‘á» bÃ i náº¿u mÃ£ bÃ i Ä‘Ã£ cÃ³</label>
-            <label class="check"><input type="checkbox" id="overwriteTests"> Ghi Ä‘Ã¨ test náº¿u mÃ£ bÃ i Ä‘Ã£ cÃ³</label>
+            <label class="check"><input type="checkbox" id="uploadPartial" checked> Cho phép điểm thành phần</label>
+            <label class="check"><input type="checkbox" id="overwriteExisting"> Ghi đè bài đã có</label>
+            <label class="check"><input type="checkbox" id="overwriteStatement"> Ghi đè đề bài nếu mã bài đã có</label>
+            <label class="check"><input type="checkbox" id="overwriteTests"> Ghi đè test nếu mã bài đã có</label>
           </div>
           <div class="grid-3">
-            <div><label>Dáº¡ng Ä‘á» (Problem types)</label><input id="typeLabel" type="text" value="ChÆ°a phÃ¢n loáº¡i" disabled></div>
-            <div><label>NhÃ³m bÃ i (Problem group)</label><input id="groupLabel" type="text" value="ChÆ°a phÃ¢n loáº¡i" disabled></div>
+            <div><label>Dạng đề (Problem types)</label><input id="typeLabel" type="text" value="Chưa phân loại" disabled></div>
+            <div><label>Nhóm bài (Problem group)</label><input id="groupLabel" type="text" value="Chưa phân loại" disabled></div>
           </div>
         </div>
 
         <div class="grid-3" style="margin-top:12px">
-          <label class="check"><input type="checkbox" id="submitCpp"> Ná»™p bÃ i cháº¥m thá»­ C++</label>
-          <label class="check"><input type="checkbox" id="submitPython" checked> Ná»™p bÃ i cháº¥m thá»­ Python</label>
-          <label class="check"><input type="checkbox" id="noSubmit"> KhÃ´ng ná»™p bÃ i cháº¥m thá»­</label>
+          <label class="check"><input type="checkbox" id="submitCpp"> Nộp bài chấm thử C++</label>
+          <label class="check"><input type="checkbox" id="submitPython" checked> Nộp bài chấm thử Python</label>
+          <label class="check"><input type="checkbox" id="noSubmit"> Không nộp bài chấm thử</label>
         </div>
-        <label class="check" style="margin-top:12px"><input type="checkbox" id="skipStatementTitle" checked> Bá» dÃ²ng Ä‘áº§u tiÃªn trong file Ä‘á» bÃ i</label>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="skipStatementTitle" checked> Bỏ dòng đầu tiên trong file đề bài</label>
         <div class="actions">
-          <button class="action primary" type="button" id="prepareUpload">Chuáº©n bá»‹ dá»¯ liá»‡u</button>
-          <button class="action primary" type="button" id="confirmUpload" disabled>XÃ¡c nháº­n Up nhiá»u bÃ i</button>
+          <button class="action primary" type="button" id="prepareUpload">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmUpload" disabled>Xác nhận Up nhiều bài</button>
         </div>
         <div id="uploadTable"></div>
       </div>
 
       <div class="panel" id="panel-single-upload">
-        <h2>Up 1 bÃ i</h2>
-        <p>Nháº­p trá»±c tiáº¿p má»™t bÃ i, kiá»ƒm tra dá»¯ liá»‡u trÆ°á»›c, rá»“i xÃ¡c nháº­n up. Thiáº¿u pháº§n nÃ o thÃ¬ tool bá» qua pháº§n Ä‘Ã³.</p>
+        <h2>Up 1 bài</h2>
+        <p>Nhập trực tiếp một bài, kiểm tra dữ liệu trước, rồi xác nhận up. Thiếu phần nào thì tool bỏ qua phần đó.</p>
         <div class="grid-2">
           <div>
-            <label>Web Ä‘Ã­ch</label>
+            <label>Web đích</label>
             <select id="singleUploadTarget">
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
-            </select><span id="singleUploadLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span>
+            </select><span id="singleUploadLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
           <div>
-            <label>MÃ£ bÃ i</label>
+            <label>Mã bài</label>
             <input id="singleCode" type="text" placeholder="tht26_tongbi">
           </div>
         </div>
-        <div><label>TÃªn bÃ i toÃ¡n</label><input id="singleName" type="text" placeholder="Tá»•ng bi"></div>
+        <div><label>Tên bài toán</label><input id="singleName" type="text" placeholder="Tổng bi"></div>
         <div class="grid-2">
-          <div><label>Giá»›i háº¡n thá»i gian</label><input id="singleTimeLimit" type="text" value="1.0"></div>
-          <div><label>Giá»›i háº¡n bá»™ nhá»›</label><input id="singleMemoryLimit" type="text" value="1024M"></div>
+          <div><label>Giới hạn thời gian</label><input id="singleTimeLimit" type="text" value="1.0"></div>
+          <div><label>Giới hạn bộ nhớ</label><input id="singleMemoryLimit" type="text" value="1024M"></div>
         </div>
         <div class="grid-3">
-          <div><label>Äiá»ƒm</label><input id="singlePoints" type="text" value="100"></div>
-          <div><label>Dáº¡ng bÃ i táº­p / Tags</label><input id="singleTags" type="text" placeholder="CÃ³ thá»ƒ Ä‘á»ƒ trá»‘ng; náº¿u nháº­p sá»‘ ID thÃ¬ dÃ¹ng lÃ m Type ID"></div>
-          <label class="check"><input type="checkbox" id="singlePartial" checked> Cho phÃ©p Ä‘iá»ƒm thÃ nh pháº§n</label>
+          <div><label>Điểm</label><input id="singlePoints" type="text" value="100"></div>
+          <div><label>Dạng bài tập / Tags</label><input id="singleTags" type="text" placeholder="Có thể để trống; nếu nhập số ID thì dùng làm Type ID"></div>
+          <label class="check"><input type="checkbox" id="singlePartial" checked> Cho phép điểm thành phần</label>
         </div>
         <div class="grid-2" style="margin-top:12px">
-          <label class="check"><input type="checkbox" id="singleOverwrite"> Ghi Ä‘Ã¨ náº¿u mÃ£ bÃ i Ä‘Ã£ cÃ³</label>
+          <label class="check"><input type="checkbox" id="singleOverwrite"> Ghi đè nếu mã bài đã có</label>
         </div>
-        <h3>NgÃ´n ngá»¯ cho phÃ©p</h3>
+        <h3>Ngôn ngữ cho phép</h3>
         <div id="singleLanguages" class="lang-list"></div>
 
         <div class="tool-card">
-          <h3 class="tool-title">Äá» bÃ i</h3>
+          <h3 class="tool-title">Đề bài</h3>
           <div class="actions">
-            <button class="action" type="button" id="toggleSingleStatement">Thu gá»n Ä‘á» bÃ i</button>
-            <button class="action" type="button" id="chooseSingleStatement">Chá»n file .md</button>
+            <button class="action" type="button" id="toggleSingleStatement">Thu gọn đề bài</button>
+            <button class="action" type="button" id="chooseSingleStatement">Chọn file .md</button>
             <input id="singleStatementFile" class="hidden" type="file" accept=".md,text/markdown,text/plain">
           </div>
           <div id="singleStatementBox">
-            <textarea id="singleStatement" placeholder="DÃ²ng Ä‘áº§u cÃ³ thá»ƒ lÃ : TÃªn bÃ i | ma_bai | Äiá»ƒm | Tags&#10;&#10;Sau Ä‘Ã³ lÃ  ná»™i dung Ä‘á» bÃ i."></textarea>
-            <label class="check" style="margin-top:8px"><input type="checkbox" id="singleSkipStatementTitle" checked> Bá» dÃ²ng Ä‘áº§u tiÃªn trong file Ä‘á» bÃ i</label>
+            <textarea id="singleStatement" placeholder="Dòng đầu có thể là: Tên bài | ma_bai | Điểm | Tags&#10;&#10;Sau đó là nội dung đề bài."></textarea>
+            <label class="check" style="margin-top:8px"><input type="checkbox" id="singleSkipStatementTitle" checked> Bỏ dòng đầu tiên trong file đề bài</label>
           </div>
         </div>
 
         <div class="tool-card">
           <h3 class="tool-title">Code sinh test</h3>
           <div class="actions">
-            <button class="action" type="button" id="toggleSingleGenerator">Thu gá»n sinh test</button>
-            <button class="action" type="button" id="chooseSingleGenerator">Chá»n code Python / C++</button>
-            <button class="action" type="button" id="chooseSingleTestZip">Chá»n zip test cÃ³ sáºµn</button>
-            <button class="action" type="button" id="useSingleSample">DÃ¹ng máº«u Tá»•ng hai sá»‘</button>
+            <button class="action" type="button" id="toggleSingleGenerator">Thu gọn sinh test</button>
+            <button class="action" type="button" id="chooseSingleGenerator">Chọn code Python / C++</button>
+            <button class="action" type="button" id="chooseSingleTestZip">Chọn zip test có sẵn</button>
+            <button class="action" type="button" id="useSingleSample">Dùng mẫu Tổng hai số</button>
             <input id="singleGeneratorFile" class="hidden" type="file" accept=".py,.cpp,text/plain">
             <input id="singleTestZipFile" class="hidden" type="file" accept=".zip,application/zip">
           </div>
           <div id="singleGeneratorBox">
-            <input id="singleGeneratorName" type="text" placeholder="ChÆ°a chá»n file sinh test" readonly>
-            <input id="singleTestZipName" type="text" placeholder="ChÆ°a chá»n zip test cÃ³ sáºµn" readonly>
-            <textarea id="singleGenerator" placeholder="DÃ¡n code gentest Python vÃ o Ä‘Ã¢y. Gentest cáº§n tá»± sinh zip test, khÃ´ng chá» nháº­p bÃ n phÃ­m, cháº¡y trong 120 giÃ¢y; náº¿u gá»i g++ thÃ¬ mÃ¡y/VPS pháº£i cÃ³ g++."></textarea>
-            <div class="note"><b>RÃ ng buá»™c gentest:</b> nÃªn Ä‘áº·t tÃªn <code>gentest_&lt;ma_bai&gt;.py</code>; táº¡o zip <code>&lt;ma_bai&gt;.zip</code> hoáº·c má»™t zip duy nháº¥t; trong zip cÃ³ Ä‘á»§ cáº·p <code>.inp/.out</code>. Náº¿u chá»n zip test cÃ³ sáºµn thÃ¬ tool Æ°u tiÃªn zip Ä‘Ã³.</div>
+            <input id="singleGeneratorName" type="text" placeholder="Chưa chọn file sinh test" readonly>
+            <input id="singleTestZipName" type="text" placeholder="Chưa chọn zip test có sẵn" readonly>
+            <textarea id="singleGenerator" placeholder="Dán code gentest Python vào đây. Gentest cần tự sinh zip test, không chờ nhập bàn phím, chạy trong 120 giây; nếu gọi g++ thì máy/VPS phải có g++."></textarea>
+            <div class="note"><b>Ràng buộc gentest:</b> nên đặt tên <code>gentest_&lt;ma_bai&gt;.py</code>; tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất; trong zip có đủ cặp <code>.inp/.out</code>. Nếu chọn zip test có sẵn thì tool ưu tiên zip đó.</div>
           </div>
         </div>
 
         <div class="tool-card">
-          <h3 class="tool-title">Lá»i giáº£i / hÆ°á»›ng dáº«n</h3>
+          <h3 class="tool-title">Lời giải / hướng dẫn</h3>
           <div class="actions">
-            <button class="action" type="button" id="toggleSingleSolution">Thu gá»n lá»i giáº£i</button>
-            <button class="action" type="button" id="chooseSingleSolution">Chá»n file .md</button>
+            <button class="action" type="button" id="toggleSingleSolution">Thu gọn lời giải</button>
+            <button class="action" type="button" id="chooseSingleSolution">Chọn file .md</button>
             <input id="singleSolutionFile" class="hidden" type="file" accept=".md,text/markdown,text/plain">
           </div>
           <div id="singleSolutionBox">
-            <textarea id="singleSolution" placeholder="DÃ¡n lá»i giáº£i/hÆ°á»›ng dáº«n Markdown náº¿u muá»‘n up kÃ¨m."></textarea>
+            <textarea id="singleSolution" placeholder="Dán lời giải/hướng dẫn Markdown nếu muốn up kèm."></textarea>
           </div>
         </div>
 
         <div class="actions">
-          <button class="action primary" type="button" id="prepareSingleUpload">Chuáº©n bá»‹ dá»¯ liá»‡u</button>
-          <button class="action primary" type="button" id="confirmSingleUpload" disabled>XÃ¡c nháº­n Up 1 bÃ i</button>
+          <button class="action primary" type="button" id="prepareSingleUpload">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmSingleUpload" disabled>Xác nhận Up 1 bài</button>
         </div>
         <div id="singleUploadTable"></div>
       </div>
 
       <div class="panel" id="panel-transfer">
-        <h2>Chuyá»ƒn bÃ i</h2>
-        <p>Chá»n nguá»“n, Ä‘Ã­ch vÃ  danh sÃ¡ch mÃ£ bÃ i. Tool sáº½ láº¥y Ä‘á»/test tá»« nguá»“n rá»“i táº¡o bÃ i vÃ  upload test á»Ÿ Ä‘Ã­ch.</p>
+        <h2>Chuyển bài</h2>
+        <p>Chọn nguồn, đích và danh sách mã bài. Tool sẽ lấy đề/test từ nguồn rồi tạo bài và upload test ở đích.</p>
         <div class="grid-2">
-          <div><label>Nguá»“n</label><select id="transferSource"><option value="tinhoctre">TinHocTre</option><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option></select><span id="transferSourceLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span></div>
-          <div><label>ÄÃ­ch</label><select id="transferDest"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option><option value="tinhoctre">TinHocTre</option></select><span id="transferDestLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span></div>
+          <div><label>Nguồn</label><select id="transferSource"><option value="tinhoctre">TinHocTre</option><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option></select><span id="transferSourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Đích</label><select id="transferDest"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option><option value="tinhoctre">TinHocTre</option></select><span id="transferDestLogin" class="login-badge">Chưa kiểm tra</span></div>
         </div>
         <div class="grid-2">
-          <div><label>Giá»›i háº¡n thá»i gian máº·c Ä‘á»‹nh</label><input id="transferTimeLimit" type="text" value="1.0"></div>
-          <div><label>Giá»›i háº¡n bá»™ nhá»› máº·c Ä‘á»‹nh</label><input id="transferMemoryLimit" type="text" value="1048576"></div>
+          <div><label>Giới hạn thời gian mặc định</label><input id="transferTimeLimit" type="text" value="1.0"></div>
+          <div><label>Giới hạn bộ nhớ mặc định</label><input id="transferMemoryLimit" type="text" value="1048576"></div>
         </div>
         <div class="actions">
-          <button class="action" type="button" id="applyTransferLimits">Ãp dá»¥ng cho táº¥t cáº£ cÃ¡c bÃ i</button>
-          <button class="action" type="button" id="resetTransferLimits">Máº·c Ä‘á»‹nh</button>
+          <button class="action" type="button" id="applyTransferLimits">Áp dụng cho tất cả các bài</button>
+          <button class="action" type="button" id="resetTransferLimits">Mặc định</button>
         </div>
-        <h3>NgÃ´n ngá»¯ cho phÃ©p á»Ÿ Ä‘Ã­ch</h3>
+        <h3>Ngôn ngữ cho phép ở đích</h3>
         <div id="transferLanguages" class="lang-list"></div>
         <div class="actions">
-          <button class="action" type="button" id="toggleTransferAdvanced">Má»Ÿ rá»™ng thÃ´ng tin khÃ¡c</button>
+          <button class="action" type="button" id="toggleTransferAdvanced">Mở rộng thông tin khác</button>
         </div>
         <div id="advancedTransfer" class="hidden">
           <div class="grid-3">
-            <div><label>NgÆ°á»i táº¡o (Creators)</label><input id="transferCreator" type="text" value="mrtee"></div>
-            <div><label>Dáº¡ng Ä‘á» (Problem types)</label><input id="transferTypeLabel" type="text" value="ChÆ°a phÃ¢n loáº¡i" disabled></div>
-            <div><label>NhÃ³m bÃ i (Problem group)</label><input id="transferGroupLabel" type="text" value="ChÆ°a phÃ¢n loáº¡i" disabled></div>
+            <div><label>Người tạo (Creators)</label><input id="transferCreator" type="text" value="mrtee"></div>
+            <div><label>Dạng đề (Problem types)</label><input id="transferTypeLabel" type="text" value="Chưa phân loại" disabled></div>
+            <div><label>Nhóm bài (Problem group)</label><input id="transferGroupLabel" type="text" value="Chưa phân loại" disabled></div>
           </div>
         </div>
-        <label>Danh sÃ¡ch mÃ£ bÃ i cáº§n chuyá»ƒn</label>
+        <label>Danh sách mã bài cần chuyển</label>
         <textarea id="transferCodes" placeholder="tht26_tongbi&#10;tht26_quatang"></textarea>
         <div class="actions">
-          <button class="action primary" type="button" id="prepareTransfer">Chuáº©n bá»‹ dá»¯ liá»‡u</button>
-          <button class="action primary" type="button" id="confirmTransfer" disabled>XÃ¡c nháº­n chuyá»ƒn bÃ i</button>
+          <button class="action primary" type="button" id="prepareTransfer">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmTransfer" disabled>Xác nhận chuyển bài</button>
         </div>
         <div id="transferTable"></div>
       </div>
 
       <div class="panel" id="panel-contest-transfer">
-        <h2>Chuyá»ƒn contest</h2>
-        <p>Chuyá»ƒn contest gá»“m thÃ´ng tin cÆ¡ báº£n, danh sÃ¡ch bÃ i, Ä‘iá»ƒm vÃ  bá»™ test cá»§a tá»«ng bÃ i. KhÃ´ng chuyá»ƒn bÃ i ná»™p cá»§a há»c sinh.</p>
+        <h2>Chuyển contest</h2>
+        <p>Chuyển contest gồm thông tin cơ bản, danh sách bài, điểm và bộ test của từng bài. Không chuyển bài nộp của học sinh.</p>
         <div class="grid-2">
           <div>
-            <label>Nguá»“n</label>
+            <label>Nguồn</label>
             <select id="contestSource">
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
-            </select><span id="contestSourceLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span>
+            </select><span id="contestSourceLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
           <div>
-            <label>ÄÃ­ch</label>
+            <label>Đích</label>
             <select id="contestDest">
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
-            </select><span id="contestDestLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span>
+            </select><span id="contestDestLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
         </div>
-        <label>Danh sÃ¡ch mÃ£ contest cáº§n chuyá»ƒn</label>
+        <label>Danh sách mã contest cần chuyển</label>
         <textarea id="contestCodes" placeholder="tht2026_hn_ck_a&#10;tht2026_hn_ck_b&#10;tht2026_hn_ck_c"></textarea>
         <div class="grid-2">
-          <div><label>Time máº·c Ä‘á»‹nh cho bÃ i thiáº¿u thÃ´ng tin</label><input id="contestProblemTime" type="text" value="1.0"></div>
-          <div><label>Memory máº·c Ä‘á»‹nh cho bÃ i thiáº¿u thÃ´ng tin</label><input id="contestProblemMemory" type="text" value="1048576"></div>
+          <div><label>Time mặc định cho bài thiếu thông tin</label><input id="contestProblemTime" type="text" value="1.0"></div>
+          <div><label>Memory mặc định cho bài thiếu thông tin</label><input id="contestProblemMemory" type="text" value="1048576"></div>
         </div>
-        <label class="check" style="margin-top:12px"><input type="checkbox" id="contestReuseExistingProblems" checked> Náº¿u bÃ i Ä‘Ã£ cÃ³ á»Ÿ Ä‘Ã­ch thÃ¬ dÃ¹ng láº¡i bÃ i Ä‘Ã³</label>
-        <label class="check" style="margin-top:8px"><input type="checkbox" id="contestCreateMissingProblems" checked> Tá»± chuyá»ƒn bÃ i/test cÃ²n thiáº¿u trÆ°á»›c khi táº¡o contest</label>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="contestReuseExistingProblems" checked> Nếu bài đã có ở đích thì dùng lại bài đó</label>
+        <label class="check" style="margin-top:8px"><input type="checkbox" id="contestCreateMissingProblems" checked> Tự chuyển bài/test còn thiếu trước khi tạo contest</label>
         <div class="actions">
-          <button class="action primary" type="button" id="prepareContestTransfer">Chuáº©n bá»‹ dá»¯ liá»‡u</button>
-          <button class="action primary" type="button" id="confirmContestTransfer" disabled>XÃ¡c nháº­n chuyá»ƒn contest</button>
+          <button class="action primary" type="button" id="prepareContestTransfer">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmContestTransfer" disabled>Xác nhận chuyển contest</button>
         </div>
         <div id="contestTransferTable"></div>
       </div>
 
       <div class="panel" id="panel-contest-create">
-        <h2>Táº¡o contest tá»« mÃ£ bÃ i</h2>
-        <p>Táº¡o contest cÆ¡ báº£n vÃ  gáº¯n cÃ¡c mÃ£ bÃ i Ä‘Ã£ cÃ³ trÃªn web Ä‘Ã­ch. CÃ¡c thiáº¿t láº­p chi tiáº¿t cÃ³ thá»ƒ chá»‰nh láº¡i trong admin sau.</p>
+        <h2>Tạo contest từ mã bài</h2>
+        <p>Tạo contest cơ bản và gắn các mã bài đã có trên web đích. Các thiết lập chi tiết có thể chỉnh lại trong admin sau.</p>
         <div class="grid-2">
-          <div><label>Web Ä‘Ã­ch</label><select id="createContestTarget"><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option><option value="tinhoctre">TinHocTre</option></select><span id="createContestLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span></div>
-          <div><label>MÃ£ contest</label><input id="createContestKey" type="text" placeholder="tht2026_hn_ck_a"></div>
+          <div><label>Web đích</label><select id="createContestTarget"><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option><option value="tinhoctre">TinHocTre</option></select><span id="createContestLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Mã contest</label><input id="createContestKey" type="text" placeholder="tht2026_hn_ck_a"></div>
         </div>
-        <label>TÃªn contest</label><input id="createContestName" type="text" placeholder="TIN Há»ŒC TRáºº 2026 - HÃ€ Ná»˜I - CHUNG Káº¾T - Báº¢NG A">
+        <label>Tên contest</label><input id="createContestName" type="text" placeholder="TIN HỌC TRẺ 2026 - HÀ NỘI - CHUNG KẾT - BẢNG A">
         <div class="grid-2">
-          <div><label>Báº¯t Ä‘áº§u</label><input id="createContestStart" type="datetime-local"></div>
-          <div><label>Káº¿t thÃºc</label><input id="createContestEnd" type="datetime-local"></div>
+          <div><label>Bắt đầu</label><input id="createContestStart" type="datetime-local"></div>
+          <div><label>Kết thúc</label><input id="createContestEnd" type="datetime-local"></div>
         </div>
         <div class="actions">
-          <button class="action" type="button" id="contestTimeToday">HÃ´m nay 8:00-11:00</button>
-          <button class="action" type="button" id="contestTimeTomorrow">NgÃ y mai 8:00-11:00</button>
-          <button class="action" type="button" id="contestTime90">Káº¿t thÃºc sau 90 phÃºt</button>
+          <button class="action" type="button" id="contestTimeToday">Hôm nay 8:00-11:00</button>
+          <button class="action" type="button" id="contestTimeTomorrow">Ngày mai 8:00-11:00</button>
+          <button class="action" type="button" id="contestTime90">Kết thúc sau 90 phút</button>
         </div>
-        <label>Danh sÃ¡ch mÃ£ bÃ i</label>
+        <label>Danh sách mã bài</label>
         <textarea id="createContestProblems" placeholder="tht26hn_cka_thieunhi&#10;tht26hn_cka_tongdayso"></textarea>
         <div class="actions">
-          <button class="action primary" type="button" id="createContestButton">Táº¡o contest</button>
+          <button class="action primary" type="button" id="createContestButton">Tạo contest</button>
         </div>
       </div>
 
       <div class="panel" id="panel-contest-lesson-copy">
-        <h2>Sao chÃ©p bÃ i tá»« Contest â†’ Lesson HNCode</h2>
-        <p>Láº¥y danh sÃ¡ch bÃ i theo Ä‘Ãºng thá»© tá»± trong contest HNCode/HNOJ, chuyá»ƒn bÃ i thiáº¿u sang HNCode náº¿u cáº§n, rá»“i thÃªm vÃ o lesson HNCode. BÃ i Ä‘Ã£ cÃ³ trong lesson sáº½ Ä‘Æ°á»£c bÃ¡o rÃµ vÃ  bá» qua.</p>
+        <h2>Sao chép bài từ Contest → Lesson HNCode</h2>
+        <p>Lấy danh sách bài theo đúng thứ tự trong contest HNCode/HNOJ, chuyển bài thiếu sang HNCode nếu cần, rồi thêm vào lesson HNCode. Bài đã có trong lesson sẽ được báo rõ và bỏ qua.</p>
         <div class="grid-2">
-          <div><label>Nguá»“n contest</label><select id="lessonCopySource"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select><span id="lessonCopySourceLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span></div>
-          <div><label>Lesson Ä‘Ã­ch</label><input id="lessonCopyLessonUrl" type="text" value="https://hncode.edu.vn/course/26nc202/lesson/3073"></div>
+          <div><label>Nguồn contest</label><select id="lessonCopySource"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select><span id="lessonCopySourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Lesson đích</label><input id="lessonCopyLessonUrl" type="text" value="https://hncode.edu.vn/course/26nc202/lesson/3073"></div>
         </div>
-        <div><label>HNCode Ä‘Ã­ch</label><input id="lessonCopyUserMirror" type="text" value="MrTee" readonly><span id="lessonCopyLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span></div>
-        <label>Contest nguá»“n</label>
+        <div><label>HNCode đích</label><input id="lessonCopyUserMirror" type="text" value="MrTee" readonly><span id="lessonCopyLogin" class="login-badge">Chưa kiểm tra</span></div>
+        <label>Contest nguồn</label>
         <input id="lessonCopyContestUrl" type="text" value="https://hnoj.edu.vn/contest/ctp_4">
         <div class="actions">
-          <button class="action primary" type="button" id="prepareContestLessonCopy">Chuáº©n bá»‹ dá»¯ liá»‡u</button>
-          <button class="action primary" type="button" id="confirmContestLessonCopy" disabled>Sao chÃ©p bÃ i</button>
+          <button class="action primary" type="button" id="prepareContestLessonCopy">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmContestLessonCopy" disabled>Sao chép bài</button>
         </div>
         <div class="row" style="margin-top:12px">
-          <div style="max-width:180px"><label>Äiá»ƒm chung</label><input id="lessonCopyBulkScore" type="text" value="100"></div>
-          <button class="action" type="button" id="fillLessonCopyScores">Ãp dá»¥ng Ä‘iá»ƒm cho táº¥t cáº£ bÃ i</button>
+          <div style="max-width:180px"><label>Điểm chung</label><input id="lessonCopyBulkScore" type="text" value="100"></div>
+          <button class="action" type="button" id="fillLessonCopyScores">Áp dụng điểm cho tất cả bài</button>
         </div>
         <div id="contestLessonCopyTable"></div>
       </div>
 
       <div class="panel" id="panel-course-clone">
         <h2>Clone Course HNCode</h2>
-        <p>Clone cÃ¡c lesson vÃ  contest tá»« course nguá»“n sang course Ä‘Ã­ch. Lesson dÃ¹ng nÃºt NhÃ¢n báº£n native cá»§a HNCode; contest sáº½ táº¡o báº£n clone vá»›i mÃ£ má»›i Ä‘á»ƒ khÃ´ng Ä‘á»¥ng contest gá»‘c.</p>
+        <p>Clone các lesson và contest từ course nguồn sang course đích. Lesson dùng nút Nhân bản native của HNCode; contest sẽ tạo bản clone với mã mới để không đụng contest gốc.</p>
         <div class="grid-2">
-          <div><label>HNCode user</label><input id="courseCloneUserMirror" type="text" value="MrTee" readonly><span id="courseCloneLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span></div>
-          <div><label>Háº­u tá»‘ mÃ£ contest Ä‘Ã­ch</label><input id="courseCloneContestSuffix" type="text" placeholder="Äá»ƒ trá»‘ng thÃ¬ tá»± dÃ¹ng _<course Ä‘Ã­ch>"></div>
+          <div><label>HNCode user</label><input id="courseCloneUserMirror" type="text" value="MrTee" readonly><span id="courseCloneLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Hậu tố mã contest đích</label><input id="courseCloneContestSuffix" type="text" placeholder="Để trống thì tự dùng _<course đích>"></div>
         </div>
-        <label>Course nguá»“n</label>
+        <label>Course nguồn</label>
         <input id="courseCloneSourceUrl" type="text" value="https://hncode.edu.vn/course/sach_cppcoban_share">
-        <label>Course Ä‘Ã­ch</label>
+        <label>Course đích</label>
         <input id="courseCloneDestUrl" type="text" value="https://hncode.edu.vn/course/ngs_cpp_cb_01">
         <div class="grid-2" style="margin-top:12px">
           <label class="check"><input type="checkbox" id="courseCloneLessons" checked> Clone lesson</label>
           <label class="check"><input type="checkbox" id="courseCloneContests" checked> Clone contest</label>
         </div>
         <div class="actions">
-          <button class="action primary" type="button" id="prepareCourseClone">Chuáº©n bá»‹ dá»¯ liá»‡u</button>
-          <button class="action primary" type="button" id="confirmCourseClone" disabled>XÃ¡c nháº­n Clone Course</button>
+          <button class="action primary" type="button" id="prepareCourseClone">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmCourseClone" disabled>Xác nhận Clone Course</button>
         </div>
         <div id="courseCloneTable"></div>
       </div>
 
       <div class="panel" id="panel-quiz-upload">
         <h2>Up Quiz</h2>
-        <p>Up danh sÃ¡ch cÃ¢u há»i lÃªn Quiz. Há»— trá»£ HNCode vÃ  TinHocTre; nhÃ£n Ä‘á»ƒ trá»‘ng.</p>
+        <p>Up danh sách câu hỏi lên Quiz. Hỗ trợ HNCode và TinHocTre; nhãn để trống.</p>
         <div class="grid-2">
-          <div><label>Web Ä‘Ã­ch</label><select id="quizTarget"><option value="quiz_hncode">HNCode</option><option value="quiz_tinhoctre">TinHocTre</option></select><span id="quizLogin" class="login-badge">ChÆ°a kiá»ƒm tra</span></div>
-          <div><label>TÃ i khoáº£n Ä‘ang dÃ¹ng</label><input id="quizUserMirror" type="text" value="MrTee" readonly></div>
+          <div><label>Web đích</label><select id="quizTarget"><option value="quiz_hncode">HNCode</option><option value="quiz_tinhoctre">TinHocTre</option></select><span id="quizLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Tài khoản đang dùng</label><input id="quizUserMirror" type="text" value="MrTee" readonly></div>
         </div>
         <div class="grid-2" style="margin-top:12px">
-          <div><label>Form táº¡o quiz</label><input id="quizCreateUrl" type="text" value="https://hncode.edu.vn/quiz/questions/create/" readonly></div>
-          <div><label>File quiz Markdown/TXT</label><div class="row"><div class="grow"><input id="quizFileName" type="text" placeholder="CÃ³ thá»ƒ bá» trá»‘ng vÃ  dÃ¡n trá»±c tiáº¿p ná»™i dung bÃªn dÆ°á»›i" readonly></div><button class="action" type="button" id="chooseQuizFile">Chá»n file</button><input id="quizFileInput" class="hidden" type="file" accept=".md,.txt,text/markdown,text/plain,.zip"></div></div>
+          <div><label>Form tạo quiz</label><input id="quizCreateUrl" type="text" value="https://hncode.edu.vn/quiz/questions/create/" readonly></div>
+          <div><label>File quiz Markdown/TXT</label><div class="row"><div class="grow"><input id="quizFileName" type="text" placeholder="Có thể bỏ trống và dán trực tiếp nội dung bên dưới" readonly></div><button class="action" type="button" id="chooseQuizFile">Chọn file</button><input id="quizFileInput" class="hidden" type="file" accept=".md,.txt,text/markdown,text/plain"></div></div>
         </div>
         <div class="grid-2" style="margin-top:12px">
-          <label class="check"><input type="checkbox" id="quizShuffleChoices" checked> XÃ¡o trá»™n lá»±a chá»n</label>
-          <label class="check"><input type="checkbox" id="quizPublic"> CÃ´ng khai</label>
+          <label class="check"><input type="checkbox" id="quizShuffleChoices" checked> Xáo trộn lựa chọn</label>
+          <label class="check"><input type="checkbox" id="quizPublic"> Công khai</label>
         </div>
-        <label>Ná»™i dung danh sÃ¡ch quiz</label>
-        <textarea id="quizMarkdown" style="min-height:340px" placeholder="DÃ¡n danh sÃ¡ch quiz theo format, hoáº·c báº¥m ChÃ¨n máº«u format."></textarea>
+        <label>Nội dung danh sách quiz</label>
+        <textarea id="quizMarkdown" style="min-height:340px" placeholder="Dán danh sách quiz theo format, hoặc bấm Chèn mẫu format."></textarea>
         <div class="actions">
-          <button class="action" type="button" id="fillQuizSample">ChÃ¨n máº«u format</button>
-          <button class="action primary" type="button" id="prepareQuizButton">Chuáº©n bá»‹ dá»¯ liá»‡u</button>
+          <button class="action" type="button" id="fillQuizSample">Chèn mẫu format</button>
+          <button class="action primary" type="button" id="prepareQuizButton">Chuẩn bị dữ liệu</button>
           <button class="action primary" type="button" id="uploadQuizButton">Up list quiz</button>
         </div>
         <div id="quizUploadSummary"></div>
       </div>
 
       <div class="panel" id="panel-misc-tools">
-        <h2>Tool láº»</h2>
-        <p>CÃ¡c chá»©c nÄƒng phá»¥ cháº¡y á»•n Ä‘á»‹nh trÃªn local. Má»™t sá»‘ tool cÃ³ dÃ¹ng tÃ i khoáº£n OJ Ä‘Ã£ lÆ°u á»Ÿ tab TÃ i khoáº£n.</p>
+        <h2>Tool lẻ</h2>
+        <p>Các chức năng phụ chạy ổn định trên local. Một số tool có dùng tài khoản OJ đã lưu ở tab Tài khoản.</p>
         <div class="tool-card">
-          <h3 class="tool-title">Láº¥y list mÃ£ bÃ i tá»« Contest / Lesson</h3>
-          <p class="tool-subtitle">Láº¥y danh sÃ¡ch mÃ£ bÃ i theo Ä‘Ãºng thá»© tá»± tá»« HNCode Contest, HNCode Lesson hoáº·c HNOJ Contest. Káº¿t quáº£ cÃ³ báº£ng chi tiáº¿t vÃ  Ã´ mÃ£ bÃ i Ä‘á»ƒ copy nhanh.</p>
+          <h3 class="tool-title">Lấy list mã bài từ Contest / Lesson</h3>
+          <p class="tool-subtitle">Lấy danh sách mã bài theo đúng thứ tự từ HNCode Contest, HNCode Lesson hoặc HNOJ Contest. Kết quả có bảng chi tiết và ô mã bài để copy nhanh.</p>
           <div class="grid-2">
-            <div><label>Web nguá»“n</label><select id="codeListSite"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select></div>
-            <div><label>Loáº¡i nguá»“n</label><select id="codeListType"><option value="contest">Contest</option><option value="lesson">Lesson (chá»‰ HNCode)</option></select></div>
+            <div><label>Web nguồn</label><select id="codeListSite"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select></div>
+            <div><label>Loại nguồn</label><select id="codeListType"><option value="contest">Contest</option><option value="lesson">Lesson (chỉ HNCode)</option></select></div>
           </div>
           <label>URL Contest / Lesson</label>
           <input id="codeListUrl" type="text" value="https://hncode.edu.vn/contest/nt26exam01">
           <div class="actions">
-            <button class="action primary" type="button" id="runCodeList">Láº¥y danh sÃ¡ch mÃ£ bÃ i</button>
+            <button class="action primary" type="button" id="runCodeList">Lấy danh sách mã bài</button>
           </div>
-          <label>Danh sÃ¡ch mÃ£ bÃ i</label>
-          <textarea id="codeListOutput" rows="6" readonly placeholder="MÃ£ bÃ i sáº½ hiá»‡n á»Ÿ Ä‘Ã¢y, má»—i dÃ²ng má»™t mÃ£."></textarea>
+          <label>Danh sách mã bài</label>
+          <textarea id="codeListOutput" rows="6" readonly placeholder="Mã bài sẽ hiện ở đây, mỗi dòng một mã."></textarea>
           <div id="codeListSummary"></div>
         </div>
 
         <div class="tool-card">
-          <h3 class="tool-title">Láº¥y last submissions Scratch</h3>
-          <p class="tool-subtitle">Upload file zip data. Tool sáº½ láº¥y má»—i thÃ­ sinh 1 file `.sb3`: Æ°u tiÃªn file trong thÆ° má»¥c `$History` cÃ³ sá»‘ cuá»‘i lá»›n nháº¥t, náº¿u khÃ´ng cÃ³ thÃ¬ láº¥y file `.sb3` á»Ÿ thÆ° má»¥c gá»‘c cá»§a thÃ­ sinh.</p>
+          <h3 class="tool-title">Lấy last submissions Scratch</h3>
+          <p class="tool-subtitle">Upload file zip data. Tool sẽ lấy mỗi thí sinh 1 file `.sb3`: ưu tiên file trong thư mục `$History` có số cuối lớn nhất, nếu không có thì lấy file `.sb3` ở thư mục gốc của thí sinh.</p>
           <label>File zip data</label>
           <div class="row">
-            <div class="grow"><input id="lastSubZipName" type="text" placeholder="ChÆ°a chá»n file zip" readonly></div>
-            <button class="action" type="button" id="chooseLastSubZip">Chá»n file</button>
+            <div class="grow"><input id="lastSubZipName" type="text" placeholder="Chưa chọn file zip" readonly></div>
+            <button class="action" type="button" id="chooseLastSubZip">Chọn file</button>
             <input id="lastSubZipFile" class="hidden" type="file" accept=".zip,application/zip">
           </div>
           <div class="actions">
-            <button class="action primary" type="button" id="runLastSubmissions">Táº¡o zip last submissions</button>
+            <button class="action primary" type="button" id="runLastSubmissions">Tạo zip last submissions</button>
           </div>
           <div id="lastSubmissionsSummary"></div>
         </div>
 
         <div class="tool-card">
-          <h3 class="tool-title">Cháº¥m bÃ i HNCode</h3>
-          <p class="tool-subtitle">Äá»c file zip bÃ i lÃ m theo dáº¡ng <code>BaiLam/TenHocSinh/MABAI.cpp</code>, Ä‘á»c file CSV tÃ i khoáº£n cÃ³ cá»™t <code>username,password,name</code>, Ä‘Äƒng nháº­p tá»«ng tÃ i khoáº£n, tham gia contest vÃ  ná»™p cÃ¡c bÃ i tÆ°Æ¡ng á»©ng. Káº¿t quáº£ xuáº¥t ra Excel.</p>
-          <label>File zip bÃ i lÃ m cá»§a há»c sinh</label>
+          <h3 class="tool-title">Chấm bài HNCode</h3>
+          <p class="tool-subtitle">Đọc file zip bài làm theo dạng <code>BaiLam/TenHocSinh/MABAI.cpp</code>, đọc file CSV tài khoản có cột <code>username,password,name</code>, đăng nhập từng tài khoản, tham gia contest và nộp các bài tương ứng. Kết quả xuất ra Excel.</p>
+          <label>File zip bài làm của học sinh</label>
           <div class="row">
-            <div class="grow"><input id="gradingZipName" type="text" placeholder="ChÆ°a chá»n file BaiLam.zip" readonly></div>
-            <button class="action" type="button" id="chooseGradingZip">Chá»n file</button>
+            <div class="grow"><input id="gradingZipName" type="text" placeholder="Chưa chọn file BaiLam.zip" readonly></div>
+            <button class="action" type="button" id="chooseGradingZip">Chọn file</button>
             <input id="gradingZipFile" class="hidden" type="file" accept=".zip,application/zip">
           </div>
-          <label>File CSV tÃ i khoáº£n ná»™p bÃ i</label>
+          <label>File CSV tài khoản nộp bài</label>
           <div class="row">
-            <div class="grow"><input id="gradingCsvName" type="text" placeholder="ChÆ°a chá»n file TaiKhoan.csv" readonly></div>
-            <button class="action" type="button" id="chooseGradingCsv">Chá»n file</button>
+            <div class="grow"><input id="gradingCsvName" type="text" placeholder="Chưa chọn file TaiKhoan.csv" readonly></div>
+            <button class="action" type="button" id="chooseGradingCsv">Chọn file</button>
             <input id="gradingCsvFile" class="hidden" type="file" accept=".csv,text/csv">
           </div>
           <div class="grid-2">
             <div><label>URL contest HNCode</label><input id="gradingContestUrl" type="text" value="https://hncode.edu.vn/contest/_nt26tst"></div>
-            <div><label>Máº­t kháº©u contest náº¿u cÃ³</label><input id="gradingContestPassword" type="password" value="amsvodich*8*^^"></div>
+            <div><label>Mật khẩu contest nếu có</label><input id="gradingContestPassword" type="password" value="amsvodich*8*^^"></div>
           </div>
           <div class="grid-2">
-            <div><label>Thá»i gian chá» má»—i submission</label><input id="gradingPollSeconds" type="text" value="Äáº¿n khi cháº¥m xong" readonly></div>
-            <div><label>Quy Ä‘á»•i Ä‘iá»ƒm</label><input type="text" value="% cháº¥m x Ä‘iá»ƒm contest" readonly></div>
+            <div><label>Thời gian chờ mỗi submission</label><input id="gradingPollSeconds" type="text" value="Đến khi chấm xong" readonly></div>
+            <div><label>Quy đổi điểm</label><input type="text" value="% chấm x điểm contest" readonly></div>
           </div>
           <div class="actions">
-            <button class="action primary" type="button" id="prepareGrading">Chuáº©n bá»‹ dá»¯ liá»‡u</button>
-            <button class="action primary" type="button" id="confirmGrading" disabled>XÃ¡c nháº­n ná»™p vÃ  cháº¥m</button>
-            <a class="action primary hidden" id="downloadGradingResult" href="#" download="bang_diem_hncode.xlsx">Táº£i báº£ng Ä‘iá»ƒm Excel</a>
+            <button class="action primary" type="button" id="prepareGrading">Chuẩn bị dữ liệu</button>
+            <button class="action primary" type="button" id="confirmGrading" disabled>Xác nhận nộp và chấm</button>
+            <a class="action primary hidden" id="downloadGradingResult" href="#" download="bang_diem_hncode.xlsx">Tải bảng điểm Excel</a>
           </div>
           <div id="gradingSummary"></div>
         </div>
 
         <div class="tool-card">
-          <h3 class="tool-title">Cáº£nh bÃ¡o sá»­ dá»¥ng AI Ä‘á»ƒ code</h3>
-          <p class="tool-subtitle">Nháº­n vÃ o má»™t folder chá»©a nhiá»u file zip contest hoáº·c chá»n má»™t file zip data contest. Tool phÃ¢n tÃ­ch dáº¥u hiá»‡u AI code, Ä‘á»•i phong cÃ¡ch code vÃ  nghi váº¥n chÃ©p code nhau, rá»“i xuáº¥t Excel cÃ³ link má»Ÿ file code.</p>
-          <label>Folder chá»©a cÃ¡c zip contest</label>
+          <h3 class="tool-title">Cảnh báo sử dụng AI để code</h3>
+          <p class="tool-subtitle">Nhận vào một folder chứa nhiều file zip contest hoặc chọn một file zip data contest. Tool phân tích dấu hiệu AI code, đổi phong cách code và nghi vấn chép code nhau, rồi xuất Excel có link mở file code.</p>
+          <label>Folder chứa các zip contest</label>
           <input id="aiWarningFolder" type="text" value="{{ ai_source_default }}">
-          <label>Hoáº·c chá»n 1 file zip data contest</label>
+          <label>Hoặc chọn 1 file zip data contest</label>
           <div class="row">
-            <div class="grow"><input id="aiWarningZipName" type="text" placeholder="KhÃ´ng chá»n thÃ¬ dÃ¹ng folder á»Ÿ trÃªn" readonly></div>
-            <button class="action" type="button" id="chooseAiWarningZip">Chá»n file zip</button>
+            <div class="grow"><input id="aiWarningZipName" type="text" placeholder="Không chọn thì dùng folder ở trên" readonly></div>
+            <button class="action" type="button" id="chooseAiWarningZip">Chọn file zip</button>
             <input id="aiWarningZipFile" class="hidden" type="file" accept=".zip,application/zip">
           </div>
-          <p>ÄÃ¢y lÃ  bÃ¡o cÃ¡o cáº£nh bÃ¡o/nghi váº¥n, khÃ´ng pháº£i káº¿t luáº­n cháº¯c cháº¯n. NÃªn má»Ÿ cÃ¡c file máº«u trong Excel Ä‘á»ƒ kiá»ƒm tra láº¡i.</p>
+          <p>Đây là báo cáo cảnh báo/nghi vấn, không phải kết luận chắc chắn. Nên mở các file mẫu trong Excel để kiểm tra lại.</p>
           <div class="actions">
-            <button class="action primary" type="button" id="runAiWarning">Táº¡o bÃ¡o cÃ¡o Excel</button>
+            <button class="action primary" type="button" id="runAiWarning">Tạo báo cáo Excel</button>
           </div>
           <div id="aiWarningSummary"></div>
         </div>
@@ -1998,8 +1996,8 @@ PAGE = r"""
     </section>
 
     <section class="log-panel">
-      <div class="log-head"><h2>ThÃ´ng tin tráº£ vá»</h2><span id="jobStatus" class="status">idle</span></div>
-      <pre id="log">Sáºµn sÃ ng.</pre>
+      <div class="log-head"><h2>Thông tin trả về</h2><span id="jobStatus" class="status">idle</span></div>
+      <pre id="log">Sẵn sàng.</pre>
     </section>
   </main>
 
@@ -2022,16 +2020,16 @@ const QUIZ_FORMAT_GUIDE = {{ quiz_format_guide_json | safe }};
 
 const logEl = document.getElementById("log");
 const statusEl = document.getElementById("jobStatus");
-let logText = "Sáºµn sÃ ng.";
+let logText = "Sẵn sàng.";
 const progressTimers = new Map();
 function colorizeLog(text) {
   return String(text).split("\n").map(line => {
     const trimmed = line.trim();
     let cls = "";
-    if (trimmed.startsWith("âœ“") || trimmed.includes("ThÃ nh cÃ´ng") || trimmed.includes("ÄÃ£ táº¡o") || trimmed.includes("ÄÃ£ upload")) cls = "log-ok";
-    else if (trimmed.startsWith("âœ—") || trimmed.startsWith("Error:") || trimmed.includes("Lá»—i")) cls = "log-err";
-    else if (trimmed.includes("Ä‘Ã£ tá»“n táº¡i") || trimmed.includes("ÄÃ£ tá»“n táº¡i") || trimmed.includes("BÃ i Ä‘Ã£ tá»“n táº¡i") || trimmed.includes("Contest Ä‘Ã£ tá»“n táº¡i")) cls = "log-warn";
-    else if (trimmed.startsWith("Tiáº¿n Ä‘á»™:") || trimmed.startsWith("Äang ")) cls = "log-progress";
+    if (trimmed.startsWith("✓") || trimmed.includes("Thành công") || trimmed.includes("Đã tạo") || trimmed.includes("Đã upload")) cls = "log-ok";
+    else if (trimmed.startsWith("✗") || trimmed.startsWith("Error:") || trimmed.includes("Lỗi")) cls = "log-err";
+    else if (trimmed.includes("đã tồn tại") || trimmed.includes("Đã tồn tại") || trimmed.includes("Bài đã tồn tại") || trimmed.includes("Contest đã tồn tại")) cls = "log-warn";
+    else if (trimmed.startsWith("Tiến độ:") || trimmed.startsWith("Đang ")) cls = "log-progress";
     const safe = escapeHtml(line);
     return cls ? `<span class="${cls}">${safe}</span>` : safe;
   }).join("\n");
@@ -2069,14 +2067,14 @@ function saveAccounts() {
   for (const [key, input] of Object.entries(accountFields)) localStorage.setItem("chuyenbai." + key, input.value);
 }
 loadAccounts();
-document.getElementById("saveAccounts").onclick = () => { saveAccounts(); append("ÄÃ£ lÆ°u táº¡m tÃ i khoáº£n."); };
-document.getElementById("checkAccounts").onclick = () => { log("Äang kiá»ƒm tra Ä‘Äƒng nháº­p cÃ¡c trang..."); checkAllAccounts(); };
+document.getElementById("saveAccounts").onclick = () => { saveAccounts(); append("Đã lưu tạm tài khoản."); };
+document.getElementById("checkAccounts").onclick = () => { log("Đang kiểm tra đăng nhập các trang..."); checkAllAccounts(); };
 const openTinHocTreBrowserButton = document.getElementById("openTinHocTreBrowser");
 if (openTinHocTreBrowserButton) openTinHocTreBrowserButton.onclick = async () => {
   try {
     status("running");
     const data = await postJson("/api/tinhoctre-browser/start", {});
-    append(data.message || "ÄÃ£ má»Ÿ Edge Ä‘Äƒng nháº­p TinHocTre.");
+    append(data.message || "Đã mở Edge đăng nhập TinHocTre.");
     status("ready", "ok");
   } catch (err) {
     log(String(err));
@@ -2090,7 +2088,7 @@ if (pullTinHocTreCookieButton) pullTinHocTreCookieButton.onclick = async () => {
     const data = await postJson("/api/tinhoctre-browser/cookie", {});
     accountFields.tinhoctre_cookie.value = data.cookie || "";
     saveAccounts();
-    append(data.message || "ÄÃ£ láº¥y vÃ  lÆ°u Cookie TinHocTre.");
+    append(data.message || "Đã lấy và lưu Cookie TinHocTre.");
     await checkLogin("tinhoctre", "login_tinhoctre", firstToken(document.getElementById("transferCodes").value));
     status("ready", "ok");
   } catch (err) {
@@ -2102,11 +2100,11 @@ const quickTinHocTreCookieButton = document.getElementById("quickTinHocTreCookie
 if (quickTinHocTreCookieButton) quickTinHocTreCookieButton.onclick = async () => {
   try {
     status("running");
-    append("Äang Ä‘Ã³ng/má»Ÿ láº¡i Edge Ä‘á»ƒ láº¥y cookie TinHocTre...");
+    append("Đang đóng/mở lại Edge để lấy cookie TinHocTre...");
     const data = await postJson("/api/tinhoctre-browser/quick-cookie", {});
     accountFields.tinhoctre_cookie.value = data.cookie || "";
     saveAccounts();
-    append(data.message || "ÄÃ£ láº¥y vÃ  lÆ°u Cookie TinHocTre tá»« Edge.");
+    append(data.message || "Đã lấy và lưu Cookie TinHocTre từ Edge.");
     await checkLogin("tinhoctre", "login_tinhoctre", firstToken(document.getElementById("transferCodes").value));
     status("ready", "ok");
   } catch (err) {
@@ -2117,18 +2115,18 @@ if (quickTinHocTreCookieButton) quickTinHocTreCookieButton.onclick = async () =>
 document.getElementById("clearAccounts").onclick = () => {
   for (const key of Object.keys(accountFields)) localStorage.removeItem("chuyenbai." + key);
   for (const [key, input] of Object.entries(accountFields)) if (key.endsWith("_pass") || key.endsWith("_cookie")) input.value = "";
-  append("ÄÃ£ xÃ³a thÃ´ng tin Ä‘Ã£ lÆ°u.");
+  append("Đã xóa thông tin đã lưu.");
 };
 document.getElementById("toggleGuide").onclick = () => document.getElementById("promptGuide").classList.toggle("hidden");
 document.getElementById("toggleAdvanced").onclick = () => {
   const box = document.getElementById("advancedUpload");
   box.classList.toggle("hidden");
-  document.getElementById("toggleAdvanced").textContent = box.classList.contains("hidden") ? "Má»Ÿ rá»™ng thÃ´ng tin khÃ¡c" : "Thu gá»n thÃ´ng tin khÃ¡c";
+  document.getElementById("toggleAdvanced").textContent = box.classList.contains("hidden") ? "Mở rộng thông tin khác" : "Thu gọn thông tin khác";
 };
 document.getElementById("toggleTransferAdvanced").onclick = () => {
   const box = document.getElementById("advancedTransfer");
   box.classList.toggle("hidden");
-  document.getElementById("toggleTransferAdvanced").textContent = box.classList.contains("hidden") ? "Má»Ÿ rá»™ng thÃ´ng tin khÃ¡c" : "Thu gá»n thÃ´ng tin khÃ¡c";
+  document.getElementById("toggleTransferAdvanced").textContent = box.classList.contains("hidden") ? "Mở rộng thông tin khác" : "Thu gọn thông tin khác";
 };
 document.getElementById("applyTransferLimits").onclick = () => {
   const timeLimit = document.getElementById("transferTimeLimit").value;
@@ -2139,7 +2137,7 @@ document.getElementById("applyTransferLimits").onclick = () => {
     if (timeInput) timeInput.value = timeLimit;
     if (memoryInput) memoryInput.value = memoryLimit;
   }
-  append("ÄÃ£ Ã¡p dá»¥ng time/memory máº·c Ä‘á»‹nh cho táº¥t cáº£ bÃ i trong báº£ng chuyá»ƒn.");
+  append("Đã áp dụng time/memory mặc định cho tất cả bài trong bảng chuyển.");
 };
 document.getElementById("resetTransferLimits").onclick = () => {
   for (const tr of document.querySelectorAll("#transferTable tbody tr")) {
@@ -2148,7 +2146,7 @@ document.getElementById("resetTransferLimits").onclick = () => {
     if (timeInput) timeInput.value = tr.dataset.sourceTime || "1.0";
     if (memoryInput) memoryInput.value = tr.dataset.sourceMemory || "1048576";
   }
-  append("ÄÃ£ tráº£ time/memory vá» thÃ´ng sá»‘ láº¥y tá»« nguá»“n.");
+  append("Đã trả time/memory về thông số lấy từ nguồn.");
 };
 function localDateTimeValue(date) {
   const pad = value => String(value).padStart(2, "0");
@@ -2184,16 +2182,16 @@ document.getElementById("useBatchSample").onclick = async () => {
   document.getElementById("zipFileInput").value = "";
   const data = await postJson("/api/sample/tonghaiso", {});
   document.getElementById("uploadZip").value = data.zip_path;
-  append("ÄÃ£ Ä‘iá»n file máº«u Tá»•ng hai sá»‘ cho Up nhiá»u bÃ i.");
+  append("Đã điền file mẫu Tổng hai số cho Up nhiều bài.");
 };
 function toggleBox(buttonId, boxId, openText, closedText) {
   const box = document.getElementById(boxId);
   box.classList.toggle("hidden");
   document.getElementById(buttonId).textContent = box.classList.contains("hidden") ? openText : closedText;
 }
-document.getElementById("toggleSingleStatement").onclick = () => toggleBox("toggleSingleStatement", "singleStatementBox", "Má»Ÿ Ä‘á» bÃ i", "Thu gá»n Ä‘á» bÃ i");
-document.getElementById("toggleSingleGenerator").onclick = () => toggleBox("toggleSingleGenerator", "singleGeneratorBox", "Má»Ÿ sinh test", "Thu gá»n sinh test");
-document.getElementById("toggleSingleSolution").onclick = () => toggleBox("toggleSingleSolution", "singleSolutionBox", "Má»Ÿ lá»i giáº£i", "Thu gá»n lá»i giáº£i");
+document.getElementById("toggleSingleStatement").onclick = () => toggleBox("toggleSingleStatement", "singleStatementBox", "Mở đề bài", "Thu gọn đề bài");
+document.getElementById("toggleSingleGenerator").onclick = () => toggleBox("toggleSingleGenerator", "singleGeneratorBox", "Mở sinh test", "Thu gọn sinh test");
+document.getElementById("toggleSingleSolution").onclick = () => toggleBox("toggleSingleSolution", "singleSolutionBox", "Mở lời giải", "Thu gọn lời giải");
 document.getElementById("chooseSingleStatement").onclick = () => document.getElementById("singleStatementFile").click();
 document.getElementById("chooseSingleGenerator").onclick = () => document.getElementById("singleGeneratorFile").click();
 document.getElementById("chooseSingleTestZip").onclick = () => document.getElementById("singleTestZipFile").click();
@@ -2213,8 +2211,8 @@ document.getElementById("useSingleSample").onclick = async () => {
   document.getElementById("singleSolution").value = data.solution_md || "";
   selectedSingleTestZipFile = null;
   document.getElementById("singleTestZipFile").value = "";
-  document.getElementById("singleTestZipName").value = "CÃ³ zip test trong máº«u; Up 1 bÃ i sáº½ sinh tá»« gentest";
-  append("ÄÃ£ náº¡p máº«u Tá»•ng hai sá»‘ vÃ o Up 1 bÃ i. Báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u Ä‘á»ƒ kiá»ƒm tra.");
+  document.getElementById("singleTestZipName").value = "Có zip test trong mẫu; Up 1 bài sẽ sinh từ gentest";
+  append("Đã nạp mẫu Tổng hai số vào Up 1 bài. Bấm Chuẩn bị dữ liệu để kiểm tra.");
 };
 document.getElementById("singleStatementFile").addEventListener("change", async event => {
   const file = event.target.files && event.target.files[0];
@@ -2306,14 +2304,14 @@ function setLoginBadge(id, state, text) {
   el.className = "login-badge " + (state || "");
 }
 async function checkLogin(target, badgeId, probeCode="") {
-  setLoginBadge(badgeId, "", "Äang kiá»ƒm tra...");
+  setLoginBadge(badgeId, "", "Đang kiểm tra...");
   try {
     const accountTarget = QUIZ_TARGETS[target] ? QUIZ_TARGETS[target].account_target : target;
     const data = await postJson("/api/check-login", {target, account: accountPayload(accountTarget), probe_code: probeCode});
-    setLoginBadge(badgeId, data.ok ? "ok" : "err", data.ok ? "âœ“ ÄÄƒng nháº­p OK" : "âœ— " + (data.message || "Lá»—i"));
+    setLoginBadge(badgeId, data.ok ? "ok" : "err", data.ok ? "✓ Đăng nhập OK" : "✗ " + (data.message || "Lỗi"));
     return data.ok;
   } catch (err) {
-    setLoginBadge(badgeId, "err", "âœ— " + String(err).replace(/^Error:\s*/, ""));
+    setLoginBadge(badgeId, "err", "✗ " + String(err).replace(/^Error:\s*/, ""));
     return false;
   }
 }
@@ -2439,7 +2437,7 @@ async function parseJsonResponse(res) {
     return text ? JSON.parse(text) : {};
   } catch (err) {
     const preview = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
-    throw new Error(`Server tráº£ vá» HTML/text thay vÃ¬ JSON (HTTP ${res.status}). ${preview || "KhÃ´ng cÃ³ ná»™i dung lá»—i."}`);
+    throw new Error(`Server trả về HTML/text thay vì JSON (HTTP ${res.status}). ${preview || "Không có nội dung lỗi."}`);
   }
 }
 async function prepareUploadRequest(settings) {
@@ -2467,9 +2465,9 @@ function newProgressId() {
 }
 function statusClass(text) {
   const value = String(text || "");
-  if (value.startsWith("âœ“") || value.includes("ThÃ nh cÃ´ng") || value.includes("ÄÃ£ Ä‘á»c")) return "ok";
-  if (value.includes("Ä‘Ã£ tá»“n táº¡i") || value.includes("ÄÃ£ tá»“n táº¡i") || value.includes("Ä‘Ã£ cÃ³") || value.includes("ÄÃ£ cÃ³")) return "warn";
-  if (value.startsWith("âœ—") || value.includes("Lá»—i")) return "err";
+  if (value.startsWith("✓") || value.includes("Thành công") || value.includes("Đã đọc")) return "ok";
+  if (value.includes("đã tồn tại") || value.includes("Đã tồn tại") || value.includes("đã có") || value.includes("Đã có")) return "warn";
+  if (value.startsWith("✗") || value.includes("Lỗi")) return "err";
   return "";
 }
 function setStatusCell(cell, text, link="") {
@@ -2480,7 +2478,7 @@ function setStatusCell(cell, text, link="") {
 function progressMessage(data) {
   const total = data.total || 0;
   const done = data.done || 0;
-  const prefix = total ? `Tiáº¿n Ä‘á»™: ${done}/${total}` : "Tiáº¿n Ä‘á»™:";
+  const prefix = total ? `Tiến độ: ${done}/${total}` : "Tiến độ:";
   return data.message ? `${prefix} - ${data.message}` : prefix;
 }
 function startProgressPolling(progressId, tableSelector, mode="problem") {
@@ -2514,7 +2512,7 @@ document.getElementById("prepareUpload").onclick = async () => {
   const progressId = newProgressId();
   try {
     status("running");
-    log("Äang chuáº©n bá»‹ dá»¯ liá»‡u...");
+    log("Đang chuẩn bị dữ liệu...");
     startProgressPolling(progressId, "#uploadTable");
     const settings = uploadSettings();
     settings.progress_id = progressId;
@@ -2535,10 +2533,10 @@ document.getElementById("prepareUpload").onclick = async () => {
 function renderUploadTable(rows) {
   const overwriteDefault = document.getElementById("overwriteExisting").checked;
   document.getElementById("uploadTable").innerHTML = `<div class="table-tools">
-    <button class="action" type="button" onclick="setRowSelection('#uploadTable', true)">Chá»n táº¥t cáº£</button>
-    <button class="action" type="button" onclick="setRowSelection('#uploadTable', false)">Bá» chá»n táº¥t cáº£</button>
+    <button class="action" type="button" onclick="setRowSelection('#uploadTable', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#uploadTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chá»n</th><th>MÃ£ bÃ i</th><th>TÃªn bÃ i toÃ¡n</th><th>Äiá»ƒm</th><th>Dáº¡ng bÃ i táº­p / Tags</th><th>Time</th><th>Memory</th><th>Äiá»ƒm thÃ nh pháº§n</th><th>Ghi Ä‘Ã¨</th><th>Up Ä‘á»</th><th>Up test</th><th>Up lá»i giáº£i</th><th>File test</th><th>Sá»‘ test</th><th>Tráº¡ng thÃ¡i</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Ghi đè</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>File test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}" data-source-time="${escapeHtml(row.source_time_limit || row.time_limit || "1.0")}" data-source-memory="${escapeHtml(row.source_memory_limit || row.memory_limit || "1048576")}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
@@ -2554,7 +2552,7 @@ function renderUploadTable(rows) {
       <td><input type="checkbox" class="row-solution" ${row.upload_solution_default ? "checked" : ""}></td>
       <td><div class="test-meta">${escapeHtml(row.test_file)}</div></td>
       <td>${row.test_count}</td>
-      <td class="row-status">ChÆ°a up</td>
+      <td class="row-status">Chưa up</td>
     </tr>`).join("")}</tbody></table>`;
 }
 function collectUploadRows() {
@@ -2578,8 +2576,8 @@ document.getElementById("confirmUpload").onclick = async () => {
   const progressId = newProgressId();
   try {
     status("running");
-    log("Äang up bÃ i...");
-    markRowsProcessing("#uploadTable", "Äang up...");
+    log("Đang up bài...");
+    markRowsProcessing("#uploadTable", "Đang up...");
     startProgressPolling(progressId, "#uploadTable");
     const settings = uploadSettings();
     settings.progress_id = progressId;
@@ -2599,7 +2597,7 @@ document.getElementById("prepareSingleUpload").onclick = async () => {
   const progressId = newProgressId();
   try {
     status("running");
-    log("Äang chuáº©n bá»‹ dá»¯ liá»‡u 1 bÃ i...");
+    log("Đang chuẩn bị dữ liệu 1 bài...");
     const settings = singleUploadSettings();
     settings.progress_id = progressId;
     const data = await prepareSingleUploadRequest(settings);
@@ -2618,7 +2616,7 @@ document.getElementById("prepareSingleUpload").onclick = async () => {
 
 function renderSingleUploadTable(rows) {
   document.getElementById("singleUploadTable").innerHTML = `<table>
-    <thead><tr><th>Chá»n</th><th>MÃ£ bÃ i</th><th>TÃªn bÃ i toÃ¡n</th><th>Äiá»ƒm</th><th>Dáº¡ng bÃ i táº­p / Tags</th><th>Time</th><th>Memory</th><th>Äiá»ƒm thÃ nh pháº§n</th><th>Up Ä‘á»</th><th>Up test</th><th>Up lá»i giáº£i</th><th>Test</th><th>Tráº¡ng thÃ¡i</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>Test</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
@@ -2631,8 +2629,8 @@ function renderSingleUploadTable(rows) {
       <td><input type="checkbox" class="row-statement" ${row.upload_statement_default ? "checked" : ""}></td>
       <td><input type="checkbox" class="row-tests" ${row.upload_tests_default ? "checked" : ""}></td>
       <td><input type="checkbox" class="row-solution" ${row.upload_solution_default ? "checked" : ""}></td>
-      <td><div class="test-meta">${escapeHtml(row.test_file || "KhÃ´ng cÃ³ test")}<br>${escapeHtml(row.test_count || 0)} test</div></td>
-      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "ÄÃ£ chuáº©n bá»‹")}</td>
+      <td><div class="test-meta">${escapeHtml(row.test_file || "Không có test")}<br>${escapeHtml(row.test_count || 0)} test</div></td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "Đã chuẩn bị")}</td>
     </tr>`).join("")}</tbody></table>`;
 }
 
@@ -2656,10 +2654,10 @@ function collectSingleUploadRows() {
 document.getElementById("confirmSingleUpload").onclick = async () => {
   const progressId = newProgressId();
   try {
-    if (!preparedSingleUpload) throw new Error("HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u trÆ°á»›c khi xÃ¡c nháº­n up.");
+    if (!preparedSingleUpload) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi xác nhận up.");
     status("running");
-    log("Äang up 1 bÃ i...");
-    markRowsProcessing("#singleUploadTable", "Äang up...");
+    log("Đang up 1 bài...");
+    markRowsProcessing("#singleUploadTable", "Đang up...");
     startProgressPolling(progressId, "#singleUploadTable");
     const settings = singleUploadSettings();
     settings.progress_id = progressId;
@@ -2679,7 +2677,7 @@ document.getElementById("prepareTransfer").onclick = async () => {
   const progressId = newProgressId();
   try {
     status("running");
-    log("Äang Ä‘á»c dá»¯ liá»‡u bÃ i nguá»“n...");
+    log("Đang đọc dữ liệu bài nguồn...");
     const source = document.getElementById("transferSource").value;
     const dest = document.getElementById("transferDest").value;
     const codes = document.getElementById("transferCodes").value.split(/[\s,]+/).filter(Boolean);
@@ -2704,10 +2702,10 @@ document.getElementById("prepareTransfer").onclick = async () => {
 };
 function renderTransferTable(rows) {
   document.getElementById("transferTable").innerHTML = `<div class="table-tools">
-    <button class="action" type="button" onclick="setRowSelection('#transferTable', true)">Chá»n táº¥t cáº£</button>
-    <button class="action" type="button" onclick="setRowSelection('#transferTable', false)">Bá» chá»n táº¥t cáº£</button>
+    <button class="action" type="button" onclick="setRowSelection('#transferTable', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#transferTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chá»n</th><th>MÃ£ bÃ i</th><th>TÃªn bÃ i toÃ¡n</th><th>Time</th><th>Memory</th><th>Up Ä‘á»</th><th>Up test</th><th>Bá»™ test</th><th>Sá»‘ test</th><th>Tráº¡ng thÃ¡i</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Time</th><th>Memory</th><th>Up đề</th><th>Up test</th><th>Bộ test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
@@ -2716,17 +2714,17 @@ function renderTransferTable(rows) {
       <td><input type="text" class="row-memory" value="${escapeHtml(row.memory_limit || "1048576")}"></td>
       <td><input type="checkbox" class="row-statement" checked></td>
       <td><input type="checkbox" class="row-tests" checked></td>
-      <td>${row.test_link ? `<a class="problem-link" href="${escapeHtml(row.test_link)}" target="_blank" rel="noopener">Bá»™ test</a>` : escapeHtml(row.test_file)}</td><td>${row.test_count}</td><td class="row-status">${escapeHtml(row.status)}</td>
+      <td>${row.test_link ? `<a class="problem-link" href="${escapeHtml(row.test_link)}" target="_blank" rel="noopener">Bộ test</a>` : escapeHtml(row.test_file)}</td><td>${row.test_count}</td><td class="row-status">${escapeHtml(row.status)}</td>
     </tr>`).join("")}</tbody></table>`;
 }
 document.getElementById("confirmTransfer").onclick = async () => {
   const progressId = newProgressId();
   try {
     status("running");
-    log("Äang chuyá»ƒn bÃ i...");
+    log("Đang chuyển bài...");
     const source = document.getElementById("transferSource").value;
     const dest = document.getElementById("transferDest").value;
-    markRowsProcessing("#transferTable", "Äang chuyá»ƒn...");
+    markRowsProcessing("#transferTable", "Đang chuyển...");
     startProgressPolling(progressId, "#transferTable");
     const data = await postJson("/api/confirm-transfer", {
       prepare_id: preparedTransfer,
@@ -2751,7 +2749,7 @@ document.getElementById("prepareContestTransfer").onclick = async () => {
   const progressId = newProgressId();
   try {
     status("running");
-    log("Äang Ä‘á»c dá»¯ liá»‡u contest nguá»“n...");
+    log("Đang đọc dữ liệu contest nguồn...");
     const source = document.getElementById("contestSource").value;
     const dest = document.getElementById("contestDest").value;
     const codes = document.getElementById("contestCodes").value.split(/[\s,]+/).filter(Boolean);
@@ -2780,10 +2778,10 @@ document.getElementById("confirmContestTransfer").onclick = async () => {
   const progressId = newProgressId();
   try {
     status("running");
-    log("Äang chuyá»ƒn contest...");
+    log("Đang chuyển contest...");
     const source = document.getElementById("contestSource").value;
     const dest = document.getElementById("contestDest").value;
-    markRowsProcessing("#contestTransferTable", "Äang chuyá»ƒn...");
+    markRowsProcessing("#contestTransferTable", "Đang chuyển...");
     startProgressPolling(progressId, "#contestTransferTable", "contest");
     const data = await postJson("/api/confirm-contest-transfer", {
       prepare_id: preparedContestTransfer,
@@ -2807,7 +2805,7 @@ document.getElementById("confirmContestTransfer").onclick = async () => {
 document.getElementById("createContestButton").onclick = async () => {
   try {
     status("running");
-    log("Äang táº¡o contest...");
+    log("Đang tạo contest...");
     const target = document.getElementById("createContestTarget").value;
     const data = await postJson("/api/create-contest", {
       target,
@@ -2829,7 +2827,7 @@ document.getElementById("createContestButton").onclick = async () => {
 document.getElementById("prepareContestLessonCopy").onclick = async () => {
   try {
     status("running");
-    log("Äang Ä‘á»c danh sÃ¡ch bÃ i trong contest vÃ  lesson Ä‘Ã­ch...");
+    log("Đang đọc danh sách bài trong contest và lesson đích...");
     saveAccounts();
     const source = document.getElementById("lessonCopySource").value;
     const data = await postJson("/api/prepare-contest-to-lesson", {
@@ -2855,10 +2853,10 @@ document.getElementById("prepareContestLessonCopy").onclick = async () => {
 
 document.getElementById("confirmContestLessonCopy").onclick = async () => {
   try {
-    if (!preparedContestLessonCopy) throw new Error("HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u trÆ°á»›c khi sao chÃ©p bÃ i.");
+    if (!preparedContestLessonCopy) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi sao chép bài.");
     status("running");
-    log("Äang sao chÃ©p bÃ i vÃ o lesson HNCode...");
-    markRowsProcessing("#contestLessonCopyTable", "Äang thÃªm...");
+    log("Đang sao chép bài vào lesson HNCode...");
+    markRowsProcessing("#contestLessonCopyTable", "Đang thêm...");
     saveAccounts();
     const source = document.getElementById("lessonCopySource").value;
     const res = await fetch("/api/confirm-contest-to-lesson", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
@@ -2869,7 +2867,7 @@ document.getElementById("confirmContestLessonCopy").onclick = async () => {
     })});
     const data = await parseJsonResponse(res);
     applyContestLessonCopyStatuses(data.rows || []);
-    if (!res.ok) throw new Error(data.error || "KhÃ´ng sao chÃ©p Ä‘Æ°á»£c bÃ i vÃ o lesson.");
+    if (!res.ok) throw new Error(data.error || "Không sao chép được bài vào lesson.");
     log(data.log);
     status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
   } catch (err) {
@@ -2880,20 +2878,20 @@ document.getElementById("confirmContestLessonCopy").onclick = async () => {
 document.getElementById("fillLessonCopyScores").onclick = () => {
   const value = document.getElementById("lessonCopyBulkScore").value.trim();
   if (!value) {
-    log("HÃ£y nháº­p Ä‘iá»ƒm chung trÆ°á»›c khi Ã¡p dá»¥ng.");
+    log("Hãy nhập điểm chung trước khi áp dụng.");
     status("failed", "err");
     return;
   }
   document.querySelectorAll("#contestLessonCopyTable .row-score").forEach(input => { input.value = value; });
-  append(`ÄÃ£ Ã¡p dá»¥ng Ä‘iá»ƒm ${value} cho táº¥t cáº£ bÃ i trong báº£ng Contest â†’ Lesson.`);
+  append(`Đã áp dụng điểm ${value} cho tất cả bài trong bảng Contest → Lesson.`);
 };
 
 function renderContestLessonCopyTable(rows) {
   document.getElementById("contestLessonCopyTable").innerHTML = `<div class="table-tools">
-    <button class="action" type="button" onclick="setRowSelection('#contestLessonCopyTable', true)">Chá»n táº¥t cáº£</button>
-    <button class="action" type="button" onclick="setRowSelection('#contestLessonCopyTable', false)">Bá» chá»n táº¥t cáº£</button>
+    <button class="action" type="button" onclick="setRowSelection('#contestLessonCopyTable', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#contestLessonCopyTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chá»n</th><th>STT</th><th>MÃ£ bÃ i</th><th>TÃªn bÃ i</th><th>Äiá»ƒm lesson</th><th>Tráº¡ng thÃ¡i</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm lesson</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-code="${escapeHtml(row.code)}">
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.problem_id ? "" : "disabled"}></td>
       <td>${escapeHtml(row.index || "")}</td>
@@ -2925,7 +2923,7 @@ function applyContestLessonCopyStatuses(rows) {
 document.getElementById("prepareCourseClone").onclick = async () => {
   try {
     status("running");
-    log("Äang Ä‘á»c lesson vÃ  contest cá»§a course nguá»“n...");
+    log("Đang đọc lesson và contest của course nguồn...");
     saveAccounts();
     const data = await postJson("/api/prepare-course-clone", {
       account: accountPayload("hncode"),
@@ -2951,10 +2949,10 @@ document.getElementById("prepareCourseClone").onclick = async () => {
 
 document.getElementById("confirmCourseClone").onclick = async () => {
   try {
-    if (!preparedCourseClone) throw new Error("HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u trÆ°á»›c khi Clone Course.");
+    if (!preparedCourseClone) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi Clone Course.");
     status("running");
-    log("Äang clone course HNCode...");
-    markRowsProcessing("#courseCloneTable", "Äang clone...");
+    log("Đang clone course HNCode...");
+    markRowsProcessing("#courseCloneTable", "Đang clone...");
     saveAccounts();
     const res = await fetch("/api/confirm-course-clone", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
       prepare_id: preparedCourseClone,
@@ -2963,7 +2961,7 @@ document.getElementById("confirmCourseClone").onclick = async () => {
     })});
     const data = await parseJsonResponse(res);
     applyCourseCloneStatuses(data.rows || []);
-    if (!res.ok) throw new Error(data.error || "KhÃ´ng clone Ä‘Æ°á»£c course.");
+    if (!res.ok) throw new Error(data.error || "Không clone được course.");
     log(data.log);
     status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
   } catch (err) {
@@ -2974,10 +2972,10 @@ document.getElementById("confirmCourseClone").onclick = async () => {
 
 function renderCourseCloneTable(rows) {
   document.getElementById("courseCloneTable").innerHTML = `<div class="table-tools">
-    <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', true)">Chá»n táº¥t cáº£</button>
-    <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', false)">Bá» chá»n táº¥t cáº£</button>
+    <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chá»n</th><th>Loáº¡i</th><th>Thá»© tá»±</th><th>MÃ£/ID nguá»“n</th><th>TÃªn</th><th>MÃ£ contest Ä‘Ã­ch</th><th>Tráº¡ng thÃ¡i</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Loại</th><th>Thứ tự</th><th>Mã/ID nguồn</th><th>Tên</th><th>Mã contest đích</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-kind="${escapeHtml(row.kind)}" data-key="${escapeHtml(row.key)}">
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.can_clone ? "" : "disabled"}></td>
       <td>${row.kind === "contest" ? "Contest" : "Lesson"}</td>
@@ -3009,25 +3007,15 @@ function applyCourseCloneStatuses(rows) {
 }
 
 document.getElementById("chooseQuizFile").onclick = () => document.getElementById("quizFileInput").click();
-
-let selectedQuizZipFile = null;
-
 document.getElementById("quizFileInput").addEventListener("change", async event => {
   const file = event.target.files && event.target.files[0];
   document.getElementById("quizFileName").value = file ? file.name : "";
   if (file) {
-    if (file.name.toLowerCase().endsWith(".zip")) {
-      selectedQuizZipFile = file;
-      document.getElementById("quizMarkdown").value = "[Sáº½ xá»­ lÃ½ tá»« file ZIP: " + file.name + "]";
-    } else {
-      selectedQuizZipFile = null;
-      document.getElementById("quizMarkdown").value = await file.text();
-    }
+    document.getElementById("quizMarkdown").value = await file.text();
     preparedQuiz = null;
     document.getElementById("uploadQuizButton").disabled = true;
   }
 });
-
 document.getElementById("fillQuizSample").onclick = () => {
   document.getElementById("quizMarkdown").value = QUIZ_FORMAT_GUIDE;
   preparedQuiz = null;
@@ -3045,17 +3033,8 @@ document.getElementById("quizTarget").addEventListener("change", () => {
 document.getElementById("prepareQuizButton").onclick = async () => {
   try {
     status("running");
-    log("Äang kiá»ƒm tra dá»¯ liá»‡u quiz...");
-    let data;
-    if (selectedQuizZipFile) {
-        const form = new FormData();
-        form.append("zip_file", selectedQuizZipFile);
-        const res = await fetch("/api/prepare-quiz-zip", {method:"POST", body:form});
-        if (!res.ok) { const errData = await res.json().catch(()=>({})); throw new Error(errData.error || "Lá»—i gá»i API prepare-quiz-zip"); }
-        data = await res.json();
-    } else {
-        data = await postJson("/api/prepare-quiz", {text: document.getElementById("quizMarkdown").value});
-    }
+    log("Đang kiểm tra dữ liệu quiz...");
+    const data = await postJson("/api/prepare-quiz", {text: document.getElementById("quizMarkdown").value});
     preparedQuiz = data.prepare_id;
     renderQuizTable(data.rows || []);
     log(data.log);
@@ -3071,12 +3050,12 @@ document.getElementById("prepareQuizButton").onclick = async () => {
 };
 document.getElementById("uploadQuizButton").onclick = async () => {
   try {
-    if (!preparedQuiz) throw new Error("HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u trÆ°á»›c khi up quiz.");
+    if (!preparedQuiz) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi up quiz.");
     status("running");
     updateQuizTargetUi();
     const quizTarget = document.getElementById("quizTarget").value;
     const quizTargetInfo = QUIZ_TARGETS[quizTarget] || QUIZ_TARGETS.quiz_hncode;
-    log("Äang up list quiz lÃªn " + (quizTargetInfo.label || "Quiz") + "...");
+    log("Đang up list quiz lên " + (quizTargetInfo.label || "Quiz") + "...");
     saveAccounts();
     const data = await postJson("/api/upload-quiz", {
       prepare_id: preparedQuiz,
@@ -3098,7 +3077,7 @@ document.getElementById("uploadQuizButton").onclick = async () => {
 
 function renderQuizTable(rows) {
   document.getElementById("quizUploadSummary").innerHTML = `<table>
-    <thead><tr><th>STT</th><th>TiÃªu Ä‘á»</th><th>Loáº¡i</th><th>Tráº¡ng thÃ¡i</th></tr></thead>
+    <thead><tr><th>STT</th><th>Tiêu đề</th><th>Loại</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-quiz-index="${row.index}">
       <td>${row.index}</td>
       <td>${escapeHtml(row.title || "")}</td>
@@ -3140,7 +3119,7 @@ document.getElementById("runCodeList").onclick = async () => {
     syncCodeListType();
     const site = document.getElementById("codeListSite").value;
     const sourceType = document.getElementById("codeListType").value;
-    log("Äang láº¥y danh sÃ¡ch mÃ£ bÃ i...");
+    log("Đang lấy danh sách mã bài...");
     const data = await postJson("/api/misc/list-problem-codes", {
       site,
       source_type: sourceType,
@@ -3149,9 +3128,9 @@ document.getElementById("runCodeList").onclick = async () => {
     });
     document.getElementById("codeListOutput").value = data.codes_text || "";
     const rows = data.rows || [];
-    document.getElementById("codeListSummary").innerHTML = `<div class="note">TÃ¬m tháº¥y ${rows.length} bÃ i.</div>
+    document.getElementById("codeListSummary").innerHTML = `<div class="note">Tìm thấy ${rows.length} bài.</div>
       <table>
-        <thead><tr><th>STT</th><th>MÃ£ bÃ i</th><th>TÃªn bÃ i</th><th>Äiá»ƒm</th></tr></thead>
+        <thead><tr><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm</th></tr></thead>
         <tbody>${rows.map(row => `<tr>
           <td>${row.index || row.order || ""}</td>
           <td><code>${escapeHtml(row.code || "")}</code></td>
@@ -3159,7 +3138,7 @@ document.getElementById("runCodeList").onclick = async () => {
           <td>${escapeHtml(row.points || row.score || "")}</td>
         </tr>`).join("")}</tbody>
       </table>`;
-    log(data.log || `ÄÃ£ láº¥y ${rows.length} mÃ£ bÃ i.`);
+    log(data.log || `Đã lấy ${rows.length} mã bài.`);
     status("done", "ok");
   } catch (err) {
     log(String(err));
@@ -3177,15 +3156,15 @@ document.getElementById("runLastSubmissions").onclick = async () => {
   try {
     const input = document.getElementById("lastSubZipFile");
     const file = input.files && input.files[0];
-    if (!file) throw new Error("HÃ£y chá»n file zip data trÆ°á»›c.");
+    if (!file) throw new Error("Hãy chọn file zip data trước.");
     status("running");
-    log("Äang xá»­ lÃ½ last submissions...");
+    log("Đang xử lý last submissions...");
     const form = new FormData();
     form.append("zip_file", file);
     const res = await fetch("/api/misc/last-submissions", {method:"POST", body:form});
     if (!res.ok) {
       const data = await parseJsonResponse(res);
-      throw new Error(data.error || "KhÃ´ng xá»­ lÃ½ Ä‘Æ°á»£c file zip.");
+      throw new Error(data.error || "Không xử lý được file zip.");
     }
     const summaryRaw = res.headers.get("X-Last-Submissions-Summary") || "";
     const summary = summaryRaw ? JSON.parse(decodeURIComponent(summaryRaw)) : {};
@@ -3198,7 +3177,7 @@ document.getElementById("runLastSubmissions").onclick = async () => {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    const text = `âœ“ ÄÃ£ táº¡o file zip last submissions.\nTÃ¬m tháº¥y: ${summary.found || 0}/${summary.total || 0} thÃ­ sinh\nThiáº¿u file: ${summary.missing || 0}\nFile táº£i vá»: ${summary.filename || "last_submissions.zip"}`;
+    const text = `✓ Đã tạo file zip last submissions.\nTìm thấy: ${summary.found || 0}/${summary.total || 0} thí sinh\nThiếu file: ${summary.missing || 0}\nFile tải về: ${summary.filename || "last_submissions.zip"}`;
     document.getElementById("lastSubmissionsSummary").innerHTML = `<div class="note">${escapeHtml(text).replaceAll("\n", "<br>")}</div>`;
     log(text);
     status("done", "ok");
@@ -3220,10 +3199,10 @@ document.getElementById("gradingCsvFile").addEventListener("change", event => {
 });
 function renderGradingTable(rows) {
   document.getElementById("gradingSummary").innerHTML = `<div class="table-tools">
-    <button class="action" type="button" onclick="setRowSelection('#gradingSummary', true)">Chá»n táº¥t cáº£</button>
-    <button class="action" type="button" onclick="setRowSelection('#gradingSummary', false)">Bá» chá»n táº¥t cáº£</button>
+    <button class="action" type="button" onclick="setRowSelection('#gradingSummary', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#gradingSummary', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chá»n</th><th>Há»c sinh</th><th>Username</th><th>MÃ£ bÃ i</th><th>TÃªn bÃ i</th><th>Äiá»ƒm bÃ i</th><th>File</th><th>%</th><th>Äiá»ƒm</th><th>Tráº¡ng thÃ¡i</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Học sinh</th><th>Username</th><th>Mã bài</th><th>Tên bài</th><th>Điểm bài</th><th>File</th><th>%</th><th>Điểm</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_key)}">
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""}></td>
       <td>${escapeHtml(row.student || "")}</td>
@@ -3260,10 +3239,10 @@ function applyGradingStatuses(rows) {
 document.getElementById("prepareGrading").onclick = async () => {
   const progressId = newProgressId();
   try {
-    if (!selectedGradingZipFile) throw new Error("HÃ£y chá»n file zip bÃ i lÃ m.");
-    if (!selectedGradingCsvFile) throw new Error("HÃ£y chá»n file CSV tÃ i khoáº£n.");
+    if (!selectedGradingZipFile) throw new Error("Hãy chọn file zip bài làm.");
+    if (!selectedGradingCsvFile) throw new Error("Hãy chọn file CSV tài khoản.");
     status("running");
-    log("Äang chuáº©n bá»‹ dá»¯ liá»‡u cháº¥m HNCode...");
+    log("Đang chuẩn bị dữ liệu chấm HNCode...");
     document.getElementById("downloadGradingResult").classList.add("hidden");
     startProgressPolling(progressId, "#gradingSummary", "grading");
     const form = new FormData();
@@ -3275,12 +3254,12 @@ document.getElementById("prepareGrading").onclick = async () => {
     form.append("admin_password", accountFields.hncode_pass.value);
     const res = await fetch("/api/prepare-hncode-grading", {method:"POST", body:form});
     const data = await parseJsonResponse(res);
-    if (!res.ok) throw new Error(data.error || "KhÃ´ng chuáº©n bá»‹ Ä‘Æ°á»£c dá»¯ liá»‡u cháº¥m.");
+    if (!res.ok) throw new Error(data.error || "Không chuẩn bị được dữ liệu chấm.");
     stopProgressPolling(progressId);
     preparedGrading = data.prepare_id;
     renderGradingTable(data.rows || []);
     document.getElementById("confirmGrading").disabled = false;
-    log(data.log || "ÄÃ£ chuáº©n bá»‹ dá»¯ liá»‡u cháº¥m.");
+    log(data.log || "Đã chuẩn bị dữ liệu chấm.");
     status("ready", "ok");
   } catch (err) {
     stopProgressPolling(progressId);
@@ -3291,10 +3270,10 @@ document.getElementById("prepareGrading").onclick = async () => {
 document.getElementById("confirmGrading").onclick = async () => {
   const progressId = newProgressId();
   try {
-    if (!preparedGrading) throw new Error("HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u trÆ°á»›c.");
+    if (!preparedGrading) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước.");
     status("running");
-    log("Äang Ä‘Äƒng nháº­p há»c sinh, tham gia contest vÃ  ná»™p bÃ i...");
-    markRowsProcessing("#gradingSummary", "Äang cháº¥m...");
+    log("Đang đăng nhập học sinh, tham gia contest và nộp bài...");
+    markRowsProcessing("#gradingSummary", "Đang chấm...");
     startProgressPolling(progressId, "#gradingSummary", "grading");
     const data = await postJson("/api/confirm-hncode-grading", {
       prepare_id: preparedGrading,
@@ -3305,8 +3284,8 @@ document.getElementById("confirmGrading").onclick = async () => {
     });
     stopProgressPolling(progressId);
     applyGradingStatuses(data.rows || []);
-    const link = data.download_url ? `\nTáº£i báº£ng Ä‘iá»ƒm: ${location.origin}${data.download_url}` : "";
-    log((data.log || "ÄÃ£ cháº¥m xong.") + link);
+    const link = data.download_url ? `\nTải bảng điểm: ${location.origin}${data.download_url}` : "";
+    log((data.log || "Đã chấm xong.") + link);
     if (data.download_url) {
       const a = document.getElementById("downloadGradingResult");
       a.href = data.download_url;
@@ -3328,7 +3307,7 @@ document.getElementById("aiWarningZipFile").addEventListener("change", event => 
 document.getElementById("runAiWarning").onclick = async () => {
   try {
     status("running");
-    log("Äang phÃ¢n tÃ­ch dáº¥u hiá»‡u sá»­ dá»¥ng AI Ä‘á»ƒ code...");
+    log("Đang phân tích dấu hiệu sử dụng AI để code...");
     const input = document.getElementById("aiWarningZipFile");
     const file = input.files && input.files[0];
     const folder = document.getElementById("aiWarningFolder").value.trim();
@@ -3338,7 +3317,7 @@ document.getElementById("runAiWarning").onclick = async () => {
     const res = await fetch("/api/misc/ai-code-warning", {method:"POST", body:form});
     if (!res.ok) {
       const data = await parseJsonResponse(res);
-      throw new Error(data.error || "KhÃ´ng táº¡o Ä‘Æ°á»£c bÃ¡o cÃ¡o.");
+      throw new Error(data.error || "Không tạo được báo cáo.");
     }
     const summaryRaw = res.headers.get("X-AI-Warning-Summary") || "";
     const summary = summaryRaw ? JSON.parse(decodeURIComponent(summaryRaw)) : {};
@@ -3351,7 +3330,7 @@ document.getElementById("runAiWarning").onclick = async () => {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    const text = `âœ“ ÄÃ£ táº¡o bÃ¡o cÃ¡o Excel cáº£nh bÃ¡o AI code.\nSá»‘ contest zip: ${summary.zip_count || 0}\nSá»‘ file code: ${summary.code_file_count || 0}\nSá»‘ thÃ­ sinh: ${summary.student_count || 0}\nKháº£ nÄƒng cao: ${summary.high || 0}\nKháº£ nÄƒng trung bÃ¬nh: ${summary.medium || 0}\nKháº£ nÄƒng tháº¥p: ${summary.low || 0}\nÄá»•i style cÃ¹ng bÃ i: ${summary.shift_count || 0}\nCáº·p nghi chÃ©p code: ${summary.copy_pair_count || 0}\nCáº·p ráº¥t giá»‘ng: ${summary.copy_very_similar || 0}\nChi tiáº¿t cáº·p theo bÃ i: ${summary.copy_detail_count || 0}\nThÆ° má»¥c code Ä‘Ã£ giáº£i nÃ©n: ${summary.extracted_folder || ""}\nFile táº£i vá»: ${summary.filename || "ai_code_warning_report.xlsx"}`;
+    const text = `✓ Đã tạo báo cáo Excel cảnh báo AI code.\nSố contest zip: ${summary.zip_count || 0}\nSố file code: ${summary.code_file_count || 0}\nSố thí sinh: ${summary.student_count || 0}\nKhả năng cao: ${summary.high || 0}\nKhả năng trung bình: ${summary.medium || 0}\nKhả năng thấp: ${summary.low || 0}\nĐổi style cùng bài: ${summary.shift_count || 0}\nCặp nghi chép code: ${summary.copy_pair_count || 0}\nCặp rất giống: ${summary.copy_very_similar || 0}\nChi tiết cặp theo bài: ${summary.copy_detail_count || 0}\nThư mục code đã giải nén: ${summary.extracted_folder || ""}\nFile tải về: ${summary.filename || "ai_code_warning_report.xlsx"}`;
     document.getElementById("aiWarningSummary").innerHTML = `<div class="note">${escapeHtml(text).replaceAll("\n", "<br>")}</div>`;
     log(text);
     status("done", "ok");
@@ -3372,10 +3351,10 @@ function contestTransferSettings() {
 
 function renderContestTransferTable(rows) {
   document.getElementById("contestTransferTable").innerHTML = `<div class="table-tools">
-    <button class="action" type="button" onclick="setRowSelection('#contestTransferTable', true)">Chá»n táº¥t cáº£</button>
-    <button class="action" type="button" onclick="setRowSelection('#contestTransferTable', false)">Bá» chá»n táº¥t cáº£</button>
+    <button class="action" type="button" onclick="setRowSelection('#contestTransferTable', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#contestTransferTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chá»n</th><th>MÃ£ contest</th><th>TÃªn contest</th><th>Thá»i gian</th><th>BÃ i trong contest</th><th>Tráº¡ng thÃ¡i</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã contest</th><th>Tên contest</th><th>Thời gian</th><th>Bài trong contest</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_key)}">
       <td><input type="checkbox" class="row-selected" ${row.can_transfer ? "checked" : ""}></td>
       <td><input type="text" class="row-key" value="${escapeHtml(row.key)}"></td>
@@ -3387,8 +3366,8 @@ function renderContestTransferTable(rows) {
 }
 
 function renderContestProblemList(problems) {
-  if (!problems.length) return `<div class="test-meta">KhÃ´ng cÃ³ bÃ i.</div>`;
-  return `<table class="inner-table"><thead><tr><th>Chá»n</th><th>MÃ£ bÃ i</th><th>Äiá»ƒm</th><th>Thá»© tá»±</th><th>Tráº¡ng thÃ¡i</th></tr></thead><tbody>
+  if (!problems.length) return `<div class="test-meta">Không có bài.</div>`;
+  return `<table class="inner-table"><thead><tr><th>Chọn</th><th>Mã bài</th><th>Điểm</th><th>Thứ tự</th><th>Trạng thái</th></tr></thead><tbody>
     ${problems.map(p => `<tr data-problem-code="${escapeHtml(p.code)}">
       <td><input type="checkbox" class="problem-selected" checked></td>
       <td>${escapeHtml(p.code)}</td>
@@ -3436,7 +3415,7 @@ function collectRows(selector) {
 function setRowSelection(selector, checked) {
   document.querySelectorAll(selector + " .row-selected").forEach(item => { item.checked = checked; });
 }
-function markRowsProcessing(selector, text="Äang xá»­ lÃ½...") {
+function markRowsProcessing(selector, text="Đang xử lý...") {
   for (const tr of document.querySelectorAll(selector + " tbody tr")) {
     const selected = tr.querySelector(".row-selected");
     const statusCell = tr.querySelector(".row-status");
@@ -3479,7 +3458,7 @@ def index():
 @app.get("/samples/bo_mau_1_bai_tonghaiso.zip")
 def sample_tonghaiso_zip():
     if not SAMPLE_TONGHAISO_ZIP.exists():
-        return jsonify({"error": "KhÃ´ng tÃ¬m tháº¥y file máº«u."}), 404
+        return jsonify({"error": "Không tìm thấy file mẫu."}), 404
     return send_file(SAMPLE_TONGHAISO_ZIP, as_attachment=True, download_name=SAMPLE_TONGHAISO_ZIP.name)
 
 
@@ -3487,7 +3466,7 @@ def sample_tonghaiso_zip():
 def api_sample_tonghaiso():
     try:
         if not SAMPLE_TONGHAISO_ZIP.exists():
-            raise FileNotFoundError(f"KhÃ´ng tÃ¬m tháº¥y file máº«u: {SAMPLE_TONGHAISO_ZIP}")
+            raise FileNotFoundError(f"Không tìm thấy file mẫu: {SAMPLE_TONGHAISO_ZIP}")
         with zipfile.ZipFile(SAMPLE_TONGHAISO_ZIP) as archive:
             statement = read_zip_member_text(archive, "tonghaiso.md")
             generator = read_zip_member_text(archive, "gentest_tonghaiso.py")
@@ -3497,7 +3476,7 @@ def api_sample_tonghaiso():
             {
                 "zip_path": str(SAMPLE_TONGHAISO_ZIP),
                 "code": parts[1] if len(parts) > 1 else "tonghaiso",
-                "name": parts[0] if parts else "Tá»•ng hai sá»‘",
+                "name": parts[0] if parts else "Tổng hai số",
                 "points": parts[2] if len(parts) > 2 else "800",
                 "tags": parts[3] if len(parts) > 3 else "implementation, math",
                 "statement": statement,
@@ -3536,16 +3515,16 @@ def api_check_login():
     try:
         if target == "tinhoctre":
             login_hncode(TARGETS[target]["base_url"], account.get("username", ""), account.get("password", ""))
-            return jsonify({"ok": True, "message": "ÄÄƒng nháº­p OK"})
+            return jsonify({"ok": True, "message": "Đăng nhập OK"})
         if target in QUIZ_TARGETS:
             login_quiz_target(target, account)
-            return jsonify({"ok": True, "message": "ÄÄƒng nháº­p OK"})
+            return jsonify({"ok": True, "message": "Đăng nhập OK"})
         if target == "contest_hnoj":
             info = CONTEST_TARGETS[target]
         else:
             info = TARGETS[target]
         login_hncode(info["base_url"], account.get("username", ""), account.get("password", ""))
-        return jsonify({"ok": True, "message": "ÄÄƒng nháº­p OK"})
+        return jsonify({"ok": True, "message": "Đăng nhập OK"})
     except Exception as exc:
         return jsonify({"ok": False, "message": str(exc)[:180]})
 
@@ -3570,21 +3549,21 @@ def api_misc_list_problem_codes():
                 source_label = f"HNCode Contest: {contest_key}"
         elif site == "hnoj":
             if source_type != "contest":
-                raise RuntimeError("HNOJ hiá»‡n chá»‰ há»— trá»£ láº¥y mÃ£ bÃ i tá»« Contest.")
+                raise RuntimeError("HNOJ hiện chỉ hỗ trợ lấy mã bài từ Contest.")
             session = login_hncode(TARGETS["hnoj"]["base_url"], account.get("username", ""), account.get("password", ""))
             contest_key = extract_hncode_contest_key(source_url)
             rows = hnoj_contest_problem_rows(session, contest_key)
             source_label = f"HNOJ Contest: {contest_key}"
         else:
-            raise RuntimeError("Nguá»“n khÃ´ng há»£p lá»‡. HÃ£y chá»n HNCode hoáº·c HNOJ.")
+            raise RuntimeError("Nguồn không hợp lệ. Hãy chọn HNCode hoặc HNOJ.")
         for index, row in enumerate(rows, 1):
             row["index"] = index
         codes_text = "\n".join(row["code"] for row in rows)
         compact_text = " ".join(row["code"] for row in rows)
         log_lines = [
-            f"Nguá»“n: {source_label}",
-            f"Sá»‘ bÃ i: {len(rows)}",
-            "Danh sÃ¡ch mÃ£ bÃ i:",
+            f"Nguồn: {source_label}",
+            f"Số bài: {len(rows)}",
+            "Danh sách mã bài:",
             codes_text,
         ]
         return jsonify({"ok": True, "rows": rows, "codes_text": codes_text, "compact_text": compact_text, "log": "\n".join(log_lines)})
@@ -3593,31 +3572,12 @@ def api_misc_list_problem_codes():
 
 
 
-@app.post("/api/prepare-quiz")
-def api_prepare_quiz():
-    payload = request.get_json(force=True)
-    try:
-        questions, rows = prepare_quiz_items(payload.get("text", ""))
-        prepare_id = uuid.uuid4().hex
-        prepared_quizzes[prepare_id] = {"questions": questions, "rows": rows, "created_at": time.time(), "zip_dir": None}
-        ok_count = sum(1 for row in rows if row.get("can_upload"))
-        bad_count = len(rows) - ok_count
-        log_lines = [f"Chuáº©n bá»‹ dá»¯ liá»‡u quiz: {ok_count}/{len(rows)} cÃ¢u há»£p lá»‡."]
-        for row in rows:
-            if row.get("can_upload"):
-                log_lines.append(f"âœ“ CÃ¢u {row['index']}: {row['title']} ({row['type']}) há»£p lá»‡.")
-            else:
-                log_lines.append(f"âœ— CÃ¢u {row['index']}: {row.get('error')}")
-        return jsonify({"ok": bad_count == 0, "can_upload": bad_count == 0 and ok_count > 0, "prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-
 @app.post("/api/prepare-quiz-zip")
 def api_prepare_quiz_zip():
     try:
         uploaded = request.files.get("zip_file")
         if not uploaded:
-            raise ValueError("KhÃ´ng tÃ¬m tháº¥y file zip_file")
+            raise ValueError("Không tìm thấy file zip_file")
 
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / prepare_id
@@ -3626,20 +3586,27 @@ def api_prepare_quiz_zip():
         zip_path = root / "uploaded.zip"
         uploaded.save(zip_path)
 
+        from upload_tinhoctre_batch import extract_zip
         extract_zip(zip_path, source_dir)
 
-        # find markdown file
         md_files = list(source_dir.rglob("*.md")) + list(source_dir.rglob("*.txt"))
         if not md_files:
-            raise ValueError("KhÃ´ng tÃ¬m tháº¥y file .md hoáº·c .txt trong thÆ° má»¥c ZIP.")
+            raise ValueError("Không tìm thấy file .md hoặc .txt trong thư mục ZIP.")
 
         md_content = md_files[0].read_text(encoding="utf-8")
+        from services.quiz import prepare_quiz_items
         questions, rows = prepare_quiz_items(md_content)
 
         prepared_quizzes[prepare_id] = {"questions": questions, "rows": rows, "created_at": time.time(), "zip_dir": source_dir}
         ok_count = sum(1 for row in rows if row.get("can_upload"))
         bad_count = len(rows) - ok_count
-        log_lines = [f"ÄÃ£ Ä‘á»c file ZIP, chuáº©n bá»‹ {ok_count}/{len(rows)} cÃ¢u há»£p lá»‡."]
+        log_lines = [f"Đã đọc file ZIP, chuẩn bị {ok_count}/{len(rows)} câu hợp lệ."]
+        for row in rows:
+            if row.get("can_upload"):
+                log_lines.append(f"✓ Câu {row['index']}: {row['title']} ({row['type']}) hợp lệ.")
+            else:
+                log_lines.append(f"✗ Câu {row['index']}: {row.get('error')}")
+                
         return jsonify({"ok": bad_count == 0, "can_upload": bad_count == 0 and ok_count > 0, "prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -3647,53 +3614,69 @@ def api_prepare_quiz_zip():
 @app.post("/api/upload-quiz")
 def api_upload_quiz():
     payload = request.get_json(force=True)
-    prepare_id = payload.get("prepare_id")
-    target = payload.get("target")
-    account = payload.get("account")
-    if prepare_id not in prepared_quizzes:
-        return jsonify({"ok": False, "error": "Prepare ID khÃ´ng há»£p lá»‡ hoáº·c Ä‘Ã£ háº¿t háº¡n"}), 400
-
-    quiz_data = prepared_quizzes[prepare_id]
-    questions = quiz_data["questions"]
-    rows = quiz_data["rows"]
-    zip_dir = quiz_data.get("zip_dir")
-
+    account = payload.get("account", {})
     try:
+        target = payload.get("target", "quiz_hncode")
+        target_info = quiz_target_info(target)
+        prepare_id = payload.get("prepare_id", "")
+        state = prepared_quizzes.get(prepare_id)
+        if not state:
+            return jsonify({"ok": False, "error": "Dữ liệu quiz đã hết hạn hoặc chưa chuẩn bị. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
+        questions = state["questions"]
         session = login_quiz_target(target, account)
-        info = quiz_target_info(target)
-        base_url = info["base_url"]
-
-        log_lines = []
-        for i, q in enumerate(questions):
-            row = rows[i]
-            if not row.get("can_upload"):
-                continue
+        shuffle_choices = bool(payload.get("shuffle_choices"))
+        is_public = bool(payload.get("is_public"))
+        rows = []
+        ok = True
+        log_lines = [
+            f"Up Quiz {target_info['label']}: {target_info['base_url']}/quiz/questions/create/",
+            f"Số câu hỏi: {len(questions)}",
+            f"Xáo trộn lựa chọn: {'Có' if shuffle_choices else 'Không'}",
+            f"Công khai: {'Có' if is_public else 'Không'}",
+        ]
+        for question in questions:
+            row = {"index": question["index"], "title": question["title"], "type": question["type"], "status": "", "link": ""}
             try:
-                # Thay tháº¿ áº£nh náº¿u cÃ³ zip_dir
-                content = q.get("content", "")
-                if zip_dir and ("[áº¢nh:" in content or "![áº¢nh]" in content or "<img" in content):
-                    def repl_img(match):
-                        filename = match.group(1).strip()
-                        img_path = find_image_in_dir(filename, zip_dir)
-                        if img_path:
-                            link = upload_quiz_image(session, base_url, img_path)
-                            if link:
-                                return f"![áº¢nh]({link})"
-                        return match.group(0)
-                    content = re.sub(r'\[áº¢nh:\s*(.*?)\]', repl_img, content)
-                    content = re.sub(r'!\[áº¢nh\]\((.*?)\)', lambda m: repl_img(re.match(r'(.*)', m.group(1))), content)
-                    q["content"] = content
+                link = create_quiz_question(session, target_info["base_url"], question, shuffle_choices=shuffle_choices, is_public=is_public)
+                row["status"] = "✓ Thành công"
+                row["link"] = link
+                row["error"] = ""
+                log_lines.append(f"✓ Câu {question['index']}: {question['title']} - {link}")
+            except Exception as exc:
+                ok = False
+                row["status"] = "✗ Lỗi"
+                row["error"] = str(exc)
+                log_lines.append(f"✗ Câu {question['index']}: {question['title']} - {exc}")
+            rows.append(row)
+        return jsonify({"ok": ok, "rows": rows, "log": "\n".join(log_lines)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
-                url = create_quiz_question(session, base_url, q, shuffle_choices=payload.get("shuffle_choices", True), is_public=payload.get("is_public", False))
-                row["status"] = "ThÃ nh cÃ´ng"
-                row["link"] = url
-                log_lines.append(f"CÃ¢u {i+1}: OK")
-            except Exception as e:
-                row["status"] = f"Lá»—i: {e}"
-                log_lines.append(f"CÃ¢u {i+1}: {e}")
 
-        has_errors = any("Lá»—i" in r["status"] for r in rows if r.get("can_upload"))
-        return jsonify({"ok": not has_errors, "rows": rows, "log": "\n".join(log_lines)})
+@app.post("/api/prepare-quiz")
+def api_prepare_quiz():
+    payload = request.get_json(force=True)
+    try:
+        questions, rows = prepare_quiz_items(payload.get("text", ""))
+        prepare_id = uuid.uuid4().hex
+        prepared_quizzes[prepare_id] = {"questions": questions, "rows": rows, "created_at": time.time()}
+        ok_count = sum(1 for row in rows if row.get("can_upload"))
+        bad_count = len(rows) - ok_count
+        log_lines = [f"Chuẩn bị dữ liệu quiz: {ok_count}/{len(rows)} câu hợp lệ."]
+        for row in rows:
+            if row.get("can_upload"):
+                log_lines.append(f"✓ Câu {row['index']}: {row['title']} ({row['type']}) hợp lệ.")
+            else:
+                log_lines.append(f"✗ Câu {row['index']}: {row.get('error')}")
+        return jsonify(
+            {
+                "ok": bad_count == 0,
+                "can_upload": bad_count == 0 and ok_count > 0,
+                "prepare_id": prepare_id,
+                "rows": rows,
+                "log": "\n".join(log_lines),
+            }
+        )
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
@@ -3706,11 +3689,11 @@ def api_prepare_course_clone():
         source_slug = extract_hncode_course_slug(payload.get("source_url", ""))
         dest_slug = extract_hncode_course_slug(payload.get("dest_url", ""))
         if source_slug == dest_slug:
-            raise RuntimeError("Course nguá»“n vÃ  course Ä‘Ã­ch Ä‘ang trÃ¹ng nhau.")
+            raise RuntimeError("Course nguồn và course đích đang trùng nhau.")
         include_lessons = bool(payload.get("include_lessons", True))
         include_contests = bool(payload.get("include_contests", True))
         if not include_lessons and not include_contests:
-            raise RuntimeError("HÃ£y chá»n Clone lesson hoáº·c Clone contest.")
+            raise RuntimeError("Hãy chọn Clone lesson hoặc Clone contest.")
         session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
         dest_course_id = hncode_course_admin_id(session, dest_slug)
         source_lessons = hncode_course_lessons(session, source_slug) if include_lessons else []
@@ -3721,11 +3704,11 @@ def api_prepare_course_clone():
         dest_contest_keys = {row["key"] for row in dest_contests}
         rows: list[dict] = []
         log_lines = [
-            "Chuáº©n bá»‹ Clone Course HNCode",
-            f"Nguá»“n: {source_slug}",
-            f"ÄÃ­ch: {dest_slug}",
-            f"Lesson nguá»“n: {len(source_lessons)}",
-            f"Contest nguá»“n: {len(source_contests)}",
+            "Chuẩn bị Clone Course HNCode",
+            f"Nguồn: {source_slug}",
+            f"Đích: {dest_slug}",
+            f"Lesson nguồn: {len(source_lessons)}",
+            f"Contest nguồn: {len(source_contests)}",
         ]
         for item in source_lessons:
             exists = item["title"].strip().casefold() in dest_lesson_titles
@@ -3733,7 +3716,7 @@ def api_prepare_course_clone():
                 **item,
                 "selected": not exists,
                 "can_clone": not exists,
-                "status": "ÄÃ£ cÃ³ lesson cÃ¹ng tÃªn á»Ÿ Ä‘Ã­ch" if exists else "âœ“ Sáºµn sÃ ng",
+                "status": "Đã có lesson cùng tên ở đích" if exists else "✓ Sẵn sàng",
                 "new_key": "",
             }
             rows.append(row)
@@ -3749,20 +3732,20 @@ def api_prepare_course_clone():
                 except Exception:
                     global_exists = False
             if in_dest:
-                status_text = "ÄÃ£ cÃ³ contest Ä‘Ã­ch trong course"
+                status_text = "Đã có contest đích trong course"
             elif global_exists:
-                status_text = "MÃ£ contest Ä‘Ã­ch Ä‘Ã£ tá»“n táº¡i trÃªn HNCode"
+                status_text = "Mã contest đích đã tồn tại trên HNCode"
             else:
-                status_text = "âœ“ Sáºµn sÃ ng"
+                status_text = "✓ Sẵn sàng"
             row = {
                 **item,
-                "selected": status_text.startswith("âœ“"),
-                "can_clone": status_text.startswith("âœ“"),
+                "selected": status_text.startswith("✓"),
+                "can_clone": status_text.startswith("✓"),
                 "status": status_text,
                 "new_key": new_key,
             }
             rows.append(row)
-            log_lines.append(f"Contest {item['key']} â†’ {new_key}: {status_text}")
+            log_lines.append(f"Contest {item['key']} → {new_key}: {status_text}")
         prepare_id = uuid.uuid4().hex
         prepared_course_clones[prepare_id] = {
             "created_at": time.time(),
@@ -3791,15 +3774,15 @@ def api_confirm_course_clone():
     prepare_id = payload.get("prepare_id", "")
     state = prepared_course_clones.get(prepare_id)
     if not state:
-        return jsonify({"ok": False, "error": "Dá»¯ liá»‡u chuáº©n bá»‹ Clone Course Ä‘Ã£ háº¿t háº¡n. HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u láº¡i."}), 400
+        return jsonify({"ok": False, "error": "Dữ liệu chuẩn bị Clone Course đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
     rows_by_id = {(row["kind"], row["key"]): row for row in state["rows"]}
     requested_rows = payload.get("rows", [])
     result_rows = []
     ok = True
     log_lines = [
         "Clone Course HNCode",
-        f"Nguá»“n: {state['source_slug']}",
-        f"ÄÃ­ch: {state['dest_slug']}",
+        f"Nguồn: {state['source_slug']}",
+        f"Đích: {state['dest_slug']}",
     ]
     try:
         session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
@@ -3811,35 +3794,35 @@ def api_confirm_course_clone():
             if kind == "contest":
                 base["new_key"] = (requested.get("new_key") or base.get("new_key") or "").strip()
             if not base["selected"]:
-                base["status"] = "Bá» qua"
+                base["status"] = "Bỏ qua"
                 result_rows.append(base)
-                log_lines.append(f"- {kind} {key}: bá» qua.")
+                log_lines.append(f"- {kind} {key}: bỏ qua.")
                 continue
             try:
                 if kind == "lesson":
                     link = clone_hncode_lesson_native(session, state["source_slug"], key, base.get("title") or f"Lesson {key}", state["dest_slug"], state["dest_course_id"])
-                    base["status"] = "âœ“ ÄÃ£ clone"
+                    base["status"] = "✓ Đã clone"
                     base["link"] = link
-                    log_lines.append(f"âœ“ Lesson {key}: Ä‘Ã£ clone.")
+                    log_lines.append(f"✓ Lesson {key}: đã clone.")
                 elif kind == "contest":
                     new_key = base.get("new_key", "")
                     if not re.fullmatch(r"[a-z0-9_-]+", new_key):
-                        raise RuntimeError("MÃ£ contest Ä‘Ã­ch chá»‰ nÃªn gá»“m chá»¯ thÆ°á»ng, sá»‘, dáº¥u gáº¡ch dÆ°á»›i hoáº·c gáº¡ch ngang.")
+                        raise RuntimeError("Mã contest đích chỉ nên gồm chữ thường, số, dấu gạch dưới hoặc gạch ngang.")
                     link = clone_hncode_contest_native(session, key, new_key, state["dest_slug"], state["dest_course_id"])
-                    base["status"] = "âœ“ ÄÃ£ clone"
+                    base["status"] = "✓ Đã clone"
                     base["link"] = link
-                    log_lines.append(f"âœ“ Contest {key} â†’ {new_key}: Ä‘Ã£ clone.")
+                    log_lines.append(f"✓ Contest {key} → {new_key}: đã clone.")
                 else:
-                    raise RuntimeError(f"Loáº¡i dÃ²ng khÃ´ng há»£p lá»‡: {kind}")
+                    raise RuntimeError(f"Loại dòng không hợp lệ: {kind}")
             except Exception as item_exc:
                 ok = False
-                base["status"] = "âœ— Lá»—i"
+                base["status"] = "✗ Lỗi"
                 base["error"] = str(item_exc)
-                log_lines.append(f"âœ— {kind} {key}: {item_exc}")
+                log_lines.append(f"✗ {kind} {key}: {item_exc}")
             result_rows.append(base)
         if not result_rows:
             ok = False
-            log_lines.append("KhÃ´ng cÃ³ dÃ²ng nÃ o Ä‘Æ°á»£c gá»­i lÃªn Ä‘á»ƒ clone.")
+            log_lines.append("Không có dòng nào được gửi lên để clone.")
         return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines), "course_link": hncode_course_page_url(state["dest_slug"])})
     except Exception as exc:
         return jsonify({"ok": False, "rows": result_rows, "error": str(exc)}), 400
@@ -3865,11 +3848,11 @@ def api_prepare_contest_to_lesson():
             source_label = "HNCode"
         lesson_page = dst_session.get(hncode_lesson_edit_url(course_slug, lesson_id), timeout=30)
         if not lesson_page.ok:
-            raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c lesson Ä‘Ã­ch: HTTP {lesson_page.status_code}")
+            raise RuntimeError(f"Không mở được lesson đích: HTTP {lesson_page.status_code}")
         existing_ids = {row["problem"] for row in lesson_problem_rows_from_page(lesson_page.text, lesson_id)}
         rows = []
         log_lines = [
-            f"Chuáº©n bá»‹ sao chÃ©p bÃ i {source_label} Contest â†’ Lesson HNCode",
+            f"Chuẩn bị sao chép bài {source_label} Contest → Lesson HNCode",
             f"Contest: {contest_key}",
             f"Lesson: {hncode_lesson_url(course_slug, lesson_id)}",
         ]
@@ -3878,13 +3861,13 @@ def api_prepare_contest_to_lesson():
             dest_code = normalize_problem_code_for_target(source_code, "hncode")
             problem_id = admin_problem_id(dst_session, TARGETS["hncode"]["base_url"], dest_code)
             if not problem_id:
-                status_text = "Thiáº¿u trÃªn HNCode, sáº½ chuyá»ƒn khi xÃ¡c nháº­n" if source == "hnoj" else "âœ— KhÃ´ng tÃ¬m tháº¥y bÃ i trong admin HNCode"
+                status_text = "Thiếu trên HNCode, sẽ chuyển khi xác nhận" if source == "hnoj" else "✗ Không tìm thấy bài trong admin HNCode"
                 selected = source == "hnoj"
             elif problem_id in existing_ids:
-                status_text = "ÄÃ£ cÃ³ trong lesson"
+                status_text = "Đã có trong lesson"
                 selected = False
             else:
-                status_text = "âœ“ Sáºµn sÃ ng"
+                status_text = "✓ Sẵn sàng"
                 selected = True
             row = {
                 "index": item["order"],
@@ -3897,7 +3880,7 @@ def api_prepare_contest_to_lesson():
                 "status": status_text,
             }
             rows.append(row)
-            log_lines.append(f"{item['order']}. {source_code} â†’ {dest_code} - {item['title']} - {status_text}")
+            log_lines.append(f"{item['order']}. {source_code} → {dest_code} - {item['title']} - {status_text}")
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / ("contest_lesson_copy_" + prepare_id)
         root.mkdir(parents=True, exist_ok=True)
@@ -3932,7 +3915,7 @@ def api_confirm_contest_to_lesson():
     prepare_id = payload.get("prepare_id", "")
     state = prepared_lesson_copies.get(prepare_id)
     if not state:
-        return jsonify({"ok": False, "error": "Dá»¯ liá»‡u chuáº©n bá»‹ Ä‘Ã£ háº¿t háº¡n. HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u láº¡i."}), 400
+        return jsonify({"ok": False, "error": "Dữ liệu chuẩn bị đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
     try:
         rows_by_code = {row["code"]: row for row in state["rows"]}
         requested_rows = payload.get("rows", [])
@@ -3941,7 +3924,7 @@ def api_confirm_contest_to_lesson():
         source = state.get("source", "hncode")
         source_label = "HNOJ" if source == "hnoj" else "HNCode"
         log_lines = [
-            f"Sao chÃ©p bÃ i tá»« Contest {source_label} â†’ Lesson HNCode",
+            f"Sao chép bài từ Contest {source_label} → Lesson HNCode",
             f"Contest: {state['contest_key']}",
             f"Lesson: {hncode_lesson_url(state['course_slug'], state['lesson_id'])}",
         ]
@@ -3953,9 +3936,9 @@ def api_confirm_contest_to_lesson():
             base["selected"] = bool(requested.get("selected"))
             base["score"] = str(requested.get("score") or base.get("score") or "100")
             if not base["selected"]:
-                base["status"] = "Bá» qua"
-            elif "ÄÃ£ cÃ³" in str(rows_by_code.get(code, {}).get("status", "")):
-                base["status"] = "ÄÃ£ cÃ³ trong lesson"
+                base["status"] = "Bỏ qua"
+            elif "Đã có" in str(rows_by_code.get(code, {}).get("status", "")):
+                base["status"] = "Đã có trong lesson"
             else:
                 if not dst_session:
                     dst_session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
@@ -3963,7 +3946,7 @@ def api_confirm_contest_to_lesson():
                     if not src_session:
                         src_session = login_hncode(TARGETS["hnoj"]["base_url"], source_account.get("username", ""), source_account.get("password", ""))
                     source_code = base.get("source_code") or code
-                    log_lines.append(f"Äang chuyá»ƒn {source_code} sang HNCode...")
+                    log_lines.append(f"Đang chuyển {source_code} sang HNCode...")
                     try:
                         info, zip_path, cases, _attachments = fetch_source_problem(src_session, TARGETS["hnoj"]["base_url"], source_code, state["root"])
                         upload_transfer_to_dmoj(
@@ -3978,13 +3961,13 @@ def api_confirm_contest_to_lesson():
                             log_lines,
                         )
                     except ProblemAlreadyExists:
-                        log_lines.append(f"{code}: bÃ i Ä‘Ã£ cÃ³ trÃªn HNCode, dÃ¹ng láº¡i bÃ i hiá»‡n cÃ³.")
+                        log_lines.append(f"{code}: bài đã có trên HNCode, dùng lại bài hiện có.")
                     base["problem_id"] = admin_problem_id(dst_session, TARGETS["hncode"]["base_url"], code) or ""
                 if not base.get("problem_id"):
-                    base["status"] = "âœ— KhÃ´ng tÃ¬m tháº¥y bÃ i trong admin HNCode"
+                    base["status"] = "✗ Không tìm thấy bài trong admin HNCode"
                 else:
                     selected_refs.append(base)
-                    base["status"] = "Äang thÃªm..."
+                    base["status"] = "Đang thêm..."
             result_rows.append(base)
         link = hncode_lesson_url(state["course_slug"], state["lesson_id"])
         if selected_refs:
@@ -4001,25 +3984,25 @@ def api_confirm_contest_to_lesson():
                     failed_by_id[problem_id] = str(item_exc)
             for row in result_rows:
                 if str(row.get("problem_id")) in added_ids and row.get("selected"):
-                    row["status"] = "âœ“ ÄÃ£ thÃªm"
+                    row["status"] = "✓ Đã thêm"
                     row["link"] = link
-                    log_lines.append(f"âœ“ {row['code']}: Ä‘Ã£ thÃªm vÃ o lesson.")
+                    log_lines.append(f"✓ {row['code']}: đã thêm vào lesson.")
                 elif str(row.get("problem_id")) in failed_by_id and row.get("selected"):
-                    row["status"] = "âœ— Lá»—i"
+                    row["status"] = "✗ Lỗi"
                     row["error"] = failed_by_id[str(row.get("problem_id"))]
-                    log_lines.append(f"âœ— {row.get('code')}: {row['error']}")
-                elif row["status"] == "Bá» qua":
-                    log_lines.append(f"- {row.get('code')}: bá» qua.")
-                elif row["status"] == "ÄÃ£ cÃ³ trong lesson":
-                    log_lines.append(f"- {row.get('code')}: Ä‘Ã£ cÃ³ trong lesson.")
+                    log_lines.append(f"✗ {row.get('code')}: {row['error']}")
+                elif row["status"] == "Bỏ qua":
+                    log_lines.append(f"- {row.get('code')}: bỏ qua.")
+                elif row["status"] == "Đã có trong lesson":
+                    log_lines.append(f"- {row.get('code')}: đã có trong lesson.")
         else:
-            log_lines.append("KhÃ´ng cÃ³ bÃ i má»›i Ä‘Æ°á»£c chá»n Ä‘á»ƒ thÃªm.")
-        ok = all(not row.get("selected") or row.get("status", "").startswith("âœ“") or "ÄÃ£ cÃ³" in row.get("status", "") for row in result_rows)
+            log_lines.append("Không có bài mới được chọn để thêm.")
+        ok = all(not row.get("selected") or row.get("status", "").startswith("✓") or "Đã có" in row.get("status", "") for row in result_rows)
         return jsonify({"ok": ok, "rows": result_rows, "link": link, "log": "\n".join(log_lines)})
     except Exception as exc:
         rows = payload.get("rows", [])
         for row in rows:
-            row["status"] = "âœ— Lá»—i"
+            row["status"] = "✗ Lỗi"
             row["error"] = str(exc)
         return jsonify({"ok": False, "rows": rows, "error": str(exc)}), 400
 
@@ -4036,7 +4019,7 @@ def decode_text_smart(raw: bytes) -> str:
 def extract_hncode_contest_key_any(value: str) -> str:
     value = str(value or "").strip()
     if not value:
-        raise RuntimeError("ChÆ°a nháº­p URL hoáº·c mÃ£ contest.")
+        raise RuntimeError("Chưa nhập URL hoặc mã contest.")
     match = re.search(r"/contest/([^/?#\s]+)", value)
     return match.group(1) if match else value.strip().strip("/")
 
@@ -4047,7 +4030,7 @@ def hncode_student_session(username: str, password: str) -> requests.Session:
     login_url = urljoin(TARGETS["hncode"]["base_url"], "/accounts/login/?next=/")
     page = session.get(login_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c trang Ä‘Äƒng nháº­p HNCode: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được trang đăng nhập HNCode: HTTP {page.status_code}")
     result = session.post(
         login_url,
         data={"username": username, "password": password, "csrfmiddlewaretoken": csrf_token(page.text), "next": "/"},
@@ -4057,7 +4040,7 @@ def hncode_student_session(username: str, password: str) -> requests.Session:
     )
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if not result.ok or errors:
-        raise RuntimeError("Form Ä‘Äƒng nháº­p HNCode bÃ¡o lá»—i: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
+        raise RuntimeError("Form đăng nhập HNCode báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
     if "sessionid" not in session.cookies.get_dict() or "/accounts/login" in result.url:
         raise RuntimeError("HNCode login did not create a session")
     return session
@@ -4066,14 +4049,14 @@ def hncode_student_session(username: str, password: str) -> requests.Session:
 def parse_hncode_contest_problems(session: requests.Session, contest_key: str) -> list[dict]:
     page = session.get(urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/problems"), timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c danh sÃ¡ch bÃ i contest {contest_key}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được danh sách bài contest {contest_key}: HTTP {page.status_code}")
     rows = extract_contest_problem_rows_from_html(page.text, contest_key, "100")
     if not rows:
         ranking = session.get(urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/ranking/"), timeout=30)
         if ranking.ok:
             rows = extract_contest_problem_rows_from_html(ranking.text, contest_key, "100")
     if not rows:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y bÃ i nÃ o trong contest {contest_key}.")
+        raise RuntimeError(f"Không tìm thấy bài nào trong contest {contest_key}.")
     for row in rows:
         try:
             row["points"] = float(str(row.get("points") or "100").replace(",", "."))
@@ -4104,7 +4087,7 @@ def read_hncode_grading_accounts(csv_path: Path) -> list[dict]:
     reader = csv.DictReader(decode_text_smart(csv_path.read_bytes()).splitlines())
     missing = {"username", "password", "name"} - set(reader.fieldnames or [])
     if missing:
-        raise RuntimeError("File tÃ i khoáº£n thiáº¿u cá»™t: " + ", ".join(sorted(missing)))
+        raise RuntimeError("File tài khoản thiếu cột: " + ", ".join(sorted(missing)))
     accounts = []
     for index, row in enumerate(reader, 1):
         username = (row.get("username") or "").strip()
@@ -4113,7 +4096,7 @@ def read_hncode_grading_accounts(csv_path: Path) -> list[dict]:
         if username and password and name:
             accounts.append({"index": index, "username": username, "password": password, "name": name})
     if not accounts:
-        raise RuntimeError("KhÃ´ng Ä‘á»c Ä‘Æ°á»£c tÃ i khoáº£n há»£p lá»‡ nÃ o trong file CSV.")
+        raise RuntimeError("Không đọc được tài khoản hợp lệ nào trong file CSV.")
     return accounts
 
 
@@ -4151,11 +4134,11 @@ def collect_hncode_grading_files(source_root: Path, accounts: list[dict], contes
     for student_dir in sorted((item for item in source_root.iterdir() if item.is_dir()), key=lambda path: path.name.lower()):
         account = account_by_key.get(normalize_grading_key(student_dir.name))
         if not account:
-            warnings.append(f"KhÃ´ng tÃ¬m tháº¥y tÃ i khoáº£n CSV cho thÆ° má»¥c {student_dir.name}.")
+            warnings.append(f"Không tìm thấy tài khoản CSV cho thư mục {student_dir.name}.")
             continue
         files = sorted((path for path in student_dir.rglob("*") if path.is_file() and path.suffix.lower() in allowed_suffixes), key=lambda path: path.name.lower())
         if not files:
-            warnings.append(f"ThÆ° má»¥c {student_dir.name} khÃ´ng cÃ³ file code.")
+            warnings.append(f"Thư mục {student_dir.name} không có file code.")
             continue
         for path in files:
             code = map_grading_problem_code(path.stem, contest_problems)
@@ -4172,14 +4155,14 @@ def collect_hncode_grading_files(source_root: Path, accounts: list[dict], contes
                 "file": path.name,
                 "relative_path": path.relative_to(source_root).as_posix(),
                 "local_path": str(path),
-                "status": "ÄÃ£ chuáº©n bá»‹" if problem else "KhÃ´ng khá»›p bÃ i trong contest",
+                "status": "Đã chuẩn bị" if problem else "Không khớp bài trong contest",
                 "submission_url": "",
                 "percent": "",
                 "score": "",
                 "message": "",
             })
     if not rows:
-        raise RuntimeError("KhÃ´ng tÃ¬m tháº¥y file bÃ i lÃ m nÃ o khá»›p tÃ i khoáº£n trong zip.")
+        raise RuntimeError("Không tìm thấy file bài làm nào khớp tài khoản trong zip.")
     return rows, warnings
 
 
@@ -4187,12 +4170,12 @@ def join_hncode_contest_if_needed(session: requests.Session, contest_key: str, c
     join_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/join")
     page = session.get(join_url, timeout=30, allow_redirects=True)
     if f"/contest/{contest_key}/problems" in page.url:
-        return "ÄÃ£ tham gia"
+        return "Đã tham gia"
     parser = FormDataParser()
     parser.feed(page.text)
     form = next((item for item in parser.forms if any(name == "access_code" for name, _value in item)), None)
     if not form:
-        return "KhÃ´ng cáº§n nháº­p máº­t kháº©u"
+        return "Không cần nhập mật khẩu"
     result = session.post(
         join_url,
         data=[(name, contest_password if name == "access_code" else value) for name, value in form],
@@ -4202,8 +4185,8 @@ def join_hncode_contest_if_needed(session: requests.Session, contest_key: str, c
     )
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError("Join contest bÃ¡o lá»—i: " + "; ".join(errors))
-    return "ÄÃ£ nháº­p máº­t kháº©u contest"
+        raise RuntimeError("Join contest báo lỗi: " + "; ".join(errors))
+    return "Đã nhập mật khẩu contest"
 
 
 def preferred_languages_for_source(path: Path) -> list[str]:
@@ -4223,10 +4206,10 @@ def submit_hncode_grading_file(session: requests.Session, problem_code: str, sou
     submit_url = urljoin(TARGETS["hncode"]["base_url"], f"/problem/{problem_code}/submit")
     page = session.get(submit_url, timeout=30, allow_redirects=True)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c trang ná»™p bÃ i {problem_code}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được trang nộp bài {problem_code}: HTTP {page.status_code}")
     language_id = language_id_from_submit_page(page.text, preferred_languages_for_source(source_path))
     if not language_id:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y ngÃ´n ngá»¯ phÃ¹ há»£p cho file {source_path.name}")
+        raise RuntimeError(f"Không tìm thấy ngôn ngữ phù hợp cho file {source_path.name}")
     result = session.post(
         submit_url,
         data={"csrfmiddlewaretoken": csrf_token(page.text), "source": read_text_smart(source_path), "language": language_id, "judge": ""},
@@ -4236,17 +4219,17 @@ def submit_hncode_grading_file(session: requests.Session, problem_code: str, sou
     )
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if not result.ok or errors:
-        raise RuntimeError("Submit form bÃ¡o lá»—i: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
+        raise RuntimeError("Submit form báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
     if "/submission/" not in result.url:
-        raise RuntimeError(f"Submit chÆ°a táº¡o submission; URL sau POST: {result.url}")
+        raise RuntimeError(f"Submit chưa tạo submission; URL sau POST: {result.url}")
     return result.url
 
 
 def parse_hncode_submission_result(page: str) -> dict:
     plain = html.unescape(re.sub(r"<[^>]+>", " ", page))
     plain = re.sub(r"\s+", " ", plain)
-    total_match = re.search(r"Tá»•ng cá»™ng:\s*([0-9]+(?:[.,][0-9]+)?)\s*/\s*100", plain, re.I)
-    score_match = re.search(r"Äiá»ƒm:\s*([0-9]+(?:[.,][0-9]+)?)\s*/\s*([0-9]+(?:[.,][0-9]+)?)", plain, re.I)
+    total_match = re.search(r"Tổng cộng:\s*([0-9]+(?:[.,][0-9]+)?)\s*/\s*100", plain, re.I)
+    score_match = re.search(r"Điểm:\s*([0-9]+(?:[.,][0-9]+)?)\s*/\s*([0-9]+(?:[.,][0-9]+)?)", plain, re.I)
     verdict = ""
     for candidate in ["Accepted", "Wrong Answer", "Time Limit Exceeded", "Runtime Error", "Compilation Error", "Memory Limit Exceeded", "Output Limit Exceeded"]:
         if candidate in plain:
@@ -4260,15 +4243,15 @@ def parse_hncode_submission_result(page: str) -> dict:
         return {"done": True, "percent": 100.0 * got / total if total else 0.0, "verdict": verdict or "Done"}
     if verdict and verdict in {"Compilation Error", "Runtime Error", "Wrong Answer", "Time Limit Exceeded", "Memory Limit Exceeded", "Output Limit Exceeded"}:
         return {"done": True, "percent": 0.0, "verdict": verdict}
-    pending = any(word.lower() in plain.lower() for word in ["Queued", "Äang cháº¥m", "Processing", "grading", "Chá» cháº¥m"])
-    return {"done": not pending, "percent": None, "verdict": verdict or "Äang cháº¥m"}
+    pending = any(word.lower() in plain.lower() for word in ["Queued", "Đang chấm", "Processing", "grading", "Chờ chấm"])
+    return {"done": not pending, "percent": None, "verdict": verdict or "Đang chấm"}
 
 
 def poll_hncode_submission(session: requests.Session, submission_url: str) -> dict:
     while True:
         page = session.get(submission_url, timeout=30)
         if not page.ok:
-            raise RuntimeError(f"KhÃ´ng Ä‘á»c Ä‘Æ°á»£c submission: HTTP {page.status_code}")
+            raise RuntimeError(f"Không đọc được submission: HTTP {page.status_code}")
         result = parse_hncode_submission_result(page.text)
         if result.get("done") and result.get("percent") is not None:
             return result
@@ -4351,7 +4334,7 @@ def fetch_hncode_contest_ranking(session: requests.Session, contest_key: str) ->
             timeout=30,
         )
         if not page.ok:
-            raise RuntimeError(f"KhÃ´ng Ä‘á»c Ä‘Æ°á»£c báº£ng rank contest: HTTP {page.status_code}")
+            raise RuntimeError(f"Không đọc được bảng rank contest: HTTP {page.status_code}")
         rows, codes = parse_hncode_ranking_table(page.text)
         if codes and not problem_codes:
             problem_codes = codes
@@ -4378,7 +4361,7 @@ def write_hncode_grading_excel(rows: list[dict], contest_problems: list[dict], a
     ws.title = "Bang diem"
     problem_codes = list(ranking_problem_codes or []) or [problem["code"] for problem in contest_problems]
     if ranking_rows:
-        ws.append(["Rank", "Username", "Há» tÃªn", "LÆ°á»£t áº£o", "Tá»•ng Ä‘iá»ƒm", "Thá»i gian", *problem_codes])
+        ws.append(["Rank", "Username", "Họ tên", "Lượt ảo", "Tổng điểm", "Thời gian", *problem_codes])
         for item in ranking_rows:
             ws.append([
                 item.get("rank", ""),
@@ -4390,7 +4373,7 @@ def write_hncode_grading_excel(rows: list[dict], contest_problems: list[dict], a
                 *[item.get("scores", {}).get(code, "") for code in problem_codes],
             ])
     else:
-        ws.append(["STT", "Há»c sinh", "Username", *problem_codes, "Tá»•ng Ä‘iá»ƒm", "Sá»‘ bÃ i Ä‘Ã£ ná»™p"])
+        ws.append(["STT", "Học sinh", "Username", *problem_codes, "Tổng điểm", "Số bài đã nộp"])
         by_student_problem: dict[tuple[str, str], dict] = {}
         for row in rows:
             key = (row.get("username", ""), row.get("problem", ""))
@@ -4416,9 +4399,9 @@ def write_hncode_grading_excel(rows: list[dict], contest_problems: list[dict], a
     ws.freeze_panes = "D2"
     autosize_worksheet(ws)
     ws = wb.create_sheet("Chi tiet nop bai")
-    ws.append(["Há»c sinh", "Username", "MÃ£ bÃ i", "TÃªn bÃ i", "Äiá»ƒm bÃ i", "%", "Äiá»ƒm quy Ä‘á»•i", "File", "Tráº¡ng thÃ¡i", "Submission", "ThÃ´ng bÃ¡o"])
+    ws.append(["Học sinh", "Username", "Mã bài", "Tên bài", "Điểm bài", "%", "Điểm quy đổi", "File", "Trạng thái", "Submission", "Thông báo"])
     for row in rows:
-        ws.append([row.get("student"), row.get("username"), row.get("problem"), row.get("problem_title"), row.get("contest_points"), row.get("percent"), row.get("score"), row.get("relative_path"), row.get("status"), "Má»Ÿ submission" if row.get("submission_url") else "", row.get("message")])
+        ws.append([row.get("student"), row.get("username"), row.get("problem"), row.get("problem_title"), row.get("contest_points"), row.get("percent"), row.get("score"), row.get("relative_path"), row.get("status"), "Mở submission" if row.get("submission_url") else "", row.get("message")])
         if row.get("submission_url"):
             ws.cell(ws.max_row, 10).hyperlink = row["submission_url"]
             ws.cell(ws.max_row, 10).style = "Hyperlink"
@@ -4427,7 +4410,7 @@ def write_hncode_grading_excel(rows: list[dict], contest_problems: list[dict], a
     ws.freeze_panes = "A2"
     autosize_worksheet(ws)
     ws = wb.create_sheet("Danh sach bai")
-    ws.append(["Thá»© tá»±", "MÃ£ bÃ i", "TÃªn bÃ i", "Äiá»ƒm contest"])
+    ws.append(["Thứ tự", "Mã bài", "Tên bài", "Điểm contest"])
     for problem in contest_problems:
         ws.append([problem["order"], problem["code"], problem["title"], problem["points"]])
     for cell in ws[1]:
@@ -4444,9 +4427,9 @@ def api_prepare_hncode_grading():
         zip_file = request.files.get("zip_file")
         csv_file = request.files.get("csv_file")
         if not zip_file or not zip_file.filename:
-            return jsonify({"error": "ChÆ°a chá»n file zip bÃ i lÃ m."}), 400
+            return jsonify({"error": "Chưa chọn file zip bài làm."}), 400
         if not csv_file or not csv_file.filename:
-            return jsonify({"error": "ChÆ°a chá»n file CSV tÃ i khoáº£n."}), 400
+            return jsonify({"error": "Chưa chọn file CSV tài khoản."}), 400
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / ("hncode_grading_" + prepare_id)
         source_zip = root / "bai_lam.zip"
@@ -4455,7 +4438,7 @@ def api_prepare_hncode_grading():
         root.mkdir(parents=True, exist_ok=True)
         zip_file.save(source_zip)
         csv_file.save(account_csv)
-        progress_update(progress_id, phase="prepare-hncode-grading", done=0, total=3, rows=[], message="Äang Ä‘á»c contest HNCode")
+        progress_update(progress_id, phase="prepare-hncode-grading", done=0, total=3, rows=[], message="Đang đọc contest HNCode")
         admin_username = request.form.get("admin_username", "")
         admin_password = request.form.get("admin_password", "")
         admin_session = login_hncode(TARGETS["hncode"]["base_url"], admin_username, admin_password)
@@ -4465,10 +4448,10 @@ def api_prepare_hncode_grading():
         source_root = grading_source_root(extract_root)
         rows, warnings = collect_hncode_grading_files(source_root, accounts, contest_problems)
         prepared_hncode_grading[prepare_id] = {"root": root, "source_root": source_root, "contest_key": contest_key, "contest_problems": contest_problems, "accounts": accounts, "rows": rows, "output": "", "admin_username": admin_username}
-        log_lines = [f"Contest: {contest_key}", f"ÄÃ£ Ä‘á»c {len(contest_problems)} bÃ i: " + ", ".join(problem["code"] for problem in contest_problems), f"ÄÃ£ Ä‘á»c {len(accounts)} tÃ i khoáº£n.", f"ÄÃ£ tÃ¬m tháº¥y {len(rows)} file bÃ i lÃ m."]
+        log_lines = [f"Contest: {contest_key}", f"Đã đọc {len(contest_problems)} bài: " + ", ".join(problem["code"] for problem in contest_problems), f"Đã đọc {len(accounts)} tài khoản.", f"Đã tìm thấy {len(rows)} file bài làm."]
         log_lines.extend(f"- {warning}" for warning in warnings)
-        progress_update(progress_id, phase="prepare-hncode-grading", done=3, total=3, rows=rows, message="ÄÃ£ chuáº©n bá»‹ dá»¯ liá»‡u cháº¥m")
-        progress_finish(progress_id, True, "ÄÃ£ chuáº©n bá»‹ dá»¯ liá»‡u cháº¥m")
+        progress_update(progress_id, phase="prepare-hncode-grading", done=3, total=3, rows=rows, message="Đã chuẩn bị dữ liệu chấm")
+        progress_finish(progress_id, True, "Đã chuẩn bị dữ liệu chấm")
         return jsonify({"prepare_id": prepare_id, "rows": rows, "problems": contest_problems, "accounts": accounts, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
@@ -4481,8 +4464,8 @@ def api_confirm_hncode_grading():
     progress_id = payload.get("progress_id")
     state = prepared_hncode_grading.get(payload.get("prepare_id", ""))
     if not state:
-        progress_finish(progress_id, False, "Dá»¯ liá»‡u chuáº©n bá»‹ cháº¥m Ä‘Ã£ háº¿t háº¡n")
-        return jsonify({"error": "Dá»¯ liá»‡u chuáº©n bá»‹ cháº¥m Ä‘Ã£ háº¿t háº¡n. HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u láº¡i."}), 400
+        progress_finish(progress_id, False, "Dữ liệu chuẩn bị chấm đã hết hạn")
+        return jsonify({"error": "Dữ liệu chuẩn bị chấm đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
     try:
         requested = {row.get("original_key"): row for row in payload.get("rows", [])}
         rows = []
@@ -4493,16 +4476,16 @@ def api_confirm_hncode_grading():
             rows.append(row)
         selected_rows = [row for row in rows if row.get("selected")]
         if not selected_rows:
-            raise RuntimeError("ChÆ°a chá»n bÃ i nÃ o Ä‘á»ƒ ná»™p cháº¥m.")
+            raise RuntimeError("Chưa chọn bài nào để nộp chấm.")
         contest_password = payload.get("contest_password", "")
         account_by_username = {account["username"]: account for account in state["accounts"]}
         sessions: dict[str, requests.Session] = {}
         done = 0
-        log_lines = [f"Cháº¥m bÃ i HNCode contest {state['contest_key']}: {len(selected_rows)} file Ä‘Æ°á»£c chá»n."]
-        progress_update(progress_id, phase="confirm-hncode-grading", done=0, total=len(selected_rows), rows=rows, message="Báº¯t Ä‘áº§u ná»™p bÃ i")
+        log_lines = [f"Chấm bài HNCode contest {state['contest_key']}: {len(selected_rows)} file được chọn."]
+        progress_update(progress_id, phase="confirm-hncode-grading", done=0, total=len(selected_rows), rows=rows, message="Bắt đầu nộp bài")
         for row in rows:
             if not row.get("selected"):
-                row["status"] = "Bá» qua"
+                row["status"] = "Bỏ qua"
                 continue
             try:
                 account = account_by_username[row["username"]]
@@ -4511,20 +4494,20 @@ def api_confirm_hncode_grading():
                     session = hncode_student_session(account["username"], account["password"])
                     log_lines.append(f"{account['name']} ({account['username']}): {join_hncode_contest_if_needed(session, state['contest_key'], contest_password)}.")
                     sessions[row["username"]] = session
-                progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row['student']} - {row['problem']}: Ä‘ang ná»™p")
-                row["status"] = "Äang ná»™p"
+                progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row['student']} - {row['problem']}: đang nộp")
+                row["status"] = "Đang nộp"
                 row["submission_url"] = submit_hncode_grading_file(session, row["problem"], Path(row["local_path"]))
                 result = poll_hncode_submission(session, row["submission_url"])
                 percent = result.get("percent")
                 row["percent"] = "" if percent is None else round(float(percent), 2)
                 row["score"] = "" if percent is None else round(float(row.get("contest_points") or 0) * float(percent) / 100.0, 2)
-                row["status"] = "âœ“ ÄÃ£ cháº¥m" if percent is not None else "âœ“ ÄÃ£ ná»™p"
+                row["status"] = "✓ Đã chấm" if percent is not None else "✓ Đã nộp"
                 row["message"] = result.get("verdict") or ""
-                log_lines.append(f"âœ“ {row['student']} - {row['problem']}: {row['message']}, {row['percent']}%, Ä‘iá»ƒm {row['score']}.")
+                log_lines.append(f"✓ {row['student']} - {row['problem']}: {row['message']}, {row['percent']}%, điểm {row['score']}.")
             except Exception as exc:
-                row["status"] = "âœ— Lá»—i"
+                row["status"] = "✗ Lỗi"
                 row["message"] = str(exc)
-                log_lines.append(f"âœ— {row.get('student')} - {row.get('problem')}: {exc}")
+                log_lines.append(f"✗ {row.get('student')} - {row.get('problem')}: {exc}")
             done += 1
             progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row.get('student')} - {row.get('problem')}: {row.get('status')}")
         output_path = Path(state["root"]) / "bang_diem_hncode.xlsx"
@@ -4534,14 +4517,14 @@ def api_confirm_hncode_grading():
             admin_account = payload.get("admin_account", {})
             rank_session = login_hncode(TARGETS["hncode"]["base_url"], admin_account.get("username", ""), admin_account.get("password", ""))
             ranking_rows, ranking_problem_codes = fetch_hncode_contest_ranking(rank_session, state["contest_key"])
-            log_lines.append(f"ÄÃ£ Ä‘á»c láº¡i báº£ng rank contest: {len(ranking_rows)} dÃ²ng.")
+            log_lines.append(f"Đã đọc lại bảng rank contest: {len(ranking_rows)} dòng.")
         except Exception as exc:
-            log_lines.append(f"KhÃ´ng Ä‘á»c Ä‘Æ°á»£c báº£ng rank, Excel dÃ¹ng dá»¯ liá»‡u submission vá»«a ná»™p: {exc}")
+            log_lines.append(f"Không đọc được bảng rank, Excel dùng dữ liệu submission vừa nộp: {exc}")
         write_hncode_grading_excel(rows, state["contest_problems"], state["accounts"], output_path, ranking_rows, ranking_problem_codes)
         state["rows"] = rows
         state["output"] = str(output_path)
-        ok = all((not row.get("selected")) or str(row.get("status", "")).startswith("âœ“") for row in rows)
-        progress_finish(progress_id, ok, "ÄÃ£ hoÃ n táº¥t cháº¥m bÃ i")
+        ok = all((not row.get("selected")) or str(row.get("status", "")).startswith("✓") for row in rows)
+        progress_finish(progress_id, ok, "Đã hoàn tất chấm bài")
         return jsonify({"ok": ok, "rows": rows, "log": "\n".join(log_lines), "download_url": f"/api/download-hncode-grading/{payload.get('prepare_id', '')}"})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
@@ -4552,17 +4535,17 @@ def api_confirm_hncode_grading():
 def api_download_hncode_grading(prepare_id: str):
     state = prepared_hncode_grading.get(prepare_id)
     if not state or not state.get("output"):
-        return jsonify({"error": "ChÆ°a cÃ³ file báº£ng Ä‘iá»ƒm Ä‘á»ƒ táº£i."}), 404
+        return jsonify({"error": "Chưa có file bảng điểm để tải."}), 404
     path = Path(state["output"])
     if not path.exists():
-        return jsonify({"error": "File báº£ng Ä‘iá»ƒm khÃ´ng cÃ²n tá»“n táº¡i."}), 404
+        return jsonify({"error": "File bảng điểm không còn tồn tại."}), 404
     return send_file(path, as_attachment=True, download_name=path.name, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.get("/api/progress/<progress_id>")
 def api_progress(progress_id: str):
     if not valid_progress_id(progress_id):
-        return jsonify({"error": "progress_id khÃ´ng há»£p lá»‡"}), 400
+        return jsonify({"error": "progress_id không hợp lệ"}), 400
     return jsonify(job_service.read_job(PROGRESS_DIR, progress_id))
 
 
@@ -4570,9 +4553,9 @@ def api_progress(progress_id: str):
 def api_misc_last_submissions():
     uploaded = request.files.get("zip_file")
     if not uploaded or not uploaded.filename:
-        return jsonify({"error": "ChÆ°a chá»n file zip data."}), 400
+        return jsonify({"error": "Chưa chọn file zip data."}), 400
     if Path(uploaded.filename).suffix.lower() != ".zip":
-        return jsonify({"error": "File data pháº£i lÃ  .zip."}), 400
+        return jsonify({"error": "File data phải là .zip."}), 400
     job_root = RUNTIME / "misc" / uuid.uuid4().hex
     input_zip = job_root / "input.zip"
     extract_root = job_root / "extract"
@@ -4584,7 +4567,7 @@ def api_misc_last_submissions():
         data_root = find_scratch_data_root(extract_root)
         summary = collect_last_scratch_submissions(data_root, output_dir)
         if summary["total"] == 0:
-            return jsonify({"error": "KhÃ´ng tÃ¬m tháº¥y thÆ° má»¥c thÃ­ sinh nÃ o trong file zip."}), 400
+            return jsonify({"error": "Không tìm thấy thư mục thí sinh nào trong file zip."}), 400
         output_zip = job_root / "last_submissions.zip"
         with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for item in sorted(output_dir.iterdir(), key=lambda path: path.name.lower()):
@@ -4612,20 +4595,20 @@ def api_misc_ai_code_warning():
         source_zips: list[Path] = []
         if uploaded and uploaded.filename:
             if Path(uploaded.filename).suffix.lower() != ".zip":
-                return jsonify({"error": "File data pháº£i lÃ  .zip."}), 400
+                return jsonify({"error": "File data phải là .zip."}), 400
             input_zip = job_root / safe_output_part(Path(uploaded.filename).name)
             uploaded.save(input_zip)
             source_zips = [input_zip]
         else:
             folder_path = (request.form.get("folder_path") or "").strip()
             if not folder_path:
-                return jsonify({"error": "HÃ£y chá»n file zip hoáº·c nháº­p folder chá»©a cÃ¡c zip contest."}), 400
+                return jsonify({"error": "Hãy chọn file zip hoặc nhập folder chứa các zip contest."}), 400
             folder = Path(folder_path)
             if not folder.exists() or not folder.is_dir():
-                return jsonify({"error": f"Folder khÃ´ng tá»“n táº¡i: {folder_path}"}), 400
+                return jsonify({"error": f"Folder không tồn tại: {folder_path}"}), 400
             source_zips = sorted(folder.glob("*.zip"))
             if not source_zips:
-                return jsonify({"error": f"KhÃ´ng tÃ¬m tháº¥y file .zip nÃ o trong folder: {folder_path}"}), 400
+                return jsonify({"error": f"Không tìm thấy file .zip nào trong folder: {folder_path}"}), 400
         output_path = job_root / "ai_code_warning_report.xlsx"
         summary = build_ai_warning_report(source_zips, output_path)
         response = send_file(
@@ -4662,7 +4645,7 @@ def api_tinhoctre_browser_start():
         return jsonify(
             {
                 "ok": True,
-                "message": "ÄÃ£ má»Ÿ Edge báº±ng profile máº·c Ä‘á»‹nh. HÃ£y Ä‘Äƒng nháº­p admin vÃ  Ä‘áº£m báº£o tháº¥y form táº¡o bÃ i, rá»“i báº¥m Láº¥y cookie tá»« Edge. Náº¿u khÃ´ng láº¥y Ä‘Æ°á»£c cookie, hÃ£y Ä‘Ã³ng háº¿t Edge rá»“i báº¥m nÃºt nÃ y láº¡i.",
+                "message": "Đã mở Edge bằng profile mặc định. Hãy đăng nhập admin và đảm bảo thấy form tạo bài, rồi bấm Lấy cookie từ Edge. Nếu không lấy được cookie, hãy đóng hết Edge rồi bấm nút này lại.",
             }
         )
     except Exception as exc:
@@ -4678,7 +4661,7 @@ def api_tinhoctre_browser_cookie():
         check = s.get("https://tinhoctre.vn/admin/judge/problem/add/", timeout=30)
         if not check.ok or not is_problem_add_form(check.text):
             raise RuntimeError(tinhoctre_admin_cookie_error(check.url))
-        return jsonify({"ok": True, "cookie": cookie, "message": "ÄÃ£ láº¥y Cookie TinHocTre tá»« Edge vÃ  kiá»ƒm tra má»Ÿ Ä‘Æ°á»£c form admin táº¡o bÃ i."})
+        return jsonify({"ok": True, "cookie": cookie, "message": "Đã lấy Cookie TinHocTre từ Edge và kiểm tra mở được form admin tạo bài."})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -4711,7 +4694,7 @@ def api_tinhoctre_browser_quick_cookie():
         check = s.get(url, timeout=30)
         if not check.ok or not is_problem_add_form(check.text):
             raise RuntimeError(tinhoctre_admin_cookie_error(check.url))
-        return jsonify({"ok": True, "cookie": cookie, "message": "ÄÃ£ tá»± Ä‘Ã³ng/má»Ÿ Edge, láº¥y Cookie TinHocTre vÃ  kiá»ƒm tra má»Ÿ Ä‘Æ°á»£c form admin táº¡o bÃ i."})
+        return jsonify({"ok": True, "cookie": cookie, "message": "Đã tự đóng/mở Edge, lấy Cookie TinHocTre và kiểm tra mở được form admin tạo bài."})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -4734,24 +4717,24 @@ def api_prepare_upload():
             bundles = split_combined_markdown_bundles(source_path, source_dir)
             tests: dict[str, GeneratedTests | None] = {bundle.code: None for bundle in bundles}
             source_name = source_path.name
-            log_lines = [f"ÄÃ£ Ä‘á»c {len(bundles)} bÃ i tá»« file Markdown {source_name}."]
+            log_lines = [f"Đã đọc {len(bundles)} bài từ file Markdown {source_name}."]
         else:
             extract_zip(source_path, source_dir)
             bundles = discover_bundles(source_dir)
             tests = {}
             source_name = source_path.name
-            log_lines = [f"ÄÃ£ Ä‘á»c {len(bundles)} bÃ i tá»« {source_name}."]
+            log_lines = [f"Đã đọc {len(bundles)} bài từ {source_name}."]
         rows = []
-        progress_update(progress_id, phase="prepare-upload", done=0, total=len(bundles), rows=rows, message="Báº¯t Ä‘áº§u chuáº©n bá»‹ dá»¯ liá»‡u")
+        progress_update(progress_id, phase="prepare-upload", done=0, total=len(bundles), rows=rows, message="Bắt đầu chuẩn bị dữ liệu")
         solutions_md: dict[str, Path | None] = {}
         metadata: dict[str, dict] = {}
         for index, bundle in enumerate(bundles, 1):
             generated = tests.get(bundle.code)
-            source = "Markdown tá»•ng há»£p"
+            source = "Markdown tổng hợp"
             if bundle.generator or bundle.test_zip:
                 generated = generate_tests(bundle, build_root)
                 tests[bundle.code] = generated
-                source = "gentest" if bundle.generator else "zip cÃ³ sáºµn"
+                source = "gentest" if bundle.generator else "zip có sẵn"
             meta = metadata_from_statement(bundle.statement, payload)
             metadata[bundle.code] = meta
             solution_md = find_named_file(source_dir, ["sol"], bundle.index, bundle.code, ".md") if source_path.suffix.lower() != ".md" else None
@@ -4766,18 +4749,18 @@ def api_prepare_upload():
                     "time_limit": payload.get("time_limit") or "1.0",
                     "memory_limit": payload.get("memory_limit") or "1048576",
                     "partial": meta["partial"],
-                    "test_file": generated.zip_path.name if generated else "KhÃ´ng cÃ³ test",
+                    "test_file": generated.zip_path.name if generated else "Không có test",
                     "test_count": len(generated.input_files) if generated else 0,
                     "upload_tests_default": bool(generated),
                     "upload_solution_default": bool(solution_md),
                 }
             )
-            test_text = f"{len(generated.input_files)} test" if generated else "khÃ´ng cÃ³ test"
-            solution_text = ", cÃ³ lá»i giáº£i Markdown" if solution_md else ""
-            log_lines.append(f"- {bundle.code}: {bundle.name}, Ä‘iá»ƒm {meta['points']}, tags {meta['tags'] or 'trá»‘ng'}, {test_text}, nguá»“n {source}{solution_text}.")
-            progress_update(progress_id, phase="prepare-upload", done=index, total=len(bundles), rows=rows, message=f"{bundle.code}: Ä‘Ã£ chuáº©n bá»‹ {test_text}")
+            test_text = f"{len(generated.input_files)} test" if generated else "không có test"
+            solution_text = ", có lời giải Markdown" if solution_md else ""
+            log_lines.append(f"- {bundle.code}: {bundle.name}, điểm {meta['points']}, tags {meta['tags'] or 'trống'}, {test_text}, nguồn {source}{solution_text}.")
+            progress_update(progress_id, phase="prepare-upload", done=index, total=len(bundles), rows=rows, message=f"{bundle.code}: đã chuẩn bị {test_text}")
         prepared_uploads[prepare_id] = {"root": root, "bundles": {b.code: b for b in bundles}, "tests": tests, "solutions": solutions_md, "metadata": metadata}
-        progress_finish(progress_id, True, f"ÄÃ£ chuáº©n bá»‹ {len(bundles)}/{len(bundles)} bÃ i")
+        progress_finish(progress_id, True, f"Đã chuẩn bị {len(bundles)}/{len(bundles)} bài")
         return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
@@ -4801,9 +4784,9 @@ def receive_upload_source_file(root: Path, payload: dict) -> Path:
         return upload_path
     source_path = Path(payload["zip_path"])
     if not source_path.exists():
-        raise FileNotFoundError(f"KhÃ´ng tÃ¬m tháº¥y file: {source_path}")
+        raise FileNotFoundError(f"Không tìm thấy file: {source_path}")
     if source_path.suffix.lower() not in {".zip", ".md"}:
-        raise RuntimeError("Chá»‰ há»— trá»£ file .zip hoáº·c file Markdown .md.")
+        raise RuntimeError("Chỉ hỗ trợ file .zip hoặc file Markdown .md.")
     return source_path
 
 
@@ -4829,16 +4812,16 @@ def api_prepare_single_upload():
         code = (raw_code or inferred_code).strip().lower()
         name = (payload.get("name") or inferred_name or code).strip()
         if not code:
-            raise RuntimeError("HÃ£y nháº­p mÃ£ bÃ i hoáº·c dÃ¹ng dÃ²ng Ä‘áº§u Ä‘á» bÃ i dáº¡ng: TÃªn bÃ i | ma_bai.")
+            raise RuntimeError("Hãy nhập mã bài hoặc dùng dòng đầu đề bài dạng: Tên bài | ma_bai.")
         if not name:
-            raise RuntimeError("HÃ£y nháº­p tÃªn bÃ i toÃ¡n.")
+            raise RuntimeError("Hãy nhập tên bài toán.")
         prepare_note = ""
         if target in {"hncode", "tinhoctre"} and not re.fullmatch(r"[a-z0-9_]+", code):
             normalized = normalize_problem_code_for_target(code, target)
             label = TARGETS.get(target, {}).get("label", "HNCode/TinHocTre")
             prepare_note = (
-                f"MÃ£ {code} cÃ³ kÃ½ tá»± ngoÃ i chuáº©n táº¡o má»›i cá»§a {label}. Khi xÃ¡c nháº­n, náº¿u bÃ i nÃ y Ä‘Ã£ tá»“n táº¡i thÃ¬ tool dÃ¹ng Ä‘Ãºng mÃ£ nÃ y; "
-                f"náº¿u táº¡o má»›i thÃ¬ Ä‘á»•i thÃ nh {normalized}."
+                f"Mã {code} có ký tự ngoài chuẩn tạo mới của {label}. Khi xác nhận, nếu bài này đã tồn tại thì tool dùng đúng mã này; "
+                f"nếu tạo mới thì đổi thành {normalized}."
             )
 
         prepare_id = uuid.uuid4().hex
@@ -4872,30 +4855,30 @@ def api_prepare_single_upload():
 
         bundle = ProblemBundle(1, code, name, statement_path, generator_path if generator_path and generator_path.suffix.lower() == ".py" else None, test_zip_path, None, None)
         tests: GeneratedTests | None = None
-        test_source = "KhÃ´ng cÃ³ test"
-        log_lines = [f"ÄÃ£ chuáº©n bá»‹ bÃ i {code}: {name}."]
+        test_source = "Không có test"
+        log_lines = [f"Đã chuẩn bị bài {code}: {name}."]
         if prepare_note:
             log_lines.append(f"- {prepare_note}")
         if test_zip_path:
             input_files, output_files = zip_case_files(test_zip_path)
             tests = GeneratedTests(test_zip_path, input_files, output_files)
             test_source = test_zip_path.name
-            log_lines.append(f"- DÃ¹ng zip test cÃ³ sáºµn: {test_zip_path.name}, {len(input_files)} test.")
+            log_lines.append(f"- Dùng zip test có sẵn: {test_zip_path.name}, {len(input_files)} test.")
         elif bundle.generator:
             tests = generate_tests(bundle, build_root)
             test_source = tests.zip_path.name
-            log_lines.append(f"- ÄÃ£ cháº¡y gentest Python vÃ  sinh {len(tests.input_files)} test: {tests.zip_path.name}.")
+            log_lines.append(f"- Đã chạy gentest Python và sinh {len(tests.input_files)} test: {tests.zip_path.name}.")
         elif generator_path and generator_path.suffix.lower() == ".cpp":
             tests = generate_tests_from_cpp_generator(generator_path, build_root, code)
             test_source = tests.zip_path.name
-            log_lines.append(f"- ÄÃ£ compile/cháº¡y C++ generator vÃ  sinh {len(tests.input_files)} test: {tests.zip_path.name}.")
+            log_lines.append(f"- Đã compile/chạy C++ generator và sinh {len(tests.input_files)} test: {tests.zip_path.name}.")
 
         solution_path: Path | None = None
         solution_text = (payload.get("solution_text") or "").strip()
         if solution_text:
             solution_path = source_dir / f"solution_{code}.md"
             solution_path.write_text(solution_text + "\n", encoding="utf-8")
-            log_lines.append("- CÃ³ lá»i giáº£i/hÆ°á»›ng dáº«n Markdown.")
+            log_lines.append("- Có lời giải/hướng dẫn Markdown.")
 
         rows = [
             {
@@ -4912,7 +4895,7 @@ def api_prepare_single_upload():
                 "upload_statement_default": bool(statement_text),
                 "upload_tests_default": bool(tests),
                 "upload_solution_default": bool(solution_path),
-                "status": "ÄÃ£ chuáº©n bá»‹" if bool(statement_text) or bool(tests) or bool(solution_path) else "ChÆ°a cÃ³ pháº§n nÃ o Ä‘á»ƒ up",
+                "status": "Đã chuẩn bị" if bool(statement_text) or bool(tests) or bool(solution_path) else "Chưa có phần nào để up",
                 "note": prepare_note,
             }
         ]
@@ -4922,7 +4905,7 @@ def api_prepare_single_upload():
             "tests": {code: tests},
             "solutions": {code: solution_path},
         }
-        progress_finish(progress_id, True, "ÄÃ£ chuáº©n bá»‹ 1/1 bÃ i")
+        progress_finish(progress_id, True, "Đã chuẩn bị 1/1 bài")
         return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
@@ -4960,15 +4943,15 @@ def api_confirm_single_upload():
     try:
         prepare_id = payload.get("prepare_id")
         if not prepare_id or prepare_id not in prepared_single_uploads:
-            return jsonify({"ok": False, "error": "Dá»¯ liá»‡u Up 1 bÃ i Ä‘Ã£ háº¿t háº¡n. HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u láº¡i."}), 400
+            return jsonify({"ok": False, "error": "Dữ liệu Up 1 bài đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
         settings = dict(payload.get("settings") or {})
         rows = payload.get("rows") or []
         target = settings.get("target") or "hncode"
         state = prepared_single_uploads[prepare_id]
         result_rows, log_lines = upload_rows(target, settings, rows, state, progress_id)
         append_single_solution_uploads(target, settings, result_rows, state, log_lines)
-        ok = all((not row.get("selected")) or row["status"].startswith("âœ“") for row in result_rows)
-        progress_finish(progress_id, ok, "ÄÃ£ hoÃ n táº¥t Up 1 bÃ i")
+        ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
+        progress_finish(progress_id, ok, "Đã hoàn tất Up 1 bài")
         return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
@@ -4981,7 +4964,7 @@ def append_single_solution_uploads(target: str, settings: dict, rows: list[dict]
     target_info = TARGETS[target]
     session = login_upload_target(target, target_info, settings)
     for row in rows:
-        if not row.get("selected") or not row.get("upload_solution") or not row.get("status", "").startswith("âœ“"):
+        if not row.get("selected") or not row.get("upload_solution") or not row.get("status", "").startswith("✓"):
             continue
         code = row.get("code") or row.get("original_code")
         solution_path = state.get("solutions", {}).get(row.get("original_code")) or state.get("solutions", {}).get(code)
@@ -4989,31 +4972,31 @@ def append_single_solution_uploads(target: str, settings: dict, rows: list[dict]
             continue
         try:
             update_problem_solution_markdown(session, target_info["base_url"], code, read_text_smart(solution_path))
-            row["status"] += " vÃ  lá»i giáº£i"
-            log_lines.append(f"{code}: Ä‘Ã£ up lá»i giáº£i/hÆ°á»›ng dáº«n Markdown.")
+            row["status"] += " và lời giải"
+            log_lines.append(f"{code}: đã up lời giải/hướng dẫn Markdown.")
         except Exception as exc:
-            row["status"] = "âœ— Lá»—i"
+            row["status"] = "✗ Lỗi"
             row["error"] = str(exc)
-            log_lines.append(f"âœ— {code}: khÃ´ng up lá»i giáº£i Ä‘Æ°á»£c: {exc}")
+            log_lines.append(f"✗ {code}: không up lời giải được: {exc}")
 
 
 def update_problem_solution_markdown(session, base_url: str, code: str, content: str) -> str:
     solution_url = urljoin(base_url, f"/problem/{code}/edit/solutions")
     page = session.get(solution_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c trang lá»i giáº£i {code}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được trang lời giải {code}: HTTP {page.status_code}")
     parser = FormDataParser()
     parser.feed(page.text)
     form = next((form for form in parser.forms if any(name == "content" for name, _value in form)), None)
     if not form:
-        raise RuntimeError("KhÃ´ng tÃ¬m tháº¥y form lá»i giáº£i cÃ³ trÆ°á»ng content.")
+        raise RuntimeError("Không tìm thấy form lời giải có trường content.")
     data = set_single_form_fields(form, {"content": content})
     result = session.post(solution_url, data=data, headers={"Referer": solution_url}, allow_redirects=True, timeout=30)
     if not result.ok:
-        raise RuntimeError(f"Up lá»i giáº£i lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Up lời giải lỗi HTTP {result.status_code}")
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError("Form lá»i giáº£i bÃ¡o lá»—i:\n" + "\n".join(errors))
+        raise RuntimeError("Form lời giải báo lỗi:\n" + "\n".join(errors))
     return result.url
 
 
@@ -5027,15 +5010,15 @@ def api_confirm_upload():
             return jsonify(
                 {
                     "ok": False,
-                    "error": "Dá»¯ liá»‡u chuáº©n bá»‹ Ä‘Ã£ háº¿t háº¡n hoáº·c server vá»«a khá»Ÿi Ä‘á»™ng láº¡i. HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u láº¡i rá»“i má»›i XÃ¡c nháº­n Up bÃ i.",
+                    "error": "Dữ liệu chuẩn bị đã hết hạn hoặc server vừa khởi động lại. Hãy bấm Chuẩn bị dữ liệu lại rồi mới Xác nhận Up bài.",
                 }
             ), 400
         state = prepared_uploads[prepare_id]
         target = payload["settings"]["target"]
         result_rows, log_lines = upload_rows(target, payload["settings"], payload["rows"], state, progress_id)
         append_single_solution_uploads(target, payload["settings"], result_rows, state, log_lines)
-        ok = all((not row.get("selected")) or row["status"].startswith("âœ“") for row in result_rows)
-        progress_finish(progress_id, ok, "ÄÃ£ hoÃ n táº¥t up bÃ i")
+        ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
+        progress_finish(progress_id, ok, "Đã hoàn tất up bài")
         return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
@@ -5044,22 +5027,22 @@ def api_confirm_upload():
 
 def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, progress_id: str | None = None) -> tuple[list[dict], list[str]]:
     target_info = TARGETS[target]
-    log_lines = [f"ÄÃ­ch: {target_info['label']}", "Táº¡o bÃ i qua admin form: /admin/judge/problem/add/"]
+    log_lines = [f"Đích: {target_info['label']}", "Tạo bài qua admin form: /admin/judge/problem/add/"]
     selected_language_ids = language_ids_for_target(target, settings.get("languages", []))
     if not selected_language_ids:
-        log_lines.append("NgÃ´n ngá»¯ cho phÃ©p: form/admin hiá»‡n táº¡i khÃ´ng cÃ³ ID tÆ°Æ¡ng á»©ng, backend bá» qua an toÃ n.")
+        log_lines.append("Ngôn ngữ cho phép: form/admin hiện tại không có ID tương ứng, backend bỏ qua an toàn.")
     if settings.get("creator"):
-        log_lines.append("Creators Ä‘Æ°á»£c hiá»ƒn thá»‹ trÃªn giao diá»‡n; backend chá»‰ set náº¿u form admin há»— trá»£ trá»±c tiáº¿p.")
+        log_lines.append("Creators được hiển thị trên giao diện; backend chỉ set nếu form admin hỗ trợ trực tiếp.")
 
     session = login_upload_target(target, target_info, settings)
     result_rows = []
     total = len([row for row in rows if row.get("selected")])
     done = 0
-    progress_update(progress_id, phase="confirm-upload", done=done, total=total, rows=result_rows, message="Báº¯t Ä‘áº§u up bÃ i")
+    progress_update(progress_id, phase="confirm-upload", done=done, total=total, rows=result_rows, message="Bắt đầu up bài")
     for row in rows:
         row = dict(row)
         if not row.get("selected"):
-            row["status"] = "Bá» qua"
+            row["status"] = "Bỏ qua"
             result_rows.append(row)
             continue
         try:
@@ -5067,18 +5050,18 @@ def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, prog
             dest_code, code_note = resolve_problem_code_for_upload(session, target, target_info["base_url"], raw_code)
             if dest_code != raw_code:
                 row["code"] = dest_code
-                log_lines.append(code_note or f"{raw_code}: mÃ£ Ä‘Ã­ch {TARGETS[target]['label']} Ä‘Æ°á»£c Ä‘á»•i thÃ nh {dest_code}")
+                log_lines.append(code_note or f"{raw_code}: mã đích {TARGETS[target]['label']} được đổi thành {dest_code}")
             bundle = replace(state["bundles"][row["original_code"]], code=dest_code, name=row["name"])
             tests = state["tests"].get(row["original_code"])
             action_status = upload_one_problem(session, target, target_info, bundle, tests, row, settings, selected_language_ids, log_lines)
-            row["status"] = action_status or "âœ“ ThÃ nh cÃ´ng"
+            row["status"] = action_status or "✓ Thành công"
             row["link"] = problem_url(target_info["base_url"], bundle.code)
         except ProblemAlreadyExists as exc:
-            row["status"] = "âœ— BÃ i Ä‘Ã£ tá»“n táº¡i"
-            log_lines.append(f"âœ— {row.get('code')}: {exc}. Bá» qua bÃ i nÃ y vÃ  tiáº¿p tá»¥c cÃ¡c bÃ i khÃ¡c.")
+            row["status"] = "✗ Bài đã tồn tại"
+            log_lines.append(f"✗ {row.get('code')}: {exc}. Bỏ qua bài này và tiếp tục các bài khác.")
         except Exception as exc:
-            row["status"] = "âœ— Lá»—i"
-            log_lines.append(f"âœ— {row.get('code')}: {exc}")
+            row["status"] = "✗ Lỗi"
+            log_lines.append(f"✗ {row.get('code')}: {exc}")
         result_rows.append(row)
         done += 1
         progress_update(progress_id, phase="confirm-upload", done=done, total=total, rows=result_rows, message=f"{row.get('code')}: {row.get('status')}")
@@ -5102,12 +5085,12 @@ def is_problem_add_form(page: str) -> bool:
 
 
 def tinhoctre_admin_cookie_error(final_url: str = "") -> str:
-    suffix = f" URL hiá»‡n táº¡i: {final_url}" if final_url else ""
+    suffix = f" URL hiện tại: {final_url}" if final_url else ""
     return (
-        "Cookie TinHocTre chÆ°a vÃ o Ä‘Æ°á»£c form admin táº¡o bÃ i. "
-        "CÃ³ thá»ƒ báº¡n copy cookie khi chÆ°a Ä‘Äƒng nháº­p admin, cookie Ä‘Ã£ háº¿t háº¡n, hoáº·c tÃ i khoáº£n khÃ´ng cÃ³ quyá»n staff/admin. "
-        "HÃ£y má»Ÿ https://tinhoctre.vn/admin/judge/problem/add/ trÃªn cÃ¹ng trÃ¬nh duyá»‡t, Ä‘áº£m báº£o tháº¥y form táº¡o bÃ i, "
-        "rá»“i copy láº¡i Request Header Cookie vÃ  dÃ¡n vÃ o tab TÃ i khoáº£n."
+        "Cookie TinHocTre chưa vào được form admin tạo bài. "
+        "Có thể bạn copy cookie khi chưa đăng nhập admin, cookie đã hết hạn, hoặc tài khoản không có quyền staff/admin. "
+        "Hãy mở https://tinhoctre.vn/admin/judge/problem/add/ trên cùng trình duyệt, đảm bảo thấy form tạo bài, "
+        "rồi copy lại Request Header Cookie và dán vào tab Tài khoản."
         + suffix
     )
 
@@ -5245,10 +5228,10 @@ def update_existing_problem_statement(
     edit_url = urljoin(base_url, f"/problem/{bundle.code}/edit")
     page = session.get(edit_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form sá»­a bÃ i {bundle.code}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được form sửa bài {bundle.code}: HTTP {page.status_code}")
     data = collect_problem_edit_form_data(page.text)
     if not data:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y form sá»­a Ä‘á» bÃ i cho {bundle.code}. TÃ i khoáº£n cÃ³ thá»ƒ chÆ°a cÃ³ quyá»n sá»­a bÃ i nÃ y.")
+        raise RuntimeError(f"Không tìm thấy form sửa đề bài cho {bundle.code}. Tài khoản có thể chưa có quyền sửa bài này.")
     description = statement_for_target(
         target,
         read_text_smart(bundle.statement),
@@ -5264,15 +5247,15 @@ def update_existing_problem_statement(
     )
     result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=30)
     if not result.ok:
-        raise RuntimeError(f"Ghi Ä‘Ã¨ Ä‘á» bÃ i lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Ghi đè đề bài lỗi HTTP {result.status_code}")
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError("Form ghi Ä‘Ã¨ Ä‘á» bÃ i bÃ¡o lá»—i:\n" + "\n".join(errors))
+        raise RuntimeError("Form ghi đè đề bài báo lỗi:\n" + "\n".join(errors))
     if "/accounts/login" in result.url or "/admin/login" in result.url:
-        raise RuntimeError(f"Ghi Ä‘Ã¨ Ä‘á» bÃ i bá»‹ chuyá»ƒn vá» trang Ä‘Äƒng nháº­p: {result.url}")
+        raise RuntimeError(f"Ghi đè đề bài bị chuyển về trang đăng nhập: {result.url}")
     verify = session.get(edit_url, timeout=30)
     if not verify.ok:
-        raise RuntimeError(f"KhÃ´ng kiá»ƒm tra láº¡i Ä‘Æ°á»£c Ä‘á» bÃ i sau khi ghi Ä‘Ã¨: HTTP {verify.status_code}")
+        raise RuntimeError(f"Không kiểm tra lại được đề bài sau khi ghi đè: HTTP {verify.status_code}")
     saved_description = textarea_value(verify.text, "description")
     saved_name = input_value_from_page(verify.text, "name", "")
     if saved_description.strip() != description.strip():
@@ -5283,11 +5266,11 @@ def update_existing_problem_statement(
         (debug_dir / f"{bundle.code}_post.html").write_text(result.text, encoding="utf-8", errors="replace")
         (debug_dir / f"{bundle.code}_verify.html").write_text(verify.text, encoding="utf-8", errors="replace")
         raise RuntimeError(
-            f"HNCode nháº­n POST nhÆ°ng Ä‘á» bÃ i {bundle.code} chÆ°a khá»›p ná»™i dung má»›i. "
-            f"ÄÃ£ lÆ°u debug táº¡i {debug_dir}."
+            f"HNCode nhận POST nhưng đề bài {bundle.code} chưa khớp nội dung mới. "
+            f"Đã lưu debug tại {debug_dir}."
         )
     if saved_name and saved_name != bundle.name:
-        raise RuntimeError(f"HNCode nháº­n POST nhÆ°ng tÃªn bÃ i {bundle.code} chÆ°a Ä‘á»•i: {saved_name!r}")
+        raise RuntimeError(f"HNCode nhận POST nhưng tên bài {bundle.code} chưa đổi: {saved_name!r}")
     return result.url
 
 
@@ -5310,10 +5293,10 @@ def update_hncode_problem_metadata(
     edit_url = urljoin(base_url, f"/problem/{code}/edit")
     page = session.get(edit_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form metadata HNCode {code}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được form metadata HNCode {code}: HTTP {page.status_code}")
     data = collect_problem_edit_form_data(page.text)
     if not data:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y form metadata HNCode cho {code}.")
+        raise RuntimeError(f"Không tìm thấy form metadata HNCode cho {code}.")
     resolved_type_ids = resolve_hncode_type_ids(page.text, tags_text, type_ids or [default_type_id], default_type_id)
     data = set_form_fields(
         data,
@@ -5331,15 +5314,15 @@ def update_hncode_problem_metadata(
     )
     result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=30)
     if not result.ok:
-        raise RuntimeError(f"Cáº­p nháº­t metadata HNCode {code} lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Cập nhật metadata HNCode {code} lỗi HTTP {result.status_code}")
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError(f"Form metadata HNCode {code} bÃ¡o lá»—i:\n" + "\n".join(errors))
+        raise RuntimeError(f"Form metadata HNCode {code} báo lỗi:\n" + "\n".join(errors))
     if "/accounts/login" in result.url or "/admin/login" in result.url:
-        raise RuntimeError(f"Cáº­p nháº­t metadata HNCode {code} bá»‹ chuyá»ƒn vá» trang Ä‘Äƒng nháº­p: {result.url}")
+        raise RuntimeError(f"Cập nhật metadata HNCode {code} bị chuyển về trang đăng nhập: {result.url}")
     verify = session.get(edit_url, timeout=30)
     if not verify.ok:
-        raise RuntimeError(f"KhÃ´ng kiá»ƒm tra láº¡i metadata HNCode {code}: HTTP {verify.status_code}")
+        raise RuntimeError(f"Không kiểm tra lại metadata HNCode {code}: HTTP {verify.status_code}")
     saved_points = input_value_from_page(verify.text, "points", "")
     saved_type_ids = selected_values(verify.text, "types")
     if not same_numeric_value(saved_points, str(points or "100")):
@@ -5348,8 +5331,8 @@ def update_hncode_problem_metadata(
         (debug_dir / f"{code}_post.html").write_text(result.text, encoding="utf-8", errors="replace")
         (debug_dir / f"{code}_verify.html").write_text(verify.text, encoding="utf-8", errors="replace")
         raise RuntimeError(
-            f"HNCode nháº­n POST nhÆ°ng Points cá»§a {code} váº«n lÃ  {saved_points!r}, "
-            f"khÃ´ng pháº£i {points!r}. ÄÃ£ lÆ°u debug táº¡i {debug_dir}."
+            f"HNCode nhận POST nhưng Points của {code} vẫn là {saved_points!r}, "
+            f"không phải {points!r}. Đã lưu debug tại {debug_dir}."
         )
     missing_type_ids = [value for value in resolved_type_ids if value not in saved_type_ids]
     if missing_type_ids:
@@ -5358,8 +5341,8 @@ def update_hncode_problem_metadata(
         (debug_dir / f"{code}_post.html").write_text(result.text, encoding="utf-8", errors="replace")
         (debug_dir / f"{code}_verify.html").write_text(verify.text, encoding="utf-8", errors="replace")
         raise RuntimeError(
-            f"HNCode nháº­n POST nhÆ°ng Problem Types cá»§a {code} váº«n lÃ  {saved_type_ids}, "
-            f"chÆ°a cÃ³ {missing_type_ids}. ÄÃ£ lÆ°u debug táº¡i {debug_dir}."
+            f"HNCode nhận POST nhưng Problem Types của {code} vẫn là {saved_type_ids}, "
+            f"chưa có {missing_type_ids}. Đã lưu debug tại {debug_dir}."
         )
     saved_description = textarea_value(verify.text, "description")
     ensure_hncode_vi_translation(session, base_url, code, name, saved_description)
@@ -5370,10 +5353,10 @@ def find_hncode_admin_problem_change_url(session, base_url: str, code: str) -> s
     search_url = urljoin(base_url, f"/admin/judge/problem/?q={quote(code)}")
     page = session.get(search_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c trang admin tÃ¬m bÃ i {code}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được trang admin tìm bài {code}: HTTP {page.status_code}")
     match = re.search(r"/admin/judge/problem/(\d+)/change/", page.text)
     if not match:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y admin change URL cho bÃ i {code}.")
+        raise RuntimeError(f"Không tìm thấy admin change URL cho bài {code}.")
     return urljoin(base_url, f"/admin/judge/problem/{match.group(1)}/change/")
 
 
@@ -5381,10 +5364,10 @@ def ensure_hncode_vi_translation(session, base_url: str, code: str, name: str, d
     change_url = find_hncode_admin_problem_change_url(session, base_url, code)
     page = session.get(change_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c admin form bÃ i {code}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được admin form bài {code}: HTTP {page.status_code}")
     data = collect_problem_edit_form_data(page.text)
     if not data:
-        raise RuntimeError(f"KhÃ´ng Ä‘á»c Ä‘Æ°á»£c admin form Ä‘á»ƒ cáº­p nháº­t báº£n dá»‹ch tiáº¿ng Viá»‡t cho {code}.")
+        raise RuntimeError(f"Không đọc được admin form để cập nhật bản dịch tiếng Việt cho {code}.")
     object_id = re.search(r"/admin/judge/problem/(\d+)/change/", change_url)
     problem_id = object_id.group(1) if object_id else ""
     data = [(key, value) for key, value in data if "__prefix__" not in key]
@@ -5407,13 +5390,13 @@ def ensure_hncode_vi_translation(session, base_url: str, code: str, name: str, d
         f"translations-{target_index}-problem": values.get(f"translations-{target_index}-problem", problem_id),
     }
     data = set_single_form_fields(data, updates)
-    data.append(("_save", "LÆ°u"))
+    data.append(("_save", "Lưu"))
     result = session.post(change_url, data=data, headers={"Referer": change_url}, allow_redirects=True, timeout=30)
     if not result.ok:
-        raise RuntimeError(f"Cáº­p nháº­t báº£n dá»‹ch tiáº¿ng Viá»‡t cho {code} lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Cập nhật bản dịch tiếng Việt cho {code} lỗi HTTP {result.status_code}")
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError(f"Form báº£n dá»‹ch tiáº¿ng Viá»‡t HNCode {code} bÃ¡o lá»—i:\n" + "\n".join(errors))
+        raise RuntimeError(f"Form bản dịch tiếng Việt HNCode {code} báo lỗi:\n" + "\n".join(errors))
 
 
 def same_numeric_value(left: str, right: str) -> bool:
@@ -5456,7 +5439,7 @@ def upload_one_problem(
             default_type_id=target_info["type_id"],
             tags_text=tags_text,
         )
-        log_lines.append(f"{bundle.code}: Ä‘Ã£ cáº­p nháº­t láº¡i Ä‘iá»ƒm vÃ  dáº¡ng bÃ i táº­p {target_info['label']}.")
+        log_lines.append(f"{bundle.code}: đã cập nhật lại điểm và dạng bài tập {target_info['label']}.")
 
     exists = problem_exists_for_target(session, target, base_url, bundle.code)
     if exists:
@@ -5464,29 +5447,29 @@ def upload_one_problem(
         overwrite_statement = bool(settings.get("overwrite_statement") or overwrite_row) and bool(row.get("upload_statement"))
         overwrite_tests = bool(settings.get("overwrite_tests") or overwrite_row) and bool(row.get("upload_tests"))
         if not (overwrite_statement or overwrite_tests):
-            raise ProblemAlreadyExists(f"MÃ£ bÃ i {bundle.code} Ä‘Ã£ tá»“n táº¡i táº¡i {problem_url(base_url, bundle.code)}")
-        log_lines.append(f"{bundle.code}: bÃ i Ä‘Ã£ tá»“n táº¡i, chuyá»ƒn sang cháº¿ Ä‘á»™ ghi Ä‘Ã¨ pháº§n Ä‘Æ°á»£c chá»n.")
+            raise ProblemAlreadyExists(f"Mã bài {bundle.code} đã tồn tại tại {problem_url(base_url, bundle.code)}")
+        log_lines.append(f"{bundle.code}: bài đã tồn tại, chuyển sang chế độ ghi đè phần được chọn.")
         actions: list[str] = []
         if row.get("upload_statement"):
             if overwrite_statement:
                 change_url = update_existing_problem_statement(session, target, base_url, bundle, settings)
-                log_lines.append(f"{bundle.code}: Ä‘Ã£ ghi Ä‘Ã¨ Ä‘á» bÃ i ({change_url}).")
-                actions.append("Ä‘á» bÃ i")
+                log_lines.append(f"{bundle.code}: đã ghi đè đề bài ({change_url}).")
+                actions.append("đề bài")
             else:
-                log_lines.append(f"{bundle.code}: khÃ´ng ghi Ä‘Ã¨ Ä‘á» bÃ i vÃ¬ chÆ°a tÃ­ch Ghi Ä‘Ã¨ Ä‘á» bÃ i.")
+                log_lines.append(f"{bundle.code}: không ghi đè đề bài vì chưa tích Ghi đè đề bài.")
         if row.get("upload_tests"):
             if overwrite_tests:
                 if tests is None:
-                    raise RuntimeError("BÃ i nÃ y khÃ´ng cÃ³ bá»™ test trong dá»¯ liá»‡u chuáº©n bá»‹. HÃ£y bá» tÃ­ch Up test hoáº·c dÃ¹ng file zip/gentest.")
+                    raise RuntimeError("Bài này không có bộ test trong dữ liệu chuẩn bị. Hãy bỏ tích Up test hoặc dùng file zip/gentest.")
                 upload_tests_for_target(session, target, base_url, bundle.code, tests)
-                log_lines.append(f"{bundle.code}: Ä‘Ã£ ghi Ä‘Ã¨ {len(tests.input_files)} test.")
+                log_lines.append(f"{bundle.code}: đã ghi đè {len(tests.input_files)} test.")
                 actions.append("test")
             else:
-                log_lines.append(f"{bundle.code}: khÃ´ng ghi Ä‘Ã¨ test vÃ¬ chÆ°a tÃ­ch Ghi Ä‘Ã¨ test.")
+                log_lines.append(f"{bundle.code}: không ghi đè test vì chưa tích Ghi đè test.")
         submit_if_requested(session, base_url, bundle, settings, log_lines)
         if overwrite_statement or overwrite_tests or overwrite_row:
             refresh_hncode_metadata()
-        return "âœ“ Ghi Ä‘Ã¨ " + " vÃ  ".join(actions) if actions else "âœ“ KhÃ´ng cÃ³ pháº§n ghi Ä‘Ã¨"
+        return "✓ Ghi đè " + " và ".join(actions) if actions else "✓ Không có phần ghi đè"
     actions: list[str] = []
     if row.get("upload_statement"):
         type_ids = type_ids_from_tags(row.get("tags") or settings.get("tags"), target) or [target_info["type_id"]]
@@ -5518,24 +5501,24 @@ def upload_one_problem(
             allow_all_languages=False,
             allowed_language_ids=language_ids,
         )
-        log_lines.append(f"{bundle.code}: Ä‘Ã£ táº¡o Ä‘á» qua admin form ({change_url}).")
-        actions.append("táº¡o Ä‘á»")
+        log_lines.append(f"{bundle.code}: đã tạo đề qua admin form ({change_url}).")
+        actions.append("tạo đề")
     else:
-        log_lines.append(f"{bundle.code}: khÃ´ng upload Ä‘á».")
+        log_lines.append(f"{bundle.code}: không upload đề.")
 
     if row.get("upload_tests"):
         if tests is None:
-            raise RuntimeError("BÃ i nÃ y khÃ´ng cÃ³ bá»™ test trong dá»¯ liá»‡u chuáº©n bá»‹. HÃ£y bá» tÃ­ch Up test hoáº·c dÃ¹ng file zip/gentest.")
+            raise RuntimeError("Bài này không có bộ test trong dữ liệu chuẩn bị. Hãy bỏ tích Up test hoặc dùng file zip/gentest.")
         upload_tests_for_target(session, target, base_url, bundle.code, tests)
-        log_lines.append(f"{bundle.code}: Ä‘Ã£ upload {len(tests.input_files)} test.")
+        log_lines.append(f"{bundle.code}: đã upload {len(tests.input_files)} test.")
         actions.append("upload test")
     else:
-        log_lines.append(f"{bundle.code}: khÃ´ng upload test.")
+        log_lines.append(f"{bundle.code}: không upload test.")
 
     submit_if_requested(session, base_url, bundle, settings, log_lines)
     if target in {"hncode", "tinhoctre"} and row.get("upload_statement"):
         refresh_hncode_metadata()
-    return "âœ“ " + " vÃ  ".join(actions) if actions else "âœ“ ThÃ nh cÃ´ng"
+    return "✓ " + " và ".join(actions) if actions else "✓ Thành công"
 
 
 def problem_exists_for_target(session, target: str, base_url: str, code: str) -> bool:
@@ -5770,7 +5753,7 @@ def find_edge_executable() -> Path:
     for candidate in candidates:
         if candidate and Path(candidate).exists():
             return Path(candidate)
-    raise RuntimeError("KhÃ´ng tÃ¬m tháº¥y Edge/Chrome trÃªn mÃ¡y local. HÃ£y cÃ i Edge hoáº·c Ä‘áº·t biáº¿n mÃ´i trÆ°á»ng EDGE_PATH.")
+    raise RuntimeError("Không tìm thấy Edge/Chrome trên máy local. Hãy cài Edge hoặc đặt biến môi trường EDGE_PATH.")
 
 
 def stop_edge_processes() -> None:
@@ -5789,7 +5772,7 @@ def cookie_from_tinhoctre_debug_browser() -> str:
     try:
         import websocket
     except Exception as exc:
-        raise RuntimeError("Thiáº¿u thÆ° viá»‡n websocket-client Ä‘á»ƒ Ä‘á»c cookie Edge. HÃ£y cÃ i: pip install websocket-client") from exc
+        raise RuntimeError("Thiếu thư viện websocket-client để đọc cookie Edge. Hãy cài: pip install websocket-client") from exc
 
     port = int(os.getenv("TINHOCTRE_CHROME_DEBUG_PORT", "9223"))
     deadline = time.time() + 20
@@ -5803,11 +5786,11 @@ def cookie_from_tinhoctre_debug_browser() -> str:
             last_error = exc
             time.sleep(0.5)
     if not version:
-        raise RuntimeError(f"KhÃ´ng káº¿t ná»‘i Ä‘Æ°á»£c Edge Ä‘Äƒng nháº­p TinHocTre á»Ÿ cá»•ng {port}. HÃ£y Ä‘Ã³ng háº¿t Edge, rá»“i báº¥m Má»Ÿ Edge Ä‘Äƒng nháº­p TinHocTre trÆ°á»›c.") from last_error
+        raise RuntimeError(f"Không kết nối được Edge đăng nhập TinHocTre ở cổng {port}. Hãy đóng hết Edge, rồi bấm Mở Edge đăng nhập TinHocTre trước.") from last_error
 
     ws_url = version.get("webSocketDebuggerUrl")
     if not ws_url:
-        raise RuntimeError("Edge DevTools khÃ´ng tráº£ webSocketDebuggerUrl.")
+        raise RuntimeError("Edge DevTools không trả webSocketDebuggerUrl.")
     ws = websocket.create_connection(ws_url, timeout=10)
     counter = 0
 
@@ -5840,7 +5823,7 @@ def cookie_from_tinhoctre_debug_browser() -> str:
         if "tinhoctre.vn" in domain and name and value:
             useful.append((name, value))
     if not useful:
-        raise RuntimeError("KhÃ´ng tháº¥y cookie tinhoctre.vn trong Edge. HÃ£y Ä‘Äƒng nháº­p TinHocTre admin trong cá»­a sá»• Edge vá»«a má»Ÿ rá»“i thá»­ láº¡i.")
+        raise RuntimeError("Không thấy cookie tinhoctre.vn trong Edge. Hãy đăng nhập TinHocTre admin trong cửa sổ Edge vừa mở rồi thử lại.")
 
     priority = {"cf_clearance": 0, "aws-waf-token": 1, "csrftoken": 2, "sessionid": 3}
     useful.sort(key=lambda item: (priority.get(item[0], 50), item[0]))
@@ -6066,13 +6049,13 @@ def compact_form_red_errors(page: str) -> list[str]:
 def extract_hncode_course_slug(value: str) -> str:
     value = (value or "").strip()
     if not value:
-        raise RuntimeError("ChÆ°a nháº­p URL hoáº·c mÃ£ course HNCode.")
+        raise RuntimeError("Chưa nhập URL hoặc mã course HNCode.")
     match = re.search(r"/course/([^/?#\s]+)", value)
     if match:
         return html.unescape(match.group(1)).strip("/")
     if re.fullmatch(r"[A-Za-z0-9_-]+", value):
         return value
-    raise RuntimeError("KhÃ´ng Ä‘á»c Ä‘Æ°á»£c mÃ£ course. HÃ£y nháº­p URL dáº¡ng https://hncode.edu.vn/course/<ma_course>.")
+    raise RuntimeError("Không đọc được mã course. Hãy nhập URL dạng https://hncode.edu.vn/course/<ma_course>.")
 
 
 def hncode_course_page_url(course_slug: str, path: str = "") -> str:
@@ -6082,17 +6065,17 @@ def hncode_course_page_url(course_slug: str, path: str = "") -> str:
 def hncode_course_admin_id(session: requests.Session, course_slug: str) -> str:
     page = session.get(hncode_course_page_url(course_slug, "/edit_lessons"), timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c course {course_slug}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được course {course_slug}: HTTP {page.status_code}")
     match = re.search(r"/admin/judge/course/(\d+)/change/", page.text)
     if not match:
-        raise RuntimeError(f"KhÃ´ng Ä‘á»c Ä‘Æ°á»£c ID admin cá»§a course {course_slug}.")
+        raise RuntimeError(f"Không đọc được ID admin của course {course_slug}.")
     return match.group(1)
 
 
 def hncode_course_lessons(session: requests.Session, course_slug: str) -> list[dict]:
     page = session.get(hncode_course_page_url(course_slug, "/edit_lessons"), timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c danh sÃ¡ch lesson course {course_slug}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được danh sách lesson course {course_slug}: HTTP {page.status_code}")
     rows: list[dict] = []
     seen: set[str] = set()
     for lesson_id, block in re.findall(r'<li\b[^>]*class=["\'][^"\']*\bsortable-item\b[^"\']*["\'][^>]*data-id=["\']?(\d+)["\']?[^>]*>(.*?)</li>', page.text, re.S | re.I):
@@ -6117,7 +6100,7 @@ def hncode_course_lessons(session: requests.Session, course_slug: str) -> list[d
 def hncode_course_contests(session: requests.Session, course_slug: str) -> list[dict]:
     page = session.get(hncode_course_page_url(course_slug, "/contests"), timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c danh sÃ¡ch contest course {course_slug}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được danh sách contest course {course_slug}: HTTP {page.status_code}")
     rows: list[dict] = []
     seen: set[str] = set()
     for block in re.findall(r'<li\b[^>]*class=["\'][^"\']*\bsortable-item\b[^"\']*["\'][^>]*>(.*?)</li>', page.text, re.S | re.I):
@@ -6252,10 +6235,10 @@ def copy_hncode_lesson_items(session: requests.Session, dest_course_slug: str, d
     edit_url = hncode_course_page_url(dest_course_slug, f"/edit_lessons_new/{dest_lesson_id}")
     page = session.get(edit_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form sá»­a lesson Ä‘Ã­ch {dest_lesson_id}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được form sửa lesson đích {dest_lesson_id}: HTTP {page.status_code}")
     form_data = collect_lesson_form_data(page.text, dest_lesson_id)
     if not form_data:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y form danh sÃ¡ch bÃ i/quiz trong lesson Ä‘Ã­ch {dest_lesson_id}.")
+        raise RuntimeError(f"Không tìm thấy form danh sách bài/quiz trong lesson đích {dest_lesson_id}.")
     source_problems = lesson_problem_rows_from_page(source_page, source_lesson_id)
     source_quizzes = lesson_quiz_rows_from_page(source_page, source_lesson_id)
     if not source_problems and not source_quizzes:
@@ -6303,17 +6286,17 @@ def copy_hncode_lesson_items(session: requests.Session, dest_course_slug: str, d
     data = append_lesson_quiz_formset(data, dest_lesson_id, quiz_rows, quiz_initial)
     result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=60)
     if not result.ok:
-        raise RuntimeError(f"LÆ°u danh sÃ¡ch bÃ i/quiz lesson {dest_lesson_id} lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Lưu danh sách bài/quiz lesson {dest_lesson_id} lỗi HTTP {result.status_code}")
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError("Form sá»­a lesson bÃ¡o lá»—i:\n" + "\n".join(errors))
+        raise RuntimeError("Form sửa lesson báo lỗi:\n" + "\n".join(errors))
 
 
 def clone_hncode_lesson_native(session: requests.Session, source_course: str, lesson_id: str, title: str, dest_course_slug: str, dest_course_id: str) -> str:
     source_edit_url = hncode_course_page_url(source_course, f"/edit_lessons_new/{lesson_id}")
     source_page = session.get(source_edit_url, timeout=30)
     if not source_page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form sá»­a lesson nguá»“n {lesson_id}: HTTP {source_page.status_code}")
+        raise RuntimeError(f"Không mở được form sửa lesson nguồn {lesson_id}: HTTP {source_page.status_code}")
     title = input_value_from_page(source_page.text, "title", title) or title
     points = input_value_from_page(source_page.text, "points", "100") or "100"
     content = textarea_value(source_page.text, "content")
@@ -6321,10 +6304,10 @@ def clone_hncode_lesson_native(session: requests.Session, source_course: str, le
     create_url = hncode_course_page_url(dest_course_slug, "/lesson/create")
     page = session.get(create_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form táº¡o lesson á»Ÿ course Ä‘Ã­ch {dest_course_slug}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được form tạo lesson ở course đích {dest_course_slug}: HTTP {page.status_code}")
     form_data = collect_form_with_field(page.text, "title")
     if not form_data:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y form táº¡o lesson á»Ÿ course Ä‘Ã­ch {dest_course_slug}.")
+        raise RuntimeError(f"Không tìm thấy form tạo lesson ở course đích {dest_course_slug}.")
     data = replace_form_fields(
         form_data,
         {"title": title, "points": points, "content": content, "order": order},
@@ -6334,16 +6317,16 @@ def clone_hncode_lesson_native(session: requests.Session, source_course: str, le
         data.append(("is_visible", "on"))
     result = session.post(create_url, data=data, headers={"Referer": create_url}, allow_redirects=True, timeout=60)
     if not result.ok:
-        raise RuntimeError(f"Táº¡o lesson {lesson_id} á»Ÿ course Ä‘Ã­ch lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Tạo lesson {lesson_id} ở course đích lỗi HTTP {result.status_code}")
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError("Form táº¡o lesson bÃ¡o lá»—i:\n" + "\n".join(errors))
+        raise RuntimeError("Form tạo lesson báo lỗi:\n" + "\n".join(errors))
     link = find_hncode_course_lesson_url(session, dest_course_slug, title)
     if not link:
-        raise RuntimeError(f"Táº¡o lesson {lesson_id} xong nhung chua thay lesson moi trong course dich {dest_course_slug}.")
+        raise RuntimeError(f"Tạo lesson {lesson_id} xong nhung chua thay lesson moi trong course dich {dest_course_slug}.")
     match = re.search(r"/lesson/(\d+)", link)
     if not match:
-        raise RuntimeError(f"KhÃ´ng Ä‘á»c Ä‘Æ°á»£c ID lesson má»›i tá»« link {link}.")
+        raise RuntimeError(f"Không đọc được ID lesson mới từ link {link}.")
     copy_hncode_lesson_items(session, dest_course_slug, match.group(1), source_page.text, lesson_id)
     return link
 
@@ -6369,20 +6352,20 @@ def clone_hncode_contest_native(session: requests.Session, contest_key: str, new
     source_url = urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}/edit")
     source_page = session.get(source_url, timeout=30)
     if not source_page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form sá»­a contest nguá»“n {contest_key}: HTTP {source_page.status_code}")
+        raise RuntimeError(f"Không mở được form sửa contest nguồn {contest_key}: HTTP {source_page.status_code}")
     name = input_value_from_page(source_page.text, "name", contest_key) or contest_key
     start_time = input_value_from_page(source_page.text, "start_time", "")
     end_time = input_value_from_page(source_page.text, "end_time", "")
     problem_rows = hncode_contest_edit_problem_rows(source_page.text)
     if not problem_rows:
-        raise RuntimeError(f"Contest nguá»“n {contest_key} khÃ´ng cÃ³ bÃ i Ä‘á»ƒ clone.")
+        raise RuntimeError(f"Contest nguồn {contest_key} không có bài để clone.")
     add_url = hncode_course_page_url(dest_course_slug, "/add_contest")
     page = session.get(add_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form thÃªm contest vÃ o course Ä‘Ã­ch {dest_course_slug}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được form thêm contest vào course đích {dest_course_slug}: HTTP {page.status_code}")
     form_data = collect_form_with_field(page.text, "key")
     if not form_data:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y form thÃªm contest vÃ o course Ä‘Ã­ch {dest_course_slug}.")
+        raise RuntimeError(f"Không tìm thấy form thêm contest vào course đích {dest_course_slug}.")
     data = replace_form_fields(
         form_data,
         {
@@ -6398,26 +6381,26 @@ def clone_hncode_contest_native(session: requests.Session, contest_key: str, new
         data.append(("problems", str(row["problem"])))
     result = session.post(add_url, data=data, headers={"Referer": add_url}, allow_redirects=True, timeout=90)
     if not result.ok:
-        raise RuntimeError(f"Táº¡o contest {new_key} trong course Ä‘Ã­ch lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Tạo contest {new_key} trong course đích lỗi HTTP {result.status_code}")
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError("Form thÃªm contest vÃ o course bÃ¡o lá»—i:\n" + "\n".join(errors))
+        raise RuntimeError("Form thêm contest vào course báo lỗi:\n" + "\n".join(errors))
     link = find_hncode_course_contest_url(session, dest_course_slug, new_key)
     if not link:
-        raise RuntimeError(f"Táº¡o contest {new_key} xong nhung chua thay trong course dich {dest_course_slug}.")
+        raise RuntimeError(f"Tạo contest {new_key} xong nhung chua thay trong course dich {dest_course_slug}.")
     return link
 
 
 def extract_hncode_contest_key(value: str) -> str:
     value = (value or "").strip()
     if not value:
-        raise RuntimeError("ChÆ°a nháº­p URL hoáº·c mÃ£ contest HNCode.")
+        raise RuntimeError("Chưa nhập URL hoặc mã contest HNCode.")
     match = re.search(r"/contest/([^/?#\s]+)", value)
     if match:
         return html.unescape(match.group(1)).strip("/")
     if re.fullmatch(r"[A-Za-z0-9_-]+", value):
         return value
-    raise RuntimeError("KhÃ´ng Ä‘á»c Ä‘Æ°á»£c mÃ£ contest. HÃ£y nháº­p URL dáº¡ng https://oj.hncode.edu.vn/contest/<ma_contest>.")
+    raise RuntimeError("Không đọc được mã contest. Hãy nhập URL dạng https://oj.hncode.edu.vn/contest/<ma_contest>.")
 
 
 def contest_lesson_source_from_url(source: str, contest_url_value: str) -> str:
@@ -6435,7 +6418,7 @@ def extract_hncode_lesson_ref(value: str) -> tuple[str, str]:
     if not match:
         match = re.search(r"/course/([^/?#\s]+)/edit_lessons_new/(\d+)", value)
     if not match:
-        raise RuntimeError("KhÃ´ng Ä‘á»c Ä‘Æ°á»£c lesson. HÃ£y nháº­p URL dáº¡ng https://oj.hncode.edu.vn/course/<course>/lesson/<id>.")
+        raise RuntimeError("Không đọc được lesson. Hãy nhập URL dạng https://oj.hncode.edu.vn/course/<course>/lesson/<id>.")
     return html.unescape(match.group(1)), match.group(2)
 
 
@@ -6458,7 +6441,7 @@ def extract_contest_problem_rows_from_html(page: str, contest_key: str = "", def
 def hncode_contest_problem_rows(session, contest_key: str) -> list[dict]:
     rows = hncode_service.list_contest_problems(session, TARGETS["hncode"]["base_url"], contest_key, default_points="1")
     if not rows:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y bÃ i nÃ o trong contest {contest_key}.")
+        raise RuntimeError(f"Không tìm thấy bài nào trong contest {contest_key}.")
     return rows
 
 
@@ -6489,7 +6472,7 @@ def admin_problem_code_name_by_id(session: requests.Session, base_url: str, prob
 def hncode_lesson_problem_code_rows(session: requests.Session, course_slug: str, lesson_id: str) -> list[dict]:
     rows = hncode_service.list_lesson_problems(session, TARGETS["hncode"]["base_url"], course_slug, lesson_id)
     if not rows:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y bÃ i nÃ o trong lesson {course_slug}/lesson/{lesson_id}.")
+        raise RuntimeError(f"Không tìm thấy bài nào trong lesson {course_slug}/lesson/{lesson_id}.")
     return rows
 
 
@@ -6528,7 +6511,7 @@ def hnoj_contest_problem_rows(session: requests.Session, contest_key: str) -> li
             }
         )
     if not rows:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y bÃ i nÃ o trong contest HNOJ {contest_key}.")
+        raise RuntimeError(f"Không tìm thấy bài nào trong contest HNOJ {contest_key}.")
     return rows
 
 
@@ -6598,10 +6581,10 @@ def copy_hncode_contest_to_lesson(session, course_slug: str, lesson_id: str, pro
     edit_url = hncode_lesson_edit_url(course_slug, lesson_id)
     page = session.get(edit_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form sá»­a lesson HNCode: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được form sửa lesson HNCode: HTTP {page.status_code}")
     form_data = collect_lesson_form_data(page.text, lesson_id)
     if not form_data:
-        raise RuntimeError("KhÃ´ng tÃ¬m tháº¥y form danh sÃ¡ch bÃ i trong lesson HNCode.")
+        raise RuntimeError("Không tìm thấy form danh sách bài trong lesson HNCode.")
     base_data = remove_lesson_item_fields(form_data, lesson_id)
     current_rows = lesson_problem_rows_from_page(page.text, lesson_id)
     quiz_rows = lesson_quiz_rows_from_page(page.text, lesson_id)
@@ -6638,10 +6621,10 @@ def copy_hncode_contest_to_lesson(session, course_slug: str, lesson_id: str, pro
     debug_post = RUNTIME / "hncode_lesson_copy_last_post.html"
     debug_post.write_text(result.text, encoding="utf-8", errors="replace")
     if not result.ok:
-        raise RuntimeError(f"LÆ°u lesson lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Lưu lesson lỗi HTTP {result.status_code}")
     errors = form_errors(result.text) + compact_form_red_errors(result.text)
     if errors:
-        raise RuntimeError("Form sá»­a lesson bÃ¡o lá»—i:\n" + "\n".join(errors))
+        raise RuntimeError("Form sửa lesson báo lỗi:\n" + "\n".join(errors))
     verify = session.get(edit_url, timeout=30)
     if verify.ok:
         debug_verify = RUNTIME / "hncode_lesson_copy_last_verify.html"
@@ -6650,9 +6633,9 @@ def copy_hncode_contest_to_lesson(session, course_slug: str, lesson_id: str, pro
         missing = [str(ref.get("problem_id") or ref.get("id")) for ref in problem_refs if str(ref.get("problem_id") or ref.get("id")) not in saved_ids]
         if missing:
             raise RuntimeError(
-                "Lesson chÆ°a lÆ°u Ä‘á»§ bÃ i: "
+                "Lesson chưa lưu đủ bài: "
                 + ", ".join(missing)
-                + f"\nÄÃ£ lÆ°u HTML debug: {debug_post} vÃ  {debug_verify}"
+                + f"\nĐã lưu HTML debug: {debug_post} và {debug_verify}"
             )
     return hncode_lesson_url(course_slug, lesson_id)
 
@@ -6720,10 +6703,10 @@ def split_datetime(value: str) -> tuple[str, str]:
 def fetch_contest_info(session, base_url: str, key: str) -> dict:
     change_url = admin_contest_change_url(session, base_url, key)
     if not change_url:
-        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y contest {key} trong admin.")
+        raise RuntimeError(f"Không tìm thấy contest {key} trong admin.")
     page = session.get(change_url)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng Ä‘á»c Ä‘Æ°á»£c trang sá»­a contest {key}: HTTP {page.status_code}")
+        raise RuntimeError(f"Không đọc được trang sửa contest {key}: HTTP {page.status_code}")
     problem_codes = public_contest_problem_codes(session, base_url, key)
     total = int(input_value(page.text, "contest_problems-TOTAL_FORMS", "0") or "0")
     entries = []
@@ -6937,10 +6920,10 @@ def append_contest_problem_fields(data: list[tuple[str, str]], page: str, rows: 
 def append_problems_to_existing_contest(session, base_url: str, dest: str, change_url: str, problem_ids: list[dict]) -> str:
     page = session.get(change_url)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form sá»­a contest: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được form sửa contest: HTTP {page.status_code}")
     base_data = remove_contest_problem_fields(collect_contest_form_data(page.text))
     if not base_data:
-        raise RuntimeError("KhÃ´ng Ä‘á»c Ä‘Æ°á»£c form sá»­a contest Ä‘á»ƒ thÃªm bÃ i.")
+        raise RuntimeError("Không đọc được form sửa contest để thêm bài.")
     rows = existing_contest_problem_rows(page.text)
     initial_forms = int(input_value(page.text, "contest_problems-INITIAL_FORMS", str(len(rows))) or str(len(rows)))
     existing_ids = {str(row["id"]) for row in rows}
@@ -6970,12 +6953,12 @@ def append_problems_to_existing_contest(session, base_url: str, dest: str, chang
     data.append(("_continue", "Save and continue editing"))
     result = session.post(change_url, data=data, headers={"Referer": change_url}, allow_redirects=True)
     if not result.ok:
-        raise RuntimeError(f"ThÃªm bÃ i vÃ o contest lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Thêm bài vào contest lỗi HTTP {result.status_code}")
     errors = form_errors(result.text)
     if errors:
-        raise RuntimeError("Form thÃªm bÃ i vÃ o contest bÃ¡o lá»—i:\n" + "\n".join(errors))
+        raise RuntimeError("Form thêm bài vào contest báo lỗi:\n" + "\n".join(errors))
     if "/change/" not in result.url:
-        raise RuntimeError(f"ThÃªm bÃ i vÃ o contest chÆ°a quay láº¡i trang sá»­a: {result.url}")
+        raise RuntimeError(f"Thêm bài vào contest chưa quay lại trang sửa: {result.url}")
     return result.url
 
 
@@ -6986,7 +6969,7 @@ def create_contest(session, base_url: str, dest: str, info: dict, problem_ids: l
     add_url = urljoin(base_url, "/admin/judge/contest/add/")
     page = session.get(add_url)
     if not page.ok:
-        raise RuntimeError(f"KhÃ´ng má»Ÿ Ä‘Æ°á»£c form táº¡o contest: HTTP {page.status_code}")
+        raise RuntimeError(f"Không mở được form tạo contest: HTTP {page.status_code}")
     authors = selected_values(page.text, "authors")
     if not authors:
         author_id = profile_id_for_username(session, base_url, page.text, author_username)
@@ -6994,18 +6977,18 @@ def create_contest(session, base_url: str, dest: str, info: dict, problem_ids: l
             authors = [author_id]
     result = session.post(add_url, data=build_contest_post_data(page.text, info, problem_ids, dest, authors), headers={"Referer": add_url}, allow_redirects=True)
     if not result.ok:
-        raise RuntimeError(f"Táº¡o contest lá»—i HTTP {result.status_code}")
+        raise RuntimeError(f"Tạo contest lỗi HTTP {result.status_code}")
     errors = form_errors(result.text)
     if errors:
-        raise RuntimeError("Form táº¡o contest bÃ¡o lá»—i:\n" + "\n".join(errors))
+        raise RuntimeError("Form tạo contest báo lỗi:\n" + "\n".join(errors))
     if "/change/" not in result.url:
-        raise RuntimeError(f"Táº¡o contest chÆ°a redirect vÃ o trang sá»­a: {result.url}")
+        raise RuntimeError(f"Tạo contest chưa redirect vào trang sửa: {result.url}")
     return result.url
 
 
 def contest_transfer_root(prepare_id: str) -> Path:
     if not re.fullmatch(r"[0-9a-f]{32}", prepare_id or ""):
-        raise RuntimeError("MÃ£ chuáº©n bá»‹ contest khÃ´ng há»£p lá»‡.")
+        raise RuntimeError("Mã chuẩn bị contest không hợp lệ.")
     return RUNTIME / ("contest_transfer_" + prepare_id)
 
 
@@ -7042,9 +7025,9 @@ def api_prepare_contest_transfer():
     dest = payload["dest"]
     codes = [code.strip() for code in payload.get("codes", []) if code.strip()]
     if not codes:
-        return jsonify({"error": "ChÆ°a nháº­p mÃ£ contest cáº§n chuyá»ƒn."}), 400
+        return jsonify({"error": "Chưa nhập mã contest cần chuyển."}), 400
     if source == dest:
-        return jsonify({"error": "Nguá»“n vÃ  Ä‘Ã­ch Ä‘ang trÃ¹ng nhau."}), 400
+        return jsonify({"error": "Nguồn và đích đang trùng nhau."}), 400
     try:
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / ("contest_transfer_" + prepare_id)
@@ -7054,8 +7037,8 @@ def api_prepare_contest_transfer():
         src = login_hncode(source_info["base_url"], source_account["username"], source_account["password"])
         rows = []
         items = {}
-        log_lines = [f"Äá»c contest nguá»“n: {source_info['label']} â†’ {TARGETS[dest]['label']}"]
-        progress_update(progress_id, phase="prepare-contest-transfer", done=0, total=len(codes), rows=rows, message="Báº¯t Ä‘áº§u Ä‘á»c contest nguá»“n")
+        log_lines = [f"Đọc contest nguồn: {source_info['label']} → {TARGETS[dest]['label']}"]
+        progress_update(progress_id, phase="prepare-contest-transfer", done=0, total=len(codes), rows=rows, message="Bắt đầu đọc contest nguồn")
         for index, key in enumerate(codes, 1):
             try:
                 info = fetch_contest_info(src, source_info["base_url"], key)
@@ -7067,9 +7050,9 @@ def api_prepare_contest_transfer():
                     for problem in info["problems"]:
                         pid = admin_problem_id(dst_probe, TARGETS[dest]["base_url"], problem["code"])
                         if pid:
-                            problem["status"] = "ÄÃ£ cÃ³ á»Ÿ Ä‘Ã­ch, cÃ³ test" if problem_has_test_zip(dst_probe, TARGETS[dest]["base_url"], problem["code"]) else "ÄÃ£ cÃ³ á»Ÿ Ä‘Ã­ch, thiáº¿u test"
+                            problem["status"] = "Đã có ở đích, có test" if problem_has_test_zip(dst_probe, TARGETS[dest]["base_url"], problem["code"]) else "Đã có ở đích, thiếu test"
                         else:
-                            problem["status"] = "Thiáº¿u á»Ÿ Ä‘Ã­ch"
+                            problem["status"] = "Thiếu ở đích"
                 except Exception:
                     dest_exists = False
                 items[key] = info
@@ -7082,20 +7065,20 @@ def api_prepare_contest_transfer():
                         "end_time": info["end_time"],
                         "problems": info["problems"],
                         "can_transfer": not dest_exists,
-                        "status": "ÄÃ£ tá»“n táº¡i á»Ÿ Ä‘Ã­ch" if dest_exists else "ÄÃ£ Ä‘á»c",
+                        "status": "Đã tồn tại ở đích" if dest_exists else "Đã đọc",
                     }
                 )
-                log_lines.append(f"- {key}: {info['name']}, {len(info['problems'])} bÃ i")
+                log_lines.append(f"- {key}: {info['name']}, {len(info['problems'])} bài")
                 if dest_exists:
-                    log_lines.append(f"  Contest {info['key']} Ä‘Ã£ tá»“n táº¡i á»Ÿ Ä‘Ã­ch, máº·c Ä‘á»‹nh bá» chá»n Ä‘á»ƒ trÃ¡nh táº¡o trÃ¹ng.")
+                    log_lines.append(f"  Contest {info['key']} đã tồn tại ở đích, mặc định bỏ chọn để tránh tạo trùng.")
             except Exception as exc:
-                rows.append({"original_key": key, "key": key, "name": "", "start_time": "", "end_time": "", "problems": [], "can_transfer": False, "status": "âœ— Lá»—i Ä‘á»c nguá»“n"})
-                log_lines.append(f"âœ— {key}: {exc}")
+                rows.append({"original_key": key, "key": key, "name": "", "start_time": "", "end_time": "", "problems": [], "can_transfer": False, "status": "✗ Lỗi đọc nguồn"})
+                log_lines.append(f"✗ {key}: {exc}")
             progress_update(progress_id, phase="prepare-contest-transfer", done=index, total=len(codes), rows=rows, message=f"{key}: {rows[-1]['status']}")
         state = {"root": root, "source": source, "dest": dest, "items": items}
         prepared_contest_transfers[prepare_id] = state
         save_prepared_contest_transfer(prepare_id, state)
-        progress_finish(progress_id, True, f"ÄÃ£ Ä‘á»c {len(rows)}/{len(codes)} contest")
+        progress_finish(progress_id, True, f"Đã đọc {len(rows)}/{len(codes)} contest")
         return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
@@ -7109,14 +7092,14 @@ def api_confirm_contest_transfer():
     prepare_id = payload.get("prepare_id")
     state = load_prepared_contest_transfer(prepare_id) if prepare_id else None
     if not state:
-        progress_finish(progress_id, False, "Dá»¯ liá»‡u chuáº©n bá»‹ chuyá»ƒn contest Ä‘Ã£ háº¿t háº¡n")
-        return jsonify({"error": "Dá»¯ liá»‡u chuáº©n bá»‹ chuyá»ƒn contest Ä‘Ã£ háº¿t háº¡n. HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u láº¡i."}), 400
+        progress_finish(progress_id, False, "Dữ liệu chuẩn bị chuyển contest đã hết hạn")
+        return jsonify({"error": "Dữ liệu chuẩn bị chuyển contest đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
     source = payload["source"]
     dest = payload["dest"]
     settings = payload.get("settings", {})
     rows = payload.get("rows", [])
     result_rows = []
-    log_lines = [f"Chuyá»ƒn contest: {CONTEST_TARGETS[source]['label']} â†’ {TARGETS[dest]['label']}"]
+    log_lines = [f"Chuyển contest: {CONTEST_TARGETS[source]['label']} → {TARGETS[dest]['label']}"]
     try:
         source_account = payload["source_account"]
         dest_account = payload["dest_account"]
@@ -7126,32 +7109,32 @@ def api_confirm_contest_transfer():
         language_ids = list(TARGETS[dest]["languages"].values())
         total = len([row for row in rows if row.get("selected")])
         done = 0
-        progress_update(progress_id, phase="confirm-contest-transfer", done=done, total=total, rows=result_rows, message="Báº¯t Ä‘áº§u chuyá»ƒn contest")
+        progress_update(progress_id, phase="confirm-contest-transfer", done=done, total=total, rows=result_rows, message="Bắt đầu chuyển contest")
         for row in rows:
             row = dict(row)
             if not row.get("selected"):
-                row["status"] = "Bá» qua"
+                row["status"] = "Bỏ qua"
                 result_rows.append(row)
                 continue
             try:
                 info = dict(state["items"].get(row["original_key"]) or {})
                 if not info:
-                    raise RuntimeError("ChÆ°a Ä‘á»c Ä‘Æ°á»£c dá»¯ liá»‡u contest nguá»“n")
+                    raise RuntimeError("Chưa đọc được dữ liệu contest nguồn")
                 info["key"] = row.get("key") or info["key"]
                 info["name"] = row.get("name") or info["name"]
                 selected_codes = {problem.get("code") for problem in row.get("problems", []) if problem.get("selected")}
                 if row.get("problems"):
                     info["problems"] = [problem for problem in info["problems"] if problem["code"] in selected_codes]
                 if not info["problems"]:
-                    raise RuntimeError("ChÆ°a chá»n bÃ i nÃ o trong contest")
+                    raise RuntimeError("Chưa chọn bài nào trong contest")
                 problem_refs = []
                 for problem in info["problems"]:
                     code = problem["code"]
                     pid = admin_problem_id(dst, TARGETS[dest]["base_url"], code)
                     if pid and not settings.get("reuse_existing_problems", True):
-                        raise RuntimeError(f"BÃ i {code} Ä‘Ã£ cÃ³ á»Ÿ Ä‘Ã­ch vÃ  tÃ¹y chá»n dÃ¹ng láº¡i bÃ i Ä‘Ã£ cÃ³ Ä‘ang táº¯t")
+                        raise RuntimeError(f"Bài {code} đã có ở đích và tùy chọn dùng lại bài đã có đang tắt")
                     if not pid and not settings.get("create_missing_problems", True):
-                        raise RuntimeError(f"BÃ i {code} chÆ°a cÃ³ á»Ÿ Ä‘Ã­ch")
+                        raise RuntimeError(f"Bài {code} chưa có ở đích")
                     if not pid:
                         pinfo, zip_path, cases, _zip_url = fetch_source_problem(src, CONTEST_TARGETS[source]["base_url"], code, root)
                         pinfo.time_limit = pinfo.time_limit or settings.get("time_limit") or "1.0"
@@ -7165,31 +7148,31 @@ def api_confirm_contest_transfer():
                     elif settings.get("create_missing_problems", True) and not problem_has_test_zip(dst, TARGETS[dest]["base_url"], code):
                         _pinfo, zip_path, cases, _zip_url = fetch_source_problem(src, CONTEST_TARGETS[source]["base_url"], code, root)
                         upload_existing_problem_tests(dst, dest, code, zip_path, cases)
-                        log_lines.append(f"{code}: Ä‘Ã£ bá»• sung test cho bÃ i Ä‘Ã£ cÃ³.")
+                        log_lines.append(f"{code}: đã bổ sung test cho bài đã có.")
                     if not pid:
-                        raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y ID admin cá»§a bÃ i {code} sau khi chuyá»ƒn")
+                        raise RuntimeError(f"Không tìm thấy ID admin của bài {code} sau khi chuyển")
                     problem_ref = dict(problem)
                     problem_ref["id"] = pid
                     problem_refs.append(problem_ref)
                 create_contest(dst, TARGETS[dest]["base_url"], dest, info, problem_refs, dest_account.get("username", ""))
-                row["status"] = "âœ“ ThÃ nh cÃ´ng"
+                row["status"] = "✓ Thành công"
                 row["link"] = contest_url(TARGETS[dest]["base_url"], info["key"])
-                log_lines.append(f"âœ“ {info['key']}: Ä‘Ã£ táº¡o/cáº­p nháº­t contest vá»›i {len(problem_refs)} bÃ i theo Ä‘Ãºng thá»© tá»± gá»­i lÃªn.")
+                log_lines.append(f"✓ {info['key']}: đã tạo/cập nhật contest với {len(problem_refs)} bài theo đúng thứ tự gửi lên.")
             except ContestAlreadyExists as exc:
-                row["status"] = "âœ— Contest Ä‘Ã£ tá»“n táº¡i"
+                row["status"] = "✗ Contest đã tồn tại"
                 row["link"] = contest_url(TARGETS[dest]["base_url"], row.get("key") or row.get("original_key"))
-                log_lines.append(f"âœ— {row.get('key')}: {exc}. Bá» qua contest nÃ y.")
+                log_lines.append(f"✗ {row.get('key')}: {exc}. Bỏ qua contest này.")
             except ProblemAlreadyExists:
-                row["status"] = "âœ— BÃ i Ä‘Ã£ tá»“n táº¡i nhÆ°ng chÆ°a dÃ¹ng láº¡i Ä‘Æ°á»£c"
-                log_lines.append(f"âœ— {row.get('key')}: gáº·p bÃ i Ä‘Ã£ tá»“n táº¡i khi chuyá»ƒn problem, hÃ£y báº­t dÃ¹ng láº¡i bÃ i Ä‘Ã£ cÃ³ hoáº·c kiá»ƒm tra mÃ£ bÃ i.")
+                row["status"] = "✗ Bài đã tồn tại nhưng chưa dùng lại được"
+                log_lines.append(f"✗ {row.get('key')}: gặp bài đã tồn tại khi chuyển problem, hãy bật dùng lại bài đã có hoặc kiểm tra mã bài.")
             except Exception as exc:
-                row["status"] = "âœ— Lá»—i"
-                log_lines.append(f"âœ— {row.get('key')}: {exc}")
+                row["status"] = "✗ Lỗi"
+                log_lines.append(f"✗ {row.get('key')}: {exc}")
             result_rows.append(row)
             done += 1
             progress_update(progress_id, phase="confirm-contest-transfer", done=done, total=total, rows=result_rows, message=f"{row.get('key')}: {row.get('status')}")
-        ok = all((not row.get("selected")) or row.get("status", "").startswith("âœ“") for row in result_rows)
-        progress_finish(progress_id, ok, "ÄÃ£ hoÃ n táº¥t chuyá»ƒn contest")
+        ok = all((not row.get("selected")) or row.get("status", "").startswith("✓") for row in result_rows)
+        progress_finish(progress_id, ok, "Đã hoàn tất chuyển contest")
         return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
@@ -7204,7 +7187,7 @@ def api_create_contest():
     name = payload.get("name", "").strip()
     problems = [code.strip() for code in payload.get("problems", []) if code.strip()]
     if not key or not name or not problems:
-        return jsonify({"error": "Cáº§n nháº­p mÃ£ contest, tÃªn contest vÃ  danh sÃ¡ch mÃ£ bÃ i."}), 400
+        return jsonify({"error": "Cần nhập mã contest, tên contest và danh sách mã bài."}), 400
     try:
         account = payload["account"]
         dst = login_upload_target(target, TARGETS[target], account)
@@ -7212,7 +7195,7 @@ def api_create_contest():
         for idx, code in enumerate(problems):
             pid = admin_problem_id(dst, TARGETS[target]["base_url"], code)
             if not pid:
-                raise RuntimeError(f"KhÃ´ng tÃ¬m tháº¥y bÃ i {code} á»Ÿ {TARGETS[target]['label']}")
+                raise RuntimeError(f"Không tìm thấy bài {code} ở {TARGETS[target]['label']}")
             refs.append({"code": code, "id": pid, "points": "100", "partial": True, "is_pretested": False, "max_submissions": "", "order": str(idx)})
         info = {
             "key": key,
@@ -7229,7 +7212,7 @@ def api_create_contest():
         }
         create_contest(dst, TARGETS[target]["base_url"], target, info, refs, account.get("username", ""))
         link = contest_url(TARGETS[target]["base_url"], key)
-        return jsonify({"ok": True, "log": f"âœ“ ÄÃ£ táº¡o/cáº­p nháº­t contest {key}\nLink: {link}", "link": link})
+        return jsonify({"ok": True, "log": f"✓ Đã tạo/cập nhật contest {key}\nLink: {link}", "link": link})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -7242,9 +7225,9 @@ def api_prepare_transfer():
     dest = payload["dest"]
     codes = [code.strip() for code in payload.get("codes", []) if code.strip()]
     if not codes:
-        return jsonify({"error": "ChÆ°a nháº­p mÃ£ bÃ i cáº§n chuyá»ƒn."}), 400
+        return jsonify({"error": "Chưa nhập mã bài cần chuyển."}), 400
     if source == dest:
-        return jsonify({"error": "Nguá»“n vÃ  Ä‘Ã­ch Ä‘ang trÃ¹ng nhau."}), 400
+        return jsonify({"error": "Nguồn và đích đang trùng nhau."}), 400
     try:
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / ("transfer_" + prepare_id)
@@ -7253,8 +7236,8 @@ def api_prepare_transfer():
         src = login_problem_source(source, source_account, codes[0])
         rows = []
         state_items = {}
-        log_lines = [f"Äá»c dá»¯ liá»‡u nguá»“n: {TARGETS[source]['label']} â†’ {TARGETS[dest]['label']}"]
-        progress_update(progress_id, phase="prepare-transfer", done=0, total=len(codes), rows=rows, message="Báº¯t Ä‘áº§u Ä‘á»c dá»¯ liá»‡u nguá»“n")
+        log_lines = [f"Đọc dữ liệu nguồn: {TARGETS[source]['label']} → {TARGETS[dest]['label']}"]
+        progress_update(progress_id, phase="prepare-transfer", done=0, total=len(codes), rows=rows, message="Bắt đầu đọc dữ liệu nguồn")
         for index, code in enumerate(codes, 1):
             try:
                 info, zip_path, cases, zip_url = fetch_source_problem(src, TARGETS[source]["base_url"], code, root)
@@ -7273,10 +7256,10 @@ def api_prepare_transfer():
                         "test_file": zip_path.name,
                         "test_link": test_data_url(TARGETS[source]["base_url"], code),
                         "test_count": len(cases),
-                        "status": "ÄÃ£ Ä‘á»c",
+                        "status": "Đã đọc",
                     }
                 )
-                log_lines.append(f"- {code}: {info.name}, {len(cases)} test, bá»™ test {test_data_url(TARGETS[source]['base_url'], code)}")
+                log_lines.append(f"- {code}: {info.name}, {len(cases)} test, bộ test {test_data_url(TARGETS[source]['base_url'], code)}")
             except Exception as exc:
                 rows.append(
                     {
@@ -7287,16 +7270,16 @@ def api_prepare_transfer():
                         "memory_limit": payload.get("settings", {}).get("memory_limit") or "1048576",
                         "source_time_limit": "1.0",
                         "source_memory_limit": "1048576",
-                        "test_file": "Lá»—i khi Ä‘á»c nguá»“n",
+                        "test_file": "Lỗi khi đọc nguồn",
                         "test_link": test_data_url(TARGETS[source]["base_url"], code),
                         "test_count": 0,
-                        "status": "âœ— Lá»—i Ä‘á»c nguá»“n",
+                        "status": "✗ Lỗi đọc nguồn",
                     }
                 )
-                log_lines.append(f"âœ— {code}: {exc}")
+                log_lines.append(f"✗ {code}: {exc}")
             progress_update(progress_id, phase="prepare-transfer", done=index, total=len(codes), rows=rows, message=f"{code}: {rows[-1]['status']}")
         prepared_transfers[prepare_id] = {"root": root, "source": source, "dest": dest, "items": state_items}
-        progress_finish(progress_id, True, f"ÄÃ£ Ä‘á»c {len(rows)}/{len(codes)} bÃ i")
+        progress_finish(progress_id, True, f"Đã đọc {len(rows)}/{len(codes)} bài")
         return jsonify({"prepare_id": prepare_id, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
@@ -7312,16 +7295,16 @@ def api_confirm_transfer():
     dest = payload["dest"]
     settings = payload.get("settings", {})
     log_lines = [
-        f"Chuyá»ƒn bÃ i: {TARGETS[source]['label']} â†’ {TARGETS[dest]['label']}",
-        "Táº¡o bÃ i Ä‘Ã­ch qua admin form: /admin/judge/problem/add/",
+        f"Chuyển bài: {TARGETS[source]['label']} → {TARGETS[dest]['label']}",
+        "Tạo bài đích qua admin form: /admin/judge/problem/add/",
     ]
     result_rows = []
     if source == dest:
         for row in rows:
-            row["status"] = "âœ— Nguá»“n vÃ  Ä‘Ã­ch trÃ¹ng nhau"
+            row["status"] = "✗ Nguồn và đích trùng nhau"
             result_rows.append(row)
-        log_lines.append("Nguá»“n vÃ  Ä‘Ã­ch Ä‘ang trÃ¹ng nhau, khÃ´ng thá»±c hiá»‡n chuyá»ƒn.")
-        progress_finish(progress_id, False, "Nguá»“n vÃ  Ä‘Ã­ch Ä‘ang trÃ¹ng nhau")
+        log_lines.append("Nguồn và đích đang trùng nhau, không thực hiện chuyển.")
+        progress_finish(progress_id, False, "Nguồn và đích đang trùng nhau")
         return jsonify({"ok": False, "rows": result_rows, "log": "\n".join(log_lines)})
 
     try:
@@ -7331,7 +7314,7 @@ def api_confirm_transfer():
             return jsonify(
                 {
                     "ok": False,
-                    "error": "Dá»¯ liá»‡u chuáº©n bá»‹ chuyá»ƒn bÃ i Ä‘Ã£ háº¿t háº¡n hoáº·c server vá»«a khá»Ÿi Ä‘á»™ng láº¡i. HÃ£y báº¥m Chuáº©n bá»‹ dá»¯ liá»‡u láº¡i rá»“i má»›i XÃ¡c nháº­n chuyá»ƒn bÃ i.",
+                    "error": "Dữ liệu chuẩn bị chuyển bài đã hết hạn hoặc server vừa khởi động lại. Hãy bấm Chuẩn bị dữ liệu lại rồi mới Xác nhận chuyển bài.",
                 }
             ), 400
         state = prepared_transfers[prepare_id]
@@ -7341,17 +7324,17 @@ def api_confirm_transfer():
 
         total = len([row for row in rows if row.get("selected")])
         done = 0
-        progress_update(progress_id, phase="confirm-transfer", done=done, total=total, rows=result_rows, message="Báº¯t Ä‘áº§u chuyá»ƒn bÃ i")
+        progress_update(progress_id, phase="confirm-transfer", done=done, total=total, rows=result_rows, message="Bắt đầu chuyển bài")
         for row in rows:
             row = dict(row)
             if not row.get("selected"):
-                row["status"] = "Bá» qua"
+                row["status"] = "Bỏ qua"
                 result_rows.append(row)
                 continue
             try:
                 item = state["items"].get(row["original_code"])
                 if not item:
-                    raise RuntimeError("ChÆ°a Ä‘á»c Ä‘Æ°á»£c dá»¯ liá»‡u nguá»“n cho bÃ i nÃ y")
+                    raise RuntimeError("Chưa đọc được dữ liệu nguồn cho bài này")
                 info = item["info"]
                 zip_path = item["zip_path"]
                 cases = item["cases"]
@@ -7360,25 +7343,25 @@ def api_confirm_transfer():
                 validate_problem_code_for_target(dest_code, dest)
                 if dest_code != raw_dest_code:
                     row["code"] = dest_code
-                    log_lines.append(f"{raw_dest_code}: mÃ£ Ä‘Ã­ch {TARGETS[dest]['label']} Ä‘Æ°á»£c Ä‘á»•i thÃ nh {dest_code}")
+                    log_lines.append(f"{raw_dest_code}: mã đích {TARGETS[dest]['label']} được đổi thành {dest_code}")
                 if row.get("name"):
                     info.name = row["name"]
                 info.time_limit = row.get("time_limit") or settings.get("time_limit") or info.time_limit or "1.0"
                 info.memory_limit = row.get("memory_limit") or settings.get("memory_limit") or info.memory_limit or "1048576"
                 upload_transfer_to_dmoj(dst, dest, dest_code, info, zip_path, cases, row, language_ids, log_lines)
-                row["status"] = "âœ“ ThÃ nh cÃ´ng"
+                row["status"] = "✓ Thành công"
                 row["link"] = problem_url(TARGETS[dest]["base_url"], dest_code)
             except ProblemAlreadyExists as exc:
-                row["status"] = "âœ— BÃ i Ä‘Ã£ tá»“n táº¡i"
-                log_lines.append(f"âœ— {row.get('code')}: {exc}. Bá» qua bÃ i nÃ y vÃ  tiáº¿p tá»¥c cÃ¡c bÃ i khÃ¡c.")
+                row["status"] = "✗ Bài đã tồn tại"
+                log_lines.append(f"✗ {row.get('code')}: {exc}. Bỏ qua bài này và tiếp tục các bài khác.")
             except Exception as exc:
-                row["status"] = "âœ— Lá»—i"
-                log_lines.append(f"âœ— {row.get('code')}: {exc}")
+                row["status"] = "✗ Lỗi"
+                log_lines.append(f"✗ {row.get('code')}: {exc}")
             result_rows.append(row)
             done += 1
             progress_update(progress_id, phase="confirm-transfer", done=done, total=total, rows=result_rows, message=f"{row.get('code')}: {row.get('status')}")
-        ok = all((not row.get("selected")) or row["status"].startswith("âœ“") for row in result_rows)
-        progress_finish(progress_id, ok, "ÄÃ£ hoÃ n táº¥t chuyá»ƒn bÃ i")
+        ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
+        progress_finish(progress_id, ok, "Đã hoàn tất chuyển bài")
         return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
@@ -7389,7 +7372,7 @@ def upload_transfer_to_dmoj(session, dest: str, dest_code: str, info: ProblemInf
     base_url = TARGETS[dest]["base_url"]
     exists = destination_problem_exists(session, base_url, dest_code)
     if exists:
-        raise ProblemAlreadyExists(f"MÃ£ bÃ i {dest_code} Ä‘Ã£ tá»“n táº¡i táº¡i {problem_url(base_url, dest_code)}")
+        raise ProblemAlreadyExists(f"Mã bài {dest_code} đã tồn tại tại {problem_url(base_url, dest_code)}")
     if row.get("upload_statement") and not exists:
         dest_info = problem_info_for_target(info, dest)
         create_hncode_problem(
@@ -7405,18 +7388,18 @@ def upload_transfer_to_dmoj(session, dest: str, dest_code: str, info: ProblemInf
             allow_all_languages=False,
             allowed_language_ids=language_ids,
         )
-        log_lines.append(f"{dest_code}: Ä‘Ã£ táº¡o Ä‘á».")
+        log_lines.append(f"{dest_code}: đã tạo đề.")
     else:
-        log_lines.append(f"{dest_code}: bá» qua táº¡o Ä‘á».")
+        log_lines.append(f"{dest_code}: bỏ qua tạo đề.")
     if row.get("upload_tests"):
         if dest == "hnoj":
             tests = GeneratedTests(zip_path, [case.input_file for case in cases], [case.output_file for case in cases])
             upload_tinhoctre_tests(session, base_url, dest_code, tests)
         else:
             upload_hncode_tests(session, base_url, dest_code, zip_path, cases)
-        log_lines.append(f"{dest_code}: Ä‘Ã£ upload test.")
+        log_lines.append(f"{dest_code}: đã upload test.")
     else:
-        log_lines.append(f"{dest_code}: khÃ´ng upload test.")
+        log_lines.append(f"{dest_code}: không upload test.")
 
 
 def upload_transfer_to_tinhoctre(session, dest: str, dest_code: str, info: ProblemInfo, zip_path: Path, cases, row: dict, out_dir: Path, language_ids: list[str], log_lines: list[str]) -> None:
@@ -7428,7 +7411,7 @@ def upload_transfer_to_tinhoctre(session, dest: str, dest_code: str, info: Probl
     tests = GeneratedTests(zip_path, [case.input_file for case in cases], [case.output_file for case in cases])
     exists = tinhoctre_problem_exists(session, base_url, dest_code)
     if exists:
-        raise ProblemAlreadyExists(f"MÃ£ bÃ i {dest_code} Ä‘Ã£ tá»“n táº¡i táº¡i {problem_url(base_url, dest_code)}")
+        raise ProblemAlreadyExists(f"Mã bài {dest_code} đã tồn tại tại {problem_url(base_url, dest_code)}")
     if row.get("upload_statement") and not exists:
         create_tinhoctre_admin_problem(
             session,
@@ -7439,14 +7422,14 @@ def upload_transfer_to_tinhoctre(session, dest: str, dest_code: str, info: Probl
             group_id=TARGETS[dest]["group_id"],
             allowed_language_ids=language_ids,
         )
-        log_lines.append(f"{dest_code}: Ä‘Ã£ táº¡o Ä‘á».")
+        log_lines.append(f"{dest_code}: đã tạo đề.")
     else:
-        log_lines.append(f"{dest_code}: bá» qua táº¡o Ä‘á».")
+        log_lines.append(f"{dest_code}: bỏ qua tạo đề.")
     if row.get("upload_tests"):
         upload_tinhoctre_tests(session, base_url, dest_code, tests)
-        log_lines.append(f"{dest_code}: Ä‘Ã£ upload test.")
+        log_lines.append(f"{dest_code}: đã upload test.")
     else:
-        log_lines.append(f"{dest_code}: khÃ´ng upload test.")
+        log_lines.append(f"{dest_code}: không upload test.")
 
 
 if __name__ == "__main__":
