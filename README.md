@@ -394,6 +394,42 @@ Payload mẫu:
 
 Với HNCode Lesson, đổi `source_type` thành `lesson`.
 
+## Tool lẻ: Xuất đề bài ra Markdown
+
+Tool lấy đề bài từ `HNOJ`, `HNCode` hoặc `TinHocTre`. Dữ liệu nhập hỗ trợ:
+
+- Link Contest hoặc mã contest.
+- Link Lesson trên HNCode/TinHocTre.
+- Một mã bài, nhiều mã bài hoặc các link `/problem/<ma_bai>`.
+
+Chọn một trong hai kiểu kết quả:
+
+- `Mỗi bài một file đề`: tải ZIP chứa các file `<ma_bai>.md`. Dòng đầu mỗi file là `Tên bài | Mã bài`.
+- `Tất cả trong một file đề`: tải một file `tong_hop_de_bai_<web>.md`, các bài giữ đúng thứ tự nguồn.
+
+Tool ưu tiên đọc Markdown gốc từ trang sửa bài bằng tài khoản admin. Liên kết ảnh tương đối được chuyển thành URL tuyệt đối; nếu một bài lỗi, các bài còn lại vẫn được xuất và bảng kết quả hiển thị lỗi riêng.
+
+API nội bộ:
+
+```http
+POST /api/misc/export-problem-statements
+GET  /api/misc/download-problem-statements/<export_id>
+```
+
+Payload mẫu:
+
+```json
+{
+  "site": "hncode",
+  "input_type": "contest",
+  "source_input": "https://hncode.edu.vn/contest/nt26exam01",
+  "mode": "separate",
+  "account": {"username": "...", "password": "..."}
+}
+```
+
+`input_type` nhận `auto`, `contest`, `lesson`, `codes`; `mode` nhận `separate` hoặc `combined`.
+
 ## Tab Up Quiz
 
 Tab này up danh sách câu hỏi lên Quiz. Trên giao diện chọn được web đích:

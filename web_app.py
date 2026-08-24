@@ -30,6 +30,7 @@ from flask import Flask, Response, jsonify, render_template_string, request, sen
 from services import hncode as hncode_service
 from services import jobs as job_service
 from services import problem_bundle as bundle_service
+from services import problem_export as export_service
 from services import problem_upload as upload_service
 
 from transfer_tinhoctre_to_hncode import (
@@ -1930,6 +1931,26 @@ PAGE = r"""
         </div>
 
         <div class="tool-card">
+          <h3 class="tool-title">Xuất đề bài ra Markdown</h3>
+          <p class="tool-subtitle">Lấy đề từ Contest, Lesson hoặc danh sách mã bài trên HNOJ, HNCode và TinHocTre. Ảnh trong đề được giữ bằng liên kết tuyệt đối.</p>
+          <div class="grid-2">
+            <div><label>Web nguồn</label><select id="statementExportSite"><option value="hnoj">HNOJ</option><option value="hncode" selected>HNCode</option><option value="tinhoctre">TinHocTre</option></select><span id="statementExportLogin" class="login-badge">Chưa kiểm tra</span></div>
+            <div><label>Loại dữ liệu nhập</label><select id="statementExportInputType"><option value="auto">Tự động nhận</option><option value="contest">Contest</option><option value="lesson">Lesson</option><option value="codes">Danh sách mã bài</option></select></div>
+          </div>
+          <label>Link Contest / Link Lesson / Mã contest / Danh sách mã bài</label>
+          <textarea id="statementExportInput" rows="6" placeholder="Ví dụ:\nhttps://hncode.edu.vn/contest/nt26exam01\nhoặc mỗi dòng một mã bài"></textarea>
+          <div class="grid-2">
+            <div><label>Cách đóng gói</label><select id="statementExportMode"><option value="separate">Mỗi bài một file đề (.zip)</option><option value="combined">Tất cả trong một file đề (.md)</option></select></div>
+            <div><label>File kết quả</label><input id="statementExportFilename" type="text" readonly placeholder="Tên file sẽ hiện sau khi xử lý"></div>
+          </div>
+          <div class="actions">
+            <button class="action primary" type="button" id="runStatementExport">Xuất đề bài</button>
+            <a class="action primary hidden" id="downloadStatementExport" href="#">Tải file kết quả</a>
+          </div>
+          <div id="statementExportSummary"></div>
+        </div>
+
+        <div class="tool-card">
           <h3 class="tool-title">Lấy last submissions Scratch</h3>
           <p class="tool-subtitle">Upload file zip data. Tool sẽ lấy mỗi thí sinh 1 file `.sb3`: ưu tiên file trong thư mục `$History` có số cuối lớn nhất, nếu không có thì lấy file `.sb3` ở thư mục gốc của thí sinh.</p>
           <label>File zip data</label>
@@ -3147,6 +3168,58 @@ document.getElementById("runCodeList").onclick = async () => {
 };
 syncCodeListType();
 
+function syncStatementExportUi() {
+  const site = document.getElementById("statementExportSite").value;
+  const type = document.getElementById("statementExportInputType");
+  const lessonOption = [...type.options].find(option => option.value === "lesson");
+  if (lessonOption) lessonOption.disabled = site === "hnoj";
+  if (site === "hnoj" && type.value === "lesson") type.value = "auto";
+  checkLogin(site, "statementExportLogin");
+}
+document.getElementById("statementExportSite").addEventListener("change", syncStatementExportUi);
+document.getElementById("runStatementExport").onclick = async () => {
+  const button = document.getElementById("runStatementExport");
+  const download = document.getElementById("downloadStatementExport");
+  try {
+    const site = document.getElementById("statementExportSite").value;
+    const sourceInput = document.getElementById("statementExportInput").value.trim();
+    if (!sourceInput) throw new Error("Hãy nhập nguồn Contest, Lesson hoặc danh sách mã bài.");
+    saveAccounts();
+    button.disabled = true;
+    button.textContent = "Đang xuất đề...";
+    download.classList.add("hidden");
+    status("running");
+    log("Đang đọc danh sách bài và lấy đề bài từ " + (TARGETS[site]?.label || site) + "...");
+    const data = await postJson("/api/misc/export-problem-statements", {
+      site,
+      input_type: document.getElementById("statementExportInputType").value,
+      source_input: sourceInput,
+      mode: document.getElementById("statementExportMode").value,
+      account: accountPayload(site),
+    });
+    const rows = data.rows || [];
+    document.getElementById("statementExportFilename").value = data.filename || "";
+    document.getElementById("statementExportSummary").innerHTML = `<div class="note">${escapeHtml(data.message || `Đã xuất ${rows.length} bài.`)}</div>
+      <table><thead><tr><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Trạng thái</th></tr></thead>
+      <tbody>${rows.map(row => `<tr><td>${row.index || ""}</td><td><code>${escapeHtml(row.code || "")}</code></td><td>${escapeHtml(row.name || "")}</td><td class="${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : ""}</td></tr>`).join("")}</tbody></table>`;
+    if (data.download_url) {
+      download.href = data.download_url;
+      download.download = data.filename || "";
+      download.classList.remove("hidden");
+      download.click();
+    }
+    log(data.log || data.message || "Đã xuất đề bài.");
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Xuất đề bài";
+  }
+};
+syncStatementExportUi();
+
 document.getElementById("chooseLastSubZip").onclick = () => document.getElementById("lastSubZipFile").click();
 document.getElementById("lastSubZipFile").addEventListener("change", event => {
   const file = event.target.files && event.target.files[0];
@@ -3569,6 +3642,170 @@ def api_misc_list_problem_codes():
         return jsonify({"ok": True, "rows": rows, "codes_text": codes_text, "compact_text": compact_text, "log": "\n".join(log_lines)})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/misc/export-problem-statements")
+def api_misc_export_problem_statements():
+    payload = request.get_json(force=True)
+    site = str(payload.get("site") or "hncode").strip()
+    input_type = str(payload.get("input_type") or "auto").strip()
+    source_input = str(payload.get("source_input") or "").strip()
+    mode = str(payload.get("mode") or "separate").strip()
+    account = payload.get("account") or {}
+    try:
+        if site not in {"hnoj", "hncode", "tinhoctre"}:
+            raise ValueError("Web nguồn không hợp lệ.")
+        if not source_input:
+            raise ValueError("Chưa nhập nguồn Contest, Lesson hoặc danh sách mã bài.")
+        if mode not in {"separate", "combined"}:
+            raise ValueError("Cách đóng gói không hợp lệ.")
+
+        base_url = TARGETS[site]["base_url"]
+        session = login_problem_source(site, account, "")
+        resolved_type = export_service.detect_input_type(source_input, input_type)
+        source_label = TARGETS[site]["label"]
+        source_rows: list[dict] = []
+
+        if resolved_type in {"contest", "auto_single"}:
+            key = export_service.contest_key(source_input)
+            try:
+                if site == "hnoj":
+                    source_rows = hnoj_contest_problem_rows(session, key)
+                elif site == "hncode":
+                    source_rows = hncode_contest_problem_rows(session, key)
+                else:
+                    source_rows = hncode_service.list_contest_problems(
+                        session, base_url, key, default_points="100"
+                    )
+                if not source_rows:
+                    raise RuntimeError(f"Không tìm thấy bài nào trong contest {key}.")
+                resolved_type = "contest"
+                source_label = f"{TARGETS[site]['label']} Contest: {key}"
+            except Exception:
+                if resolved_type != "auto_single":
+                    raise
+                source_rows = [{"code": key, "title": key, "order": 1}]
+                resolved_type = "codes"
+                source_label = f"{TARGETS[site]['label']}: danh sách mã bài"
+
+        elif resolved_type == "lesson":
+            if site == "hnoj":
+                raise ValueError("HNOJ không hỗ trợ nguồn Lesson.")
+            course_slug, lesson_id = export_service.lesson_ref(source_input)
+            source_rows = hncode_service.list_lesson_problems(
+                session, base_url, course_slug, lesson_id
+            )
+            if not source_rows:
+                raise RuntimeError(
+                    f"Không tìm thấy bài nào trong lesson {course_slug}/lesson/{lesson_id}."
+                )
+            source_label = (
+                f"{TARGETS[site]['label']} Lesson: {course_slug}/lesson/{lesson_id}"
+            )
+
+        elif resolved_type == "codes":
+            codes = export_service.problem_codes(source_input)
+            if not codes:
+                raise ValueError("Không đọc được mã bài nào từ dữ liệu nhập.")
+            source_rows = [
+                {"code": code, "title": code, "order": index}
+                for index, code in enumerate(codes, 1)
+            ]
+            source_label = f"{TARGETS[site]['label']}: danh sách mã bài"
+        else:
+            raise ValueError("Không nhận diện được loại dữ liệu nhập.")
+
+        exported: list[dict[str, str]] = []
+        rows: list[dict] = []
+        errors: list[dict] = []
+        for index, source_row in enumerate(source_rows, 1):
+            code = str(source_row.get("code") or "").strip()
+            row = {
+                "index": index,
+                "code": code,
+                "name": str(source_row.get("title") or code),
+                "status": "Đang đọc",
+                "link": urljoin(base_url, f"/problem/{code}"),
+            }
+            try:
+                problem = export_service.fetch_statement(session, base_url, code)
+                row["name"] = problem["name"]
+                row["status"] = "✓ Đã lấy đề"
+                exported.append(problem)
+            except Exception as item_exc:
+                row["status"] = "✗ Lỗi"
+                row["error"] = str(item_exc)
+                errors.append({"code": code, "message": str(item_exc)})
+            rows.append(row)
+
+        if not exported:
+            raise RuntimeError("Không lấy được đề bài nào. " + "; ".join(item["message"] for item in errors[:3]))
+
+        export_id = uuid.uuid4().hex
+        output_dir = RUNTIME / "misc" / "problem_exports" / export_id
+        output_path = export_service.write_export(
+            output_dir, exported, mode, site, source_label
+        )
+        manifest = {
+            "filename": output_path.name,
+            "path": str(output_path),
+            "site": site,
+            "source_type": resolved_type,
+            "count": len(exported),
+        }
+        (output_dir / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        message = f"Đã xuất {len(exported)}/{len(source_rows)} đề bài."
+        log_lines = [
+            f"Nguồn: {source_label}",
+            message,
+            *(f"✓ {item['code']}: {item['name']}" for item in exported),
+            *(f"✗ {item['code']}: {item['message']}" for item in errors),
+        ]
+        return jsonify(
+            {
+                "ok": True,
+                "message": message,
+                "rows": rows,
+                "log": "\n".join(log_lines),
+                "errors": errors,
+                "meta": manifest,
+                "filename": output_path.name,
+                "download_url": f"/api/misc/download-problem-statements/{export_id}",
+            }
+        )
+    except Exception as exc:
+        return jsonify(
+            {
+                "ok": False,
+                "message": str(exc),
+                "rows": [],
+                "log": str(exc),
+                "errors": [{"message": str(exc)}],
+                "meta": {},
+                "error": str(exc),
+            }
+        ), 400
+
+
+@app.get("/api/misc/download-problem-statements/<export_id>")
+def api_misc_download_problem_statements(export_id: str):
+    if not re.fullmatch(r"[0-9a-f]{32}", export_id or ""):
+        return jsonify({"ok": False, "error": "Mã file kết quả không hợp lệ."}), 400
+    output_dir = RUNTIME / "misc" / "problem_exports" / export_id
+    manifest_path = output_dir / "manifest.json"
+    if not manifest_path.exists():
+        return jsonify({"ok": False, "error": "File kết quả không còn tồn tại."}), 404
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        path = Path(str(manifest.get("path") or "")).resolve()
+        if output_dir.resolve() not in path.parents or not path.is_file():
+            raise RuntimeError("Đường dẫn file kết quả không hợp lệ.")
+        mimetype = "application/zip" if path.suffix.lower() == ".zip" else "text/markdown"
+        return send_file(path, as_attachment=True, download_name=path.name, mimetype=mimetype)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
 
 
 
