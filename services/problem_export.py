@@ -11,7 +11,6 @@ from typing import Iterable
 from urllib.parse import urljoin
 
 import requests
-from bs4 import BeautifulSoup
 
 from services.hncode import public_problem_snapshot_from_html
 
@@ -105,13 +104,25 @@ def absolute_asset_urls(markdown: str, base_url: str) -> str:
     )
 
 
-def _field_value(soup: BeautifulSoup, name: str) -> str:
-    element = soup.select_one(f'[name="{name}"]')
-    if not element:
+def _field_value(page: str, name: str) -> str:
+    textarea = re.search(
+        r'<textarea\b[^>]*name=["\']'
+        + re.escape(name)
+        + r'["\'][^>]*>(.*?)</textarea>',
+        page,
+        re.I | re.S,
+    )
+    if textarea:
+        return html.unescape(textarea.group(1))
+    input_match = re.search(
+        r'<input\b[^>]*name=["\']' + re.escape(name) + r'["\'][^>]*>',
+        page,
+        re.I | re.S,
+    )
+    if not input_match:
         return ""
-    if element.name == "textarea":
-        return element.get_text()
-    return str(element.get("value", ""))
+    value = re.search(r'value=["\']([^"\']*)["\']', input_match.group(0), re.I | re.S)
+    return html.unescape(value.group(1)) if value else ""
 
 
 def _pdf_fallback(page: str, page_url: str) -> str:
@@ -133,9 +144,8 @@ def fetch_statement(
     edit_url = urljoin(base_url, f"/problem/{code}/edit")
     edit = session.get(edit_url, timeout=timeout, allow_redirects=True)
     if edit.ok and "/login" not in edit.url:
-        soup = BeautifulSoup(edit.text, "html.parser")
-        name = _field_value(soup, "name").strip() or code
-        statement = _field_value(soup, "description").strip()
+        name = _field_value(edit.text, "name").strip() or code
+        statement = _field_value(edit.text, "description").strip()
         if statement:
             return {
                 "code": code,
