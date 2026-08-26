@@ -5600,6 +5600,10 @@ def find_hncode_admin_problem_change_url(session, base_url: str, code: str) -> s
 def ensure_hncode_vi_translation(session, base_url: str, code: str, name: str, description: str) -> None:
     change_url = find_hncode_admin_problem_change_url(session, base_url, code)
     page = session.get(change_url, timeout=30)
+    if "tinhoctre.vn" in base_url and page.status_code == 500 and "TemplateSyntaxError" in page.text:
+        # TinHocTre currently has a broken Django admin template. The public
+        # edit form has already saved and verified the base Vietnamese fields.
+        return
     if not page.ok:
         raise RuntimeError(f"Không mở được admin form bài {code}: HTTP {page.status_code}")
     data = collect_problem_edit_form_data(page.text)
@@ -5737,6 +5741,7 @@ def upload_one_problem(
             public=False,
             allow_all_languages=False,
             allowed_language_ids=language_ids,
+            target_label=target_info["label"],
         )
         log_lines.append(f"{bundle.code}: đã tạo đề qua admin form ({change_url}).")
         actions.append("tạo đề")
@@ -7624,6 +7629,7 @@ def upload_transfer_to_dmoj(session, dest: str, dest_code: str, info: ProblemInf
             public=False,
             allow_all_languages=False,
             allowed_language_ids=language_ids,
+            target_label=TARGETS[dest]["label"],
         )
         log_lines.append(f"{dest_code}: đã tạo đề.")
     else:

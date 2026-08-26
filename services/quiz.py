@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from pathlib import Path
 
 
 QUESTION_TYPE_ALIASES = {
@@ -27,6 +28,14 @@ QUESTION_TYPE_ALIASES = {
     "dung sai": "TF",
     "true false": "TF",
     "tf": "TF",
+    "fb": "FB",
+    "điền khuyết": "FB",
+    "dien khuyet": "FB",
+    "điền vào chỗ trống": "FB",
+    "dien vao cho trong": "FB",
+    "fill blank": "FB",
+    "fill in blank": "FB",
+    "fill in the blank": "FB",
 }
 
 QUIZ_FIELD_ALIASES = {
@@ -107,6 +116,27 @@ def split_answers(text: str) -> list[str]:
     return parts
 
 
+def parse_fill_blank_answers(text: str) -> list[dict]:
+    blanks = []
+    for raw_line in text.splitlines():
+        line = re.sub(r"^\s*[-*]\s*", "", raw_line).strip()
+        if not line:
+            continue
+        label = f"Ô {len(blanks) + 1}:"
+        answer_text = line
+        match = re.match(r"^(.{1,80}?)\s*[:：]\s*(.+)$", line)
+        if match:
+            label = match.group(1).strip()
+            if not label.endswith(":"):
+                label += ":"
+            answer_text = match.group(2).strip()
+        answers = [item.strip() for item in re.split(r"[,;|]", answer_text) if item.strip()]
+        if not answers:
+            raise RuntimeError(f"Đáp án điền vào chỗ trống chưa hợp lệ: {raw_line}")
+        blanks.append({"label": label, "answers": answers})
+    return blanks
+
+
 def parse_quiz_markdown(text: str) -> list[dict]:
     items = []
     for index, block in enumerate(split_quiz_blocks(text), 1):
@@ -144,6 +174,14 @@ def parse_quiz_markdown(text: str) -> list[dict]:
                 raise RuntimeError(f"Câu {index}: câu trả lời ngắn cần có ít nhất một Đáp án.")
             choices = []
             correct = {"type": "exact", "answers": answers, "case_sensitive": False}
+            grading_strategy = "all_or_nothing"
+        elif qtype == "FB":
+            blanks = parse_fill_blank_answers(fields["answer"])
+            if not blanks:
+                raise RuntimeError(f"Câu {index}: câu điền vào chỗ trống cần có ít nhất một dòng Đáp án.")
+            choices = None
+            correct = {"type": "exact", "case_sensitive": False, "blanks": blanks}
+            grading_strategy = "correct_only"
         else:
             if not choices:
                 choices = [{"id": "T", "text": "Đúng"}, {"id": "F", "text": "Sai"}]
@@ -154,6 +192,9 @@ def parse_quiz_markdown(text: str) -> list[dict]:
             if correct_id not in {choice["id"] for choice in choices}:
                 raise RuntimeError(f"Câu {index}: đáp án Đúng/Sai phải là Đúng hoặc Sai.")
             correct = {"answers": correct_id}
+            grading_strategy = "all_or_nothing"
+        if qtype in {"MC", "MA"}:
+            grading_strategy = "all_or_nothing"
         items.append(
             {
                 "index": index,
@@ -162,6 +203,7 @@ def parse_quiz_markdown(text: str) -> list[dict]:
                 "content": content,
                 "choices": choices,
                 "correct_answers": correct,
+                "grading_strategy": grading_strategy,
                 "explanation": fields["explanation"].strip(),
             }
         )

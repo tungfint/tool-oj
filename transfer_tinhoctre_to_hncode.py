@@ -427,10 +427,31 @@ def create_hncode_problem(
     allowed_language_ids: Iterable[str] | None = None,
     default_type_id: str = "",
     default_group_id: str = "",
+    target_label: str = "HNCode",
 ) -> str:
     add_url = urljoin(base_url, "/admin/judge/problem/add/")
-    page = request_with_retry(dest, "GET", add_url, action="mở form tạo bài HNCode")
-    require(page.ok, f"HNCode add page failed: HTTP {page.status_code}")
+    page = request_with_retry(dest, "GET", add_url, action=f"mở form tạo bài {target_label}")
+    fallback_form = False
+    if not page.ok and "tinhoctre.vn" in base_url and page.status_code == 500:
+        # The current TinHocTre admin template crashes, but its public edit form
+        # exposes the same fields and provides a valid CSRF token for the POST.
+        list_url = urljoin(base_url, "/admin/judge/problem/")
+        problem_list = request_with_retry(dest, "GET", list_url, action="mở danh sách bài TinHocTre")
+        require(problem_list.ok, f"TinHocTre problem list failed: HTTP {problem_list.status_code}")
+        codes = re.findall(r'href=["\'][^"\']*/problem/([A-Za-z0-9_-]+)(?:/edit)?["\']', problem_list.text)
+        for code in dict.fromkeys(codes):
+            candidate = request_with_retry(
+                dest,
+                "GET",
+                urljoin(base_url, f"/problem/{code}/edit"),
+                action=f"mở form mẫu TinHocTre {code}",
+            )
+            if candidate.ok and input_value(candidate.text, "code"):
+                page = candidate
+                fallback_form = True
+                break
+    require(page.ok, f"{target_label} add page failed: HTTP {page.status_code}")
+    require(not fallback_form or input_value(page.text, "code"), f"Không tìm thấy form mẫu để tạo bài {target_label}.")
 
     langs = all_input_values(page.text, "allowed_languages")
     valid_type_values = select_option_values(page.text, "types")
@@ -504,12 +525,23 @@ def create_hncode_problem(
         action=f"tạo bài {dest_code}",
         data=data,
         headers={"Referer": add_url},
-        allow_redirects=True,
+        allow_redirects=not fallback_form,
     )
-    require(result.ok, f"HNCode create problem failed: HTTP {result.status_code}")
+    if fallback_form:
+        verify_url = urljoin(base_url, f"/problem/{dest_code}/edit")
+        verify = request_with_retry(dest, "GET", verify_url, action=f"xác minh bài {dest_code}")
+        if verify.ok and input_value(verify.text, "code") == dest_code:
+            location = result.headers.get("Location", "")
+            return urljoin(add_url, location) if location else verify.url
+        require(result.ok, f"{target_label} create problem failed: HTTP {result.status_code}")
+        raise TransferError(
+            f"{target_label} không tạo được bài {dest_code}. Form admin của trang đang lỗi HTTP 500; "
+            "tool đã thử form dự phòng nhưng không tìm thấy bài sau khi POST."
+        )
+    require(result.ok, f"{target_label} create problem failed: HTTP {result.status_code}")
     errors = form_errors(result.text)
-    require(not errors, "HNCode create problem form errors:\n" + "\n".join(errors))
-    require("/change/" in result.url, f"HNCode did not redirect to a problem change page: {result.url}")
+    require(not errors, f"{target_label} create problem form errors:\n" + "\n".join(errors))
+    require("/change/" in result.url, f"{target_label} did not redirect to a problem change page: {result.url}")
     return result.url
 
 
