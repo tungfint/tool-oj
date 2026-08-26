@@ -13,6 +13,7 @@ import requests
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 import uuid
@@ -2512,6 +2513,7 @@ function startProgressPolling(progressId, tableSelector, mode="problem") {
       if (data.rows) {
         if (mode === "contest") applyContestStatuses(data.rows);
         else if (mode === "grading") applyGradingStatuses(data.rows);
+        else if (mode === "quiz") applyQuizStatuses(data.rows);
         else if (tableSelector) applyStatuses(data.rows, tableSelector);
       }
       if (data.message || data.total) append(progressMessage(data));
@@ -2527,6 +2529,16 @@ function stopProgressPolling(progressId) {
   const timer = progressTimers.get(progressId);
   if (timer) clearInterval(timer);
   progressTimers.delete(progressId);
+}
+
+async function waitForProgressResult(progressId) {
+  while (true) {
+    const res = await fetch(`/api/progress/${progressId}`, {cache: "no-store"});
+    const data = await parseJsonResponse(res);
+    if (!res.ok) throw new Error(data.error || "Không đọc được tiến độ tác vụ.");
+    if (data.finished) return data;
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
 }
 
 document.getElementById("prepareUpload").onclick = async () => {
@@ -3070,6 +3082,8 @@ document.getElementById("prepareQuizButton").onclick = async () => {
   }
 };
 document.getElementById("uploadQuizButton").onclick = async () => {
+  const button = document.getElementById("uploadQuizButton");
+  let progressId = "";
   try {
     if (!preparedQuiz) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi up quiz.");
     status("running");
@@ -3078,21 +3092,31 @@ document.getElementById("uploadQuizButton").onclick = async () => {
     const quizTargetInfo = QUIZ_TARGETS[quizTarget] || QUIZ_TARGETS.quiz_hncode;
     log("Đang up list quiz lên " + (quizTargetInfo.label || "Quiz") + "...");
     saveAccounts();
-    const data = await postJson("/api/upload-quiz", {
+    button.disabled = true;
+    const started = await postJson("/api/upload-quiz-start", {
       prepare_id: preparedQuiz,
+      text: document.getElementById("quizMarkdown").value,
       target: quizTarget,
       account: quizAccountPayload(),
       shuffle_choices: document.getElementById("quizShuffleChoices").checked,
       is_public: document.getElementById("quizPublic").checked,
     });
+    progressId = started.progress_id || started.job_id;
+    if (!progressId) throw new Error("Server chưa trả mã theo dõi tiến độ Up Quiz.");
+    startProgressPolling(progressId, "#quizUploadSummary", "quiz");
+    const data = await waitForProgressResult(progressId);
+    stopProgressPolling(progressId);
     const rows = (data.rows || []).map(row => `${row.status} ${row.index}. ${row.title}${row.link ? " - " + row.link : ""}`).join("\n");
     applyQuizStatuses(data.rows || []);
     document.getElementById("quizUploadSummary").innerHTML = `<div class="note">${escapeHtml(rows || data.log || "").replaceAll("\n", "<br>")}</div>`;
     log(data.log || rows);
     status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
   } catch (err) {
+    if (progressId) stopProgressPolling(progressId);
     log(String(err));
     status("failed", "err");
+  } finally {
+    button.disabled = !preparedQuiz;
   }
 };
 
@@ -3888,6 +3912,167 @@ def api_upload_quiz():
         return jsonify({"ok": ok, "rows": rows, "log": "\n".join(log_lines)})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+def run_quiz_upload_job(
+    progress_id: str,
+    target: str,
+    account: dict,
+    questions: list[dict],
+    shuffle_choices: bool,
+    is_public: bool,
+) -> None:
+    target_info = quiz_target_info(target)
+    rows: list[dict] = []
+    log_lines = [
+        f"Up Quiz {target_info['label']}: {target_info['base_url']}/quiz/questions/create/",
+        f"Số câu hỏi: {len(questions)}",
+        f"Xáo trộn lựa chọn: {'Có' if shuffle_choices else 'Không'}",
+        f"Công khai: {'Có' if is_public else 'Không'}",
+    ]
+    progress_update(
+        progress_id,
+        phase="upload-quiz",
+        status="running",
+        finished=False,
+        ok=False,
+        done=0,
+        total=len(questions),
+        rows=rows,
+        log="\n".join(log_lines),
+        message="Đang đăng nhập trang Quiz...",
+    )
+    try:
+        session = login_quiz_target(target, account)
+        for position, question in enumerate(questions, 1):
+            row = {
+                "index": question["index"],
+                "title": question["title"],
+                "type": question["type"],
+                "status": "",
+                "link": "",
+                "error": "",
+            }
+            try:
+                link = create_quiz_question(
+                    session,
+                    target_info["base_url"],
+                    question,
+                    shuffle_choices=shuffle_choices,
+                    is_public=is_public,
+                )
+                row["status"] = "✓ Thành công"
+                row["link"] = link
+                log_lines.append(f"✓ Câu {question['index']}: {question['title']} - {link}")
+            except Exception as exc:
+                row["status"] = "✗ Lỗi"
+                row["error"] = str(exc)
+                log_lines.append(f"✗ Câu {question['index']}: {question['title']} - {exc}")
+            rows.append(row)
+            progress_update(
+                progress_id,
+                done=position,
+                total=len(questions),
+                rows=list(rows),
+                log="\n".join(log_lines),
+                message=f"Đã xử lý câu {position}/{len(questions)}: {question['title']}",
+            )
+
+        ok = all(row["status"].startswith("✓") for row in rows)
+        message = (
+            f"Đã up thành công {len(rows)}/{len(questions)} câu hỏi."
+            if ok
+            else f"Đã xử lý {len(rows)}/{len(questions)} câu hỏi; có câu bị lỗi."
+        )
+        progress_update(
+            progress_id,
+            status="completed" if ok else "failed",
+            finished=True,
+            ok=ok,
+            done=len(rows),
+            total=len(questions),
+            rows=rows,
+            log="\n".join(log_lines),
+            message=message,
+        )
+    except Exception as exc:
+        log_lines.append(f"✗ Lỗi: {exc}")
+        progress_update(
+            progress_id,
+            status="failed",
+            finished=True,
+            ok=False,
+            done=len(rows),
+            total=len(questions),
+            rows=rows,
+            log="\n".join(log_lines),
+            error=str(exc),
+            message=str(exc),
+        )
+
+
+@app.post("/api/upload-quiz-start")
+def api_upload_quiz_start():
+    payload = request.get_json(force=True)
+    try:
+        target = payload.get("target", "quiz_hncode")
+        quiz_target_info(target)
+        prepare_id = payload.get("prepare_id", "")
+        state = prepared_quizzes.get(prepare_id)
+        if state:
+            questions = state["questions"]
+        else:
+            questions, rows = prepare_quiz_items(payload.get("text", ""))
+            invalid_rows = [row for row in rows if not row.get("can_upload")]
+            if invalid_rows:
+                details = "; ".join(
+                    f"Câu {row['index']}: {row.get('error') or 'dữ liệu không hợp lệ'}" for row in invalid_rows
+                )
+                raise RuntimeError(f"Dữ liệu Quiz không hợp lệ: {details}")
+        if not questions:
+            raise RuntimeError("Không có câu hỏi hợp lệ để up.")
+
+        progress_id = uuid.uuid4().hex
+        progress_update(
+            progress_id,
+            phase="upload-quiz",
+            status="queued",
+            finished=False,
+            ok=False,
+            done=0,
+            total=len(questions),
+            rows=[],
+            log="",
+            message="Đã xếp tác vụ Up Quiz vào hàng chờ.",
+        )
+        worker = threading.Thread(
+            target=run_quiz_upload_job,
+            args=(
+                progress_id,
+                target,
+                dict(payload.get("account", {})),
+                [dict(question) for question in questions],
+                bool(payload.get("shuffle_choices")),
+                bool(payload.get("is_public")),
+            ),
+            daemon=True,
+            name=f"quiz-upload-{progress_id[:8]}",
+        )
+        worker.start()
+        return jsonify(
+            {
+                "ok": True,
+                "progress_id": progress_id,
+                "job_id": progress_id,
+                "message": "Đã bắt đầu Up Quiz ở chế độ nền.",
+                "rows": [],
+                "log": "",
+                "errors": [],
+                "meta": {"total": len(questions)},
+            }
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc), "message": str(exc), "rows": [], "log": "", "errors": [str(exc)], "meta": {}}), 400
 
 
 @app.post("/api/prepare-quiz")

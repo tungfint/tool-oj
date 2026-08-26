@@ -453,6 +453,12 @@ Tool hỗ trợ 5 loại câu hỏi:
 Nhãn để trống. Hai lựa chọn `Xáo trộn lựa chọn` và `Công khai` được chọn trực tiếp trên giao diện.
 Trước khi up thật, bấm `Chuẩn bị dữ liệu` để tool kiểm tra format và hiển thị bảng gồm `STT`, `Tiêu đề`, `Loại`, `Trạng thái`. Khung `Thông tin trả về` sẽ ghi chi tiết từng câu hợp lệ hoặc lỗi cụ thể.
 
+Khi bấm `Up Quiz`, server khởi động một tác vụ nền và giao diện đọc tiến độ qua
+`/api/progress/<progress_id>`. Trạng thái được cập nhật sau từng câu hỏi, vì vậy
+việc up danh sách dài không giữ một HTTP request liên tục và tránh lỗi timeout
+`524` của Cloudflare. Endpoint đồng bộ `/api/upload-quiz` vẫn được giữ để tương
+thích; giao diện sử dụng `/api/upload-quiz-start`.
+
 Format mỗi câu hỏi:
 
 ```text
