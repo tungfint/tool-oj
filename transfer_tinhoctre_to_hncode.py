@@ -211,19 +211,24 @@ def login_tinhoctre(base_url: str, username: str, password: str, problem_code: s
 
 def login_hncode(base_url: str, username: str, password: str) -> requests.Session:
     s = session()
-    add_url = urljoin(base_url, "/admin/judge/problem/add/")
-    page = s.get(add_url)
+    admin_url = urljoin(base_url, "/admin/")
+    login_url = urljoin(base_url, "/admin/login/?next=/admin/")
+    page = s.get(login_url)
     require(page.ok, f"HNCode login page failed: HTTP {page.status_code}")
     payload = {
         "username": username,
         "password": password,
         "csrfmiddlewaretoken": csrf_token(page.text),
-        "next": "/admin/judge/problem/add/",
+        "next": "/admin/",
     }
-    login_url = urljoin(base_url, "/admin/login/?next=/admin/judge/problem/add/")
-    result = s.post(login_url, data=payload, headers={"Referer": add_url}, allow_redirects=True)
+    result = s.post(login_url, data=payload, headers={"Referer": login_url}, allow_redirects=True)
     require(result.ok, f"HNCode login failed: HTTP {result.status_code}")
-    require("sessionid" in s.cookies.get_dict(), "HNCode login did not create a session")
+    require(
+        "sessionid" in s.cookies.get_dict()
+        and "/admin/login/" not in result.url
+        and result.url.rstrip("/") == admin_url.rstrip("/"),
+        "HNCode login did not create a session",
+    )
     return s
 
 
