@@ -30,6 +30,7 @@ from flask import Flask, Response, jsonify, render_template_string, request, sen
 
 from services import hncode as hncode_service
 from services import jobs as job_service
+from services import last_submissions as last_submissions_service
 from services import problem_bundle as bundle_service
 from services import problem_export as export_service
 from services import problem_upload as upload_service
@@ -1952,8 +1953,14 @@ PAGE = r"""
         </div>
 
         <div class="tool-card">
-          <h3 class="tool-title">Lấy last submissions Scratch</h3>
-          <p class="tool-subtitle">Upload file zip data. Tool sẽ lấy mỗi thí sinh 1 file `.sb3`: ưu tiên file trong thư mục `$History` có số cuối lớn nhất, nếu không có thì lấy file `.sb3` ở thư mục gốc của thí sinh.</p>
+          <h3 class="tool-title">Lấy last submissions</h3>
+          <p class="tool-subtitle">Tool tự nhận ZIP mã nguồn dạng <code>&lt;submission_id&gt;_&lt;tài khoản&gt;.&lt;ngôn ngữ&gt;</code> hoặc gói export có <code>submissions.json</code>, <code>submissions.csv</code> và thư mục <code>sources</code>. Kết quả giữ submission cuối cùng của từng tài khoản trong từng bài; dữ liệu thư mục <code>.sb3</code> cũ vẫn được hỗ trợ.</p>
+          <label>Web nguồn</label>
+          <select id="lastSubSource">
+            <option value="hnoj">HNOJ</option>
+            <option value="hncode">HNCode</option>
+            <option value="tinhoctre" selected>TinHocTre</option>
+          </select>
           <label>File zip data</label>
           <div class="row">
             <div class="grow"><input id="lastSubZipName" type="text" placeholder="Chưa chọn file zip" readonly></div>
@@ -3258,6 +3265,9 @@ document.getElementById("runLastSubmissions").onclick = async () => {
     log("Đang xử lý last submissions...");
     const form = new FormData();
     form.append("zip_file", file);
+    const source = document.getElementById("lastSubSource").value;
+    form.append("source", source);
+    form.append("account", JSON.stringify(accountPayload(source)));
     const res = await fetch("/api/misc/last-submissions", {method:"POST", body:form});
     if (!res.ok) {
       const data = await parseJsonResponse(res);
@@ -3274,7 +3284,9 @@ document.getElementById("runLastSubmissions").onclick = async () => {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    const text = `✓ Đã tạo file zip last submissions.\nTìm thấy: ${summary.found || 0}/${summary.total || 0} thí sinh\nThiếu file: ${summary.missing || 0}\nFile tải về: ${summary.filename || "last_submissions.zip"}`;
+    const text = summary.mode === "oj"
+      ? `✓ Đã tạo file zip last submissions.\nĐã chọn: ${summary.selected || 0}/${summary.total_submissions || 0} submission\nTài khoản: ${summary.accounts || 0}\nMã bài: ${summary.problems || 0}\nKhông đọc được mã bài: ${summary.unresolved || 0}\nFile tải về: ${summary.filename || "last_submissions.zip"}`
+      : `✓ Đã tạo file zip last submissions.\nTìm thấy: ${summary.found || 0}/${summary.total || 0} thí sinh\nThiếu file: ${summary.missing || 0}\nFile tải về: ${summary.filename || "last_submissions.zip"}`;
     document.getElementById("lastSubmissionsSummary").innerHTML = `<div class="note">${escapeHtml(text).replaceAll("\n", "<br>")}</div>`;
     log(text);
     status("done", "ok");
@@ -4985,22 +4997,85 @@ def api_misc_last_submissions():
     try:
         job_root.mkdir(parents=True, exist_ok=True)
         uploaded.save(input_zip)
-        safe_extract_zip(input_zip, extract_root)
-        data_root = find_scratch_data_root(extract_root)
-        summary = collect_last_scratch_submissions(data_root, output_dir)
-        if summary["total"] == 0:
-            return jsonify({"error": "Không tìm thấy thư mục thí sinh nào trong file zip."}), 400
         output_zip = job_root / "last_submissions.zip"
-        with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for item in sorted(output_dir.iterdir(), key=lambda path: path.name.lower()):
-                if item.is_file():
-                    zf.write(item, item.name)
-        summary_payload = {
-            "total": summary["total"],
-            "found": summary["found"],
-            "missing": summary["missing"],
-            "filename": output_zip.name,
-        }
+        submission_package = last_submissions_service.read_submission_package(input_zip)
+        archive_entries = submission_package.entries
+        if archive_entries:
+            source = str(request.form.get("source") or "tinhoctre").strip().lower()
+            if source not in TARGETS:
+                return jsonify({"error": "Web nguồn không hợp lệ."}), 400
+            try:
+                account = json.loads(request.form.get("account") or "{}")
+            except json.JSONDecodeError as exc:
+                return jsonify({"error": f"Thông tin tài khoản không hợp lệ: {exc}"}), 400
+            if not isinstance(account, dict):
+                return jsonify({"error": "Thông tin tài khoản không hợp lệ."}), 400
+
+            metadata_by_id = dict(submission_package.metadata_by_id)
+            metadata_errors = {}
+            unresolved_entries = [
+                entry for entry in archive_entries if entry.submission_id not in metadata_by_id
+            ]
+            if unresolved_entries:
+                session = None
+                cookie = str(account.get("cookie") or "").strip()
+                if source == "tinhoctre":
+                    cookie = cookie or load_tinhoctre_cookie()
+                    if cookie:
+                        cookie_session = session_from_cookie(cookie)
+                        probe_url = urljoin(
+                            TARGETS[source]["base_url"],
+                            f"/submission/{unresolved_entries[0].submission_id}",
+                        )
+                        probe = cookie_session.get(probe_url, timeout=30, allow_redirects=True)
+                        if probe.ok and "/login" not in probe.url.lower() and "/accounts/login" not in probe.url.lower():
+                            session = cookie_session
+                if session is None:
+                    session = login_upload_target(source, TARGETS[source], account)
+
+                resolved_metadata, metadata_errors = last_submissions_service.resolve_submission_metadata(
+                    session,
+                    TARGETS[source]["base_url"],
+                    unresolved_entries,
+                )
+                metadata_by_id.update(resolved_metadata)
+            selected, unresolved = last_submissions_service.select_latest_submissions(
+                archive_entries,
+                metadata_by_id,
+            )
+            if not selected:
+                first_errors = list(metadata_errors.items())[:5]
+                details = "; ".join(f"{submission_id}: {message}" for submission_id, message in first_errors)
+                raise RuntimeError(
+                    "Không xác định được mã bài của submission nào. "
+                    + (details or "Hãy kiểm tra tài khoản và quyền xem submission.")
+                )
+            summary_payload = last_submissions_service.write_result_archive(
+                input_zip,
+                output_zip,
+                selected,
+                unresolved,
+                metadata_errors,
+            )
+            summary_payload["total_submissions"] = len(archive_entries)
+            summary_payload["source"] = source
+        else:
+            safe_extract_zip(input_zip, extract_root)
+            data_root = find_scratch_data_root(extract_root)
+            summary = collect_last_scratch_submissions(data_root, output_dir)
+            if summary["total"] == 0:
+                return jsonify({"error": "Không tìm thấy submission hoặc thư mục thí sinh hợp lệ trong file zip."}), 400
+            with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for item in sorted(output_dir.iterdir(), key=lambda path: path.name.lower()):
+                    if item.is_file():
+                        zf.write(item, item.name)
+            summary_payload = {
+                "mode": "legacy",
+                "total": summary["total"],
+                "found": summary["found"],
+                "missing": summary["missing"],
+            }
+        summary_payload["filename"] = output_zip.name
         response = send_file(output_zip, as_attachment=True, download_name=output_zip.name, mimetype="application/zip")
         response.headers["X-Last-Submissions-Summary"] = quote(json.dumps(summary_payload, ensure_ascii=False))
         return response

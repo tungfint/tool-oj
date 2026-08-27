@@ -430,6 +430,28 @@ Payload mẫu:
 
 `input_type` nhận `auto`, `contest`, `lesson`, `codes`; `mode` nhận `separate` hoặc `combined`.
 
+## Tool lẻ: Lấy last submissions
+
+Tool hỗ trợ ba nguồn `HNOJ`, `HNCode`, `TinHocTre` và tự nhận hai cấu trúc ZIP:
+
+- ZIP mã nguồn có tên file dạng `<submission_id>_<tài khoản>.<ngôn_ngữ>`.
+- Gói export có `submissions.json`, `submissions.csv` và thư mục `sources`; tên mã nguồn có thể dạng `<tài khoản>__sub<submission_id>__<trạng_thái>_<điểm>.<phần_mở_rộng>`.
+
+- Tool dùng tài khoản đã nhập ở tab Tài khoản để đọc mã bài từ trang `/submission/<id>`.
+- Nếu ZIP đã có metadata mã bài trong `submissions.json`, tool dùng trực tiếp và không gọi web; chỉ các dòng thiếu metadata mới cần đăng nhập để bổ sung.
+- Với từng cặp `tài khoản + mã bài`, submission có ID lớn nhất được giữ lại.
+- ZIP kết quả có cấu trúc `<tài khoản>/<mã_bài>.<ngôn_ngữ>` và file `report.csv`.
+- Các submission không đọc được mã bài vẫn được ghi vào báo cáo cùng nguyên nhân lỗi.
+- Dữ liệu thư mục `.sb3` theo cấu trúc cũ vẫn được tự động nhận diện.
+
+API giữ nguyên để tương thích giao diện hiện tại:
+
+```http
+POST /api/misc/last-submissions
+```
+
+Request là `multipart/form-data` gồm `zip_file`, `source` và `account` (JSON chứa thông tin đăng nhập của web nguồn).
+
 ## Tab Up Quiz
 
 Tab này up danh sách câu hỏi lên Quiz. Trên giao diện chọn được web đích:
