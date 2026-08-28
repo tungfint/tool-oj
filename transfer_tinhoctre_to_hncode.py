@@ -24,6 +24,8 @@ from urllib.parse import urljoin
 
 import requests
 
+from services import problem_pdf as problem_pdf_service
+
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -53,6 +55,7 @@ class ProblemInfo:
     time_limit: str
     memory_limit: str
     memory_unit: str
+    pdf_path: Path | None = None
 
 
 @dataclass
@@ -144,18 +147,26 @@ def absolute_markdown_asset_urls(text: str, base_url: str) -> str:
     return text
 
 
-def source_pdf_statement(source: requests.Session, base_url: str, problem_code: str) -> str:
-    public = source.get(urljoin(base_url, f"/problem/{problem_code}"))
-    if not public.ok:
+def source_pdf_statement(
+    source: requests.Session,
+    base_url: str,
+    problem_code: str,
+    *,
+    public_page: str = "",
+    edit_page: str = "",
+) -> str:
+    if not public_page:
+        public = source.get(urljoin(base_url, f"/problem/{problem_code}"), timeout=30)
+        public_page = public.text if public.ok else ""
+    pdf_url = problem_pdf_service.find_problem_pdf_url(
+        base_url,
+        problem_code,
+        public_page=public_page,
+        edit_page=edit_page,
+    )
+    if not pdf_url:
         return ""
-    matches = re.findall(r'href=[\"\']([^\"\']+\.pdf(?:\?[^\"\']*)?)[\"\']', public.text, re.I)
-    if not matches:
-        matches = re.findall(r'https?://[^\"\'<>\s]+\.pdf(?:\?[^\"\'<>\s]+)?', public.text, re.I)
-    if not matches:
-        return ""
-    pdf_url = urljoin(base_url, html.unescape(matches[0]))
     return f"Đề bài dạng PDF: [Tải file đề bài]({pdf_url})"
-
 
 def response_problem_hint(response: requests.Response, action: str) -> str:
     waf = response.headers.get("x-amzn-waf-action") or response.headers.get("X-Amzn-Waf-Action")
@@ -249,9 +260,28 @@ def fetch_source_problem(
             ),
         )
 
+    public = source.get(urljoin(base_url, f"/problem/{problem_code}"), timeout=30)
+    public_page = public.text if public.ok else ""
+    pdf_path = problem_pdf_service.download_problem_pdf(
+        source,
+        base_url,
+        problem_code,
+        out_dir / "pdf_statements",
+        public_page=public_page,
+        edit_page=edit.text,
+    )
+
     description = textarea_value(edit.text, "description").replace("~", "$")
-    if not description:
-        description = source_pdf_statement(source, base_url, problem_code)
+    if not description and pdf_path:
+        description = "Đề bài được cung cấp bằng file PDF."
+    elif not description:
+        description = source_pdf_statement(
+            source,
+            base_url,
+            problem_code,
+            public_page=public_page,
+            edit_page=edit.text,
+        )
     description = absolute_markdown_asset_urls(description, base_url)
 
     info = ProblemInfo(
@@ -263,6 +293,7 @@ def fetch_source_problem(
         time_limit=input_value(edit.text, "time_limit", "1"),
         memory_limit=input_value(edit.text, "memory_limit", "1048576"),
         memory_unit=selected_option(edit.text, "memory_unit", "KB") or "KB",
+        pdf_path=pdf_path,
     )
     require(info.name, "Could not read source problem name")
     require(info.description, "Could not read source problem statement")

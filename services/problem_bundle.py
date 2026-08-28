@@ -105,6 +105,12 @@ def prepare_multi_upload_source(source_path: Path, source_dir: Path, build_root:
                 "time_limit": defaults.get("time_limit") or "1.0",
                 "memory_limit": defaults.get("memory_limit") or "1048576",
                 "partial": meta["partial"],
+                "statement_file": " + ".join(
+                    name
+                    for name in [bundle.statement.name, bundle.pdf_statement.name if bundle.pdf_statement else ""]
+                    if name
+                ),
+                "upload_statement_default": bool(bundle.statement or bundle.pdf_statement),
                 "test_file": generated.zip_path.name if generated else "Không có test",
                 "test_count": len(generated.input_files) if generated else 0,
                 "upload_tests_default": bool(generated),

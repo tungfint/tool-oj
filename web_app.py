@@ -33,6 +33,7 @@ from services import jobs as job_service
 from services import last_submissions as last_submissions_service
 from services import problem_bundle as bundle_service
 from services import problem_export as export_service
+from services import problem_pdf as problem_pdf_service
 from services import problem_upload as upload_service
 
 from transfer_tinhoctre_to_hncode import (
@@ -1619,8 +1620,8 @@ PAGE = r"""
         </div>
         <div class="note" style="margin-top:12px">
           <b>Cấu trúc file zip bộ bài:</b><br>
-          Mỗi bài nên có đủ file <code>&lt;ma_bai&gt;.md</code>, <code>gentest_&lt;ma_bai&gt;.py</code> hoặc <code>&lt;ma_bai&gt;.zip</code>, <code>sol_&lt;ma_bai&gt;.md</code> và nếu cần nộp thử thì có <code>sol_&lt;ma_bai&gt;.cpp</code>, <code>sol_&lt;ma_bai&gt;.py</code>.<br>
-          File Markdown nên có dòng đầu <code>Tên bài | Mã bài | Điểm | Các Tags</code>. File sinh test sẽ tạo thư mục test và nén thành <code>&lt;ma_bai&gt;.zip</code>; nếu zip test có sẵn thì tool dùng trực tiếp. Thông tin nào thiếu sẽ để trống hoặc dùng mặc định.
+          Mỗi bài có thể dùng <code>&lt;ma_bai&gt;.md</code>, <code>&lt;ma_bai&gt;.pdf</code> hoặc cả hai; kèm <code>gentest_&lt;ma_bai&gt;.py</code> hoặc <code>&lt;ma_bai&gt;.zip</code>, <code>sol_&lt;ma_bai&gt;.md</code> và nếu cần nộp thử thì có <code>sol_&lt;ma_bai&gt;.cpp</code>, <code>sol_&lt;ma_bai&gt;.py</code>.<br>
+          File Markdown nên có dòng đầu <code>Tên bài | Mã bài | Điểm | Các Tags</code>. Nếu chỉ có PDF, tên và mã bài lấy từ tên file; các thông tin thiếu dùng mặc định. File sinh test sẽ tạo thư mục test và nén thành <code>&lt;ma_bai&gt;.zip</code>; nếu zip test có sẵn thì tool dùng trực tiếp.
           <br><b>Ràng buộc gentest:</b> nên là Python, tên <code>gentest_&lt;ma_bai&gt;.py</code>, tự tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất có đủ cặp <code>.inp/.out</code>; không cần input tương tác; chạy trong 120 giây; nếu dùng C++ trong gentest thì máy/VPS cần có <code>g++</code>.
           <br><a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso.zip" target="_blank" rel="noopener">Tải mẫu bo_mau_1_bai_tonghaiso.zip</a>
         </div>
@@ -1702,10 +1703,11 @@ PAGE = r"""
           <h3 class="tool-title">Đề bài</h3>
           <div class="actions">
             <button class="action" type="button" id="toggleSingleStatement">Thu gọn đề bài</button>
-            <button class="action" type="button" id="chooseSingleStatement">Chọn file .md</button>
-            <input id="singleStatementFile" class="hidden" type="file" accept=".md,text/markdown,text/plain">
+            <button class="action" type="button" id="chooseSingleStatement">Chọn file .md / .pdf</button>
+            <input id="singleStatementFile" class="hidden" type="file" accept=".md,.pdf,text/markdown,text/plain,application/pdf">
           </div>
           <div id="singleStatementBox">
+            <input id="singleStatementFileName" type="text" placeholder="Chưa chọn file đề bài" readonly>
             <textarea id="singleStatement" placeholder="Dòng đầu có thể là: Tên bài | ma_bai | Điểm | Tags&#10;&#10;Sau đó là nội dung đề bài."></textarea>
             <label class="check" style="margin-top:8px"><input type="checkbox" id="singleSkipStatementTitle" checked> Bỏ dòng đầu tiên trong file đề bài</label>
           </div>
@@ -2043,6 +2045,7 @@ let preparedCourseClone = null;
 let preparedGrading = null;
 let selectedZipFile = null;
 let selectedSingleTestZipFile = null;
+let selectedSingleStatementPdfFile = null;
 let selectedGradingZipFile = null;
 let selectedGradingCsvFile = null;
 const QUIZ_FORMAT_GUIDE = {{ quiz_format_guide_json | safe }};
@@ -2235,6 +2238,9 @@ document.getElementById("useSingleSample").onclick = async () => {
   document.getElementById("singleMemoryLimit").value = "1024M";
   document.getElementById("singlePartial").checked = true;
   document.getElementById("singleStatement").value = data.statement || "";
+  selectedSingleStatementPdfFile = null;
+  document.getElementById("singleStatementFile").value = "";
+  document.getElementById("singleStatementFileName").value = "Đề bài Markdown trong mẫu";
   document.getElementById("singleGenerator").value = data.generator || "";
   document.getElementById("singleGeneratorName").value = "gentest_" + data.code + ".py";
   document.getElementById("singleSolution").value = data.solution_md || "";
@@ -2245,7 +2251,9 @@ document.getElementById("useSingleSample").onclick = async () => {
 };
 document.getElementById("singleStatementFile").addEventListener("change", async event => {
   const file = event.target.files && event.target.files[0];
-  if (file) document.getElementById("singleStatement").value = await file.text();
+  document.getElementById("singleStatementFileName").value = file ? file.name : "";
+  selectedSingleStatementPdfFile = file && file.name.toLowerCase().endsWith(".pdf") ? file : null;
+  if (file && !selectedSingleStatementPdfFile) document.getElementById("singleStatement").value = await file.text();
 });
 document.getElementById("singleGeneratorFile").addEventListener("change", async event => {
   const file = event.target.files && event.target.files[0];
@@ -2481,6 +2489,7 @@ async function prepareUploadRequest(settings) {
 }
 async function prepareSingleUploadRequest(settings) {
   const form = new FormData();
+  if (selectedSingleStatementPdfFile) form.append("statement_pdf", selectedSingleStatementPdfFile);
   if (selectedSingleTestZipFile) form.append("test_zip", selectedSingleTestZipFile);
   form.append("payload", JSON.stringify(settings));
   const res = await fetch("/api/prepare-single-upload", {method:"POST", body:form});
@@ -2576,7 +2585,7 @@ function renderUploadTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#uploadTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#uploadTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Ghi đè</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>File test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Ghi đè</th><th>Up đề</th><th>File đề</th><th>Up test</th><th>Up lời giải</th><th>File test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}" data-source-time="${escapeHtml(row.source_time_limit || row.time_limit || "1.0")}" data-source-memory="${escapeHtml(row.source_memory_limit || row.memory_limit || "1048576")}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
@@ -2587,7 +2596,8 @@ function renderUploadTable(rows) {
       <td><input type="text" class="row-memory" value="${escapeHtml(row.memory_limit || "1048576")}"></td>
       <td><input type="checkbox" class="row-partial" ${row.partial === false ? "" : "checked"}></td>
       <td><input type="checkbox" class="row-overwrite" ${row.overwrite_default === true || overwriteDefault ? "checked" : ""}></td>
-      <td><input type="checkbox" class="row-statement" checked></td>
+      <td><input type="checkbox" class="row-statement" ${row.upload_statement_default === false ? "" : "checked"}></td>
+      <td><div class="test-meta">${escapeHtml(row.statement_file || "Markdown")}</div></td>
       <td><input type="checkbox" class="row-tests" ${row.upload_tests_default === false ? "" : "checked"}></td>
       <td><input type="checkbox" class="row-solution" ${row.upload_solution_default ? "checked" : ""}></td>
       <td><div class="test-meta">${escapeHtml(row.test_file)}</div></td>
@@ -2656,7 +2666,7 @@ document.getElementById("prepareSingleUpload").onclick = async () => {
 
 function renderSingleUploadTable(rows) {
   document.getElementById("singleUploadTable").innerHTML = `<table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Up đề</th><th>Up test</th><th>Up lời giải</th><th>Test</th><th>Trạng thái</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Up đề</th><th>File đề</th><th>Up test</th><th>Up lời giải</th><th>Test</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
@@ -2667,6 +2677,7 @@ function renderSingleUploadTable(rows) {
       <td><input type="text" class="row-memory" value="${escapeHtml(row.memory_limit || "1024M")}"></td>
       <td><input type="checkbox" class="row-partial" ${row.partial === false ? "" : "checked"}></td>
       <td><input type="checkbox" class="row-statement" ${row.upload_statement_default ? "checked" : ""}></td>
+      <td><div class="test-meta">${escapeHtml(row.statement_file || "Không có đề")}</div></td>
       <td><input type="checkbox" class="row-tests" ${row.upload_tests_default ? "checked" : ""}></td>
       <td><input type="checkbox" class="row-solution" ${row.upload_solution_default ? "checked" : ""}></td>
       <td><div class="test-meta">${escapeHtml(row.test_file || "Không có test")}<br>${escapeHtml(row.test_count || 0)} test</div></td>
@@ -2745,7 +2756,7 @@ function renderTransferTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#transferTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#transferTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Time</th><th>Memory</th><th>Up đề</th><th>Up test</th><th>Bộ test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Time</th><th>Memory</th><th>Up đề</th><th>Định dạng đề</th><th>Up test</th><th>Bộ test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
@@ -2753,6 +2764,7 @@ function renderTransferTable(rows) {
       <td><input type="text" class="row-time" value="${escapeHtml(row.time_limit || "1.0")}"></td>
       <td><input type="text" class="row-memory" value="${escapeHtml(row.memory_limit || "1048576")}"></td>
       <td><input type="checkbox" class="row-statement" checked></td>
+      <td>${escapeHtml(row.statement_file || "Markdown")}</td>
       <td><input type="checkbox" class="row-tests" checked></td>
       <td>${row.test_link ? `<a class="problem-link" href="${escapeHtml(row.test_link)}" target="_blank" rel="noopener">Bộ test</a>` : escapeHtml(row.test_file)}</td><td>${row.test_count}</td><td class="row-status">${escapeHtml(row.status)}</td>
     </tr>`).join("")}</tbody></table>`;
@@ -5246,6 +5258,12 @@ def api_prepare_upload():
                     "time_limit": payload.get("time_limit") or "1.0",
                     "memory_limit": payload.get("memory_limit") or "1048576",
                     "partial": meta["partial"],
+                    "statement_file": " + ".join(
+                        name
+                        for name in [bundle.statement.name, bundle.pdf_statement.name if bundle.pdf_statement else ""]
+                        if name
+                    ),
+                    "upload_statement_default": bool(bundle.statement or bundle.pdf_statement),
                     "test_file": generated.zip_path.name if generated else "Không có test",
                     "test_count": len(generated.input_files) if generated else 0,
                     "upload_tests_default": bool(generated),
@@ -5334,6 +5352,14 @@ def api_prepare_single_upload():
         else:
             statement_path.write_text(f"{name} | {code}\n", encoding="utf-8")
 
+        pdf_statement_path: Path | None = None
+        uploaded_statement_pdf = request.files.get("statement_pdf")
+        if uploaded_statement_pdf and uploaded_statement_pdf.filename:
+            pdf_statement_path = source_dir / f"{code}.pdf"
+            uploaded_statement_pdf.save(pdf_statement_path)
+            if not pdf_statement_path.read_bytes().startswith(b"%PDF"):
+                raise RuntimeError("File đề bài đã chọn không phải PDF hợp lệ.")
+
         generator_path: Path | None = None
         generator_text = (payload.get("generator_text") or "").strip()
         generator_filename = Path(payload.get("generator_filename") or "").name
@@ -5350,7 +5376,17 @@ def api_prepare_single_upload():
             test_zip_path = source_dir / f"{code}.zip"
             uploaded_test_zip.save(test_zip_path)
 
-        bundle = ProblemBundle(1, code, name, statement_path, generator_path if generator_path and generator_path.suffix.lower() == ".py" else None, test_zip_path, None, None)
+        bundle = ProblemBundle(
+            1,
+            code,
+            name,
+            statement_path,
+            generator_path if generator_path and generator_path.suffix.lower() == ".py" else None,
+            test_zip_path,
+            None,
+            None,
+            pdf_statement_path,
+        )
         tests: GeneratedTests | None = None
         test_source = "Không có test"
         log_lines = [f"Đã chuẩn bị bài {code}: {name}."]
@@ -5387,12 +5423,13 @@ def api_prepare_single_upload():
                 "time_limit": payload.get("time_limit") or "1.0",
                 "memory_limit": payload.get("memory_limit") or "1024M",
                 "partial": bool(payload.get("partial", True)),
+                "statement_file": pdf_statement_path.name if pdf_statement_path else (statement_path.name if statement_text else "Không có đề"),
                 "test_file": test_source,
                 "test_count": len(tests.input_files) if tests else 0,
-                "upload_statement_default": bool(statement_text),
+                "upload_statement_default": bool(statement_text or pdf_statement_path),
                 "upload_tests_default": bool(tests),
                 "upload_solution_default": bool(solution_path),
-                "status": "Đã chuẩn bị" if bool(statement_text) or bool(tests) or bool(solution_path) else "Chưa có phần nào để up",
+                "status": "Đã chuẩn bị" if bool(statement_text) or bool(pdf_statement_path) or bool(tests) or bool(solution_path) else "Chưa có phần nào để up",
                 "note": prepare_note,
             }
         ]
@@ -5715,6 +5752,17 @@ def resolve_hncode_type_ids(page: str, tags_text: object, fallback_ids: list[str
     return ids or ([str(default_type_id)] if default_type_id else [])
 
 
+def bundle_statement_for_target(target: str, bundle: ProblemBundle, settings: dict) -> str:
+    description = statement_for_target(
+        target,
+        read_text_smart(bundle.statement),
+        skip_title_line=bool(settings.get("skip_statement_title", True)),
+    )
+    if not description.strip() and bundle.pdf_statement:
+        return "Đề bài được cung cấp bằng file PDF."
+    return description
+
+
 def update_existing_problem_statement(
     session,
     target: str,
@@ -5729,11 +5777,7 @@ def update_existing_problem_statement(
     data = collect_problem_edit_form_data(page.text)
     if not data:
         raise RuntimeError(f"Không tìm thấy form sửa đề bài cho {bundle.code}. Tài khoản có thể chưa có quyền sửa bài này.")
-    description = statement_for_target(
-        target,
-        read_text_smart(bundle.statement),
-        skip_title_line=bool(settings.get("skip_statement_title", True)),
-    )
+    description = bundle_statement_for_target(target, bundle, settings)
     data = set_single_form_fields(
         data,
         {
@@ -5955,6 +5999,11 @@ def upload_one_problem(
             if overwrite_statement:
                 change_url = update_existing_problem_statement(session, target, base_url, bundle, settings)
                 log_lines.append(f"{bundle.code}: đã ghi đè đề bài ({change_url}).")
+                if bundle.pdf_statement:
+                    pdf_url = problem_pdf_service.upload_problem_pdf(
+                        session, target, base_url, bundle.code, bundle.pdf_statement
+                    )
+                    log_lines.append(f"{bundle.code}: đã ghi đè file PDF ({pdf_url}).")
                 actions.append("đề bài")
             else:
                 log_lines.append(f"{bundle.code}: không ghi đè đề bài vì chưa tích Ghi đè đề bài.")
@@ -5978,11 +6027,7 @@ def upload_one_problem(
         info = ProblemInfo(
             code=bundle.code,
             name=bundle.name,
-            description=statement_for_target(
-                target,
-                read_text_smart(bundle.statement),
-                skip_title_line=bool(settings.get("skip_statement_title", True)),
-            ),
+            description=bundle_statement_for_target(target, bundle, settings),
             points=str(row.get("points") or settings.get("points") or "100"),
             partial=bool(row.get("partial", settings.get("partial", True))),
             time_limit=row.get("time_limit") or settings.get("time_limit") or "1.0",
@@ -6004,6 +6049,11 @@ def upload_one_problem(
             target_label=target_info["label"],
         )
         log_lines.append(f"{bundle.code}: đã tạo đề qua admin form ({change_url}).")
+        if bundle.pdf_statement:
+            pdf_url = problem_pdf_service.upload_problem_pdf(
+                session, target, base_url, bundle.code, bundle.pdf_statement
+            )
+            log_lines.append(f"{bundle.code}: đã upload file PDF ({pdf_url}).")
         actions.append("tạo đề")
     else:
         log_lines.append(f"{bundle.code}: không upload đề.")
@@ -7755,13 +7805,18 @@ def api_prepare_transfer():
                         "memory_limit": info.memory_limit or payload.get("settings", {}).get("memory_limit") or "1048576",
                         "source_time_limit": info.time_limit or "1.0",
                         "source_memory_limit": info.memory_limit or "1048576",
+                        "statement_file": info.pdf_path.name if info.pdf_path else "Markdown",
                         "test_file": zip_path.name,
                         "test_link": test_data_url(TARGETS[source]["base_url"], code),
                         "test_count": len(cases),
                         "status": "Đã đọc",
                     }
                 )
-                log_lines.append(f"- {code}: {info.name}, {len(cases)} test, bộ test {test_data_url(TARGETS[source]['base_url'], code)}")
+                statement_kind = "PDF + Markdown" if info.pdf_path and info.description else ("PDF" if info.pdf_path else "Markdown")
+                log_lines.append(
+                    f"- {code}: {info.name}, đề {statement_kind}, {len(cases)} test, "
+                    f"bộ test {test_data_url(TARGETS[source]['base_url'], code)}"
+                )
             except Exception as exc:
                 rows.append(
                     {
@@ -7772,6 +7827,7 @@ def api_prepare_transfer():
                         "memory_limit": payload.get("settings", {}).get("memory_limit") or "1048576",
                         "source_time_limit": "1.0",
                         "source_memory_limit": "1048576",
+                        "statement_file": "Lỗi khi đọc nguồn",
                         "test_file": "Lỗi khi đọc nguồn",
                         "test_link": test_data_url(TARGETS[source]["base_url"], code),
                         "test_count": 0,
@@ -7892,6 +7948,11 @@ def upload_transfer_to_dmoj(session, dest: str, dest_code: str, info: ProblemInf
             target_label=TARGETS[dest]["label"],
         )
         log_lines.append(f"{dest_code}: đã tạo đề.")
+        if dest_info.pdf_path:
+            pdf_url = problem_pdf_service.upload_problem_pdf(
+                session, dest, base_url, dest_code, dest_info.pdf_path
+            )
+            log_lines.append(f"{dest_code}: đã chuyển file PDF ({pdf_url}).")
     else:
         log_lines.append(f"{dest_code}: bỏ qua tạo đề.")
     if row.get("upload_tests"):
@@ -7910,7 +7971,7 @@ def upload_transfer_to_tinhoctre(session, dest: str, dest_code: str, info: Probl
     statement = out_dir / f"{dest_code}.md"
     dest_info = problem_info_for_target(info, dest)
     statement.write_text(dest_info.description, encoding="utf-8")
-    bundle = ProblemBundle(0, dest_code, info.name, statement, None, zip_path, None)
+    bundle = ProblemBundle(0, dest_code, info.name, statement, None, zip_path, None, None, dest_info.pdf_path)
     tests = GeneratedTests(zip_path, [case.input_file for case in cases], [case.output_file for case in cases])
     exists = tinhoctre_problem_exists(session, base_url, dest_code)
     if exists:
@@ -7926,6 +7987,11 @@ def upload_transfer_to_tinhoctre(session, dest: str, dest_code: str, info: Probl
             allowed_language_ids=language_ids,
         )
         log_lines.append(f"{dest_code}: đã tạo đề.")
+        if dest_info.pdf_path:
+            pdf_url = problem_pdf_service.upload_problem_pdf(
+                session, dest, base_url, dest_code, dest_info.pdf_path
+            )
+            log_lines.append(f"{dest_code}: đã chuyển file PDF ({pdf_url}).")
     else:
         log_lines.append(f"{dest_code}: bỏ qua tạo đề.")
     if row.get("upload_tests"):

@@ -62,6 +62,7 @@ class ProblemBundle:
     test_zip: Path | None
     solution: Path | None
     solution_cpp: Path | None = None
+    pdf_statement: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -148,32 +149,65 @@ def login(base_url: str, username: str, password: str, next_path: str) -> reques
 
 def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
     bundles: list[ProblemBundle] = []
-    statements = sorted(
-        (path for path in source_dir.rglob("*") if path.is_file() and path.suffix.lower() == ".md"),
+    markdowns = sorted(
+        (
+            path
+            for path in source_dir.rglob("*")
+            if path.is_file() and path.suffix.lower() == ".md" and not path.stem.lower().startswith("sol_")
+        ),
         key=lambda path: path.relative_to(source_dir).as_posix().lower(),
     )
-    for statement in statements:
-        if statement.stem.lower().startswith("sol_"):
+    pdfs = sorted(
+        (
+            path
+            for path in source_dir.rglob("*")
+            if path.is_file()
+            and path.suffix.lower() == ".pdf"
+            and not path.stem.lower().startswith(("sol_", "solution_"))
+        ),
+        key=lambda path: path.relative_to(source_dir).as_posix().lower(),
+    )
+    used_pdfs: set[Path] = set()
+    statement_sources: list[tuple[Path | None, Path | None]] = [(path, None) for path in markdowns]
+    statement_sources.extend((None, path) for path in pdfs)
+
+    for markdown, candidate_pdf in statement_sources:
+        statement_source = markdown or candidate_pdf
+        if statement_source is None:
             continue
+        if candidate_pdf is not None and candidate_pdf.resolve() in used_pdfs:
+            continue
+        statement = markdown or statement_source
         parsed = parse_statement_filename(statement)
         if not parsed:
             continue
         index, fallback_code = parsed
-        title_code = parse_statement_title_code(statement)
+        title_code = parse_statement_title_code(statement) if markdown else None
         code = title_code[1] if title_code else fallback_code
-        search_dirs = [statement.parent]
-        if statement.parent != source_dir:
+        search_dirs = [statement_source.parent]
+        if statement_source.parent != source_dir:
             search_dirs.append(source_dir)
+        pdf_statement = candidate_pdf
+        if markdown:
+            pdf_statement = find_statement_pdf(search_dirs, index, code, markdown)
+        if pdf_statement:
+            used_pdfs.add(pdf_statement.resolve())
         generator = find_named_file(search_dirs, ["gentest"], index, code, ".py")
         solution = find_named_file(search_dirs, ["sol"], index, code, ".py")
         solution_cpp = find_named_file(search_dirs, ["sol"], index, code, ".cpp")
         test_zip = find_existing_test_zip(search_dirs, index, code)
-        if generator is None and test_zip is None and title_code is None:
+        if generator is None and test_zip is None and title_code is None and pdf_statement is None:
             continue
         require(
             generator is not None or test_zip is not None,
             f"Missing test source for {code}: expected gentest_{code}.py or an existing .zip test archive",
         )
+        if markdown is None:
+            placeholder_dir = source_dir / ".tool_statements"
+            placeholder_dir.mkdir(parents=True, exist_ok=True)
+            statement = placeholder_dir / f"{index}_{code}.md" if index else placeholder_dir / f"{code}.md"
+            if not statement.exists():
+                statement.write_text(f"{problem_name_from_code(code)} | {code}\n", encoding="utf-8")
         name = title_code[0] if title_code else extract_problem_name(generator, statement, index, code)
         bundles.append(
             ProblemBundle(
@@ -185,6 +219,7 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
                 test_zip,
                 solution,
                 solution_cpp,
+                pdf_statement,
             )
         )
     if not bundles:
@@ -194,8 +229,8 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
             if path.is_file()
         ][:20]
         hint = (
-            "Không tìm thấy file đề bài .md trong zip. "
-            "Mỗi bài cần có file <ma_bai>.md hoặc <stt>_<ma_bai>.md, có thể nằm trong thư mục con."
+            "Không tìm thấy file đề bài .md hoặc .pdf hợp lệ trong zip. "
+            "Mỗi bài cần có <ma_bai>.md, <ma_bai>.pdf hoặc cả hai; có thể thêm tiền tố <stt>_."
         )
         if sample_files:
             hint += " Một số file đã giải nén: " + ", ".join(sample_files)
@@ -204,12 +239,29 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
 
 
 def parse_statement_filename(statement: Path) -> tuple[int, str] | None:
-    match = re.fullmatch(r"(\d+)_(.+)\.md", statement.name, flags=re.I)
+    match = re.fullmatch(r"(\d+)_(.+)\.(?:md|pdf)", statement.name, flags=re.I)
     if match:
         return int(match.group(1)), match.group(2)
-    match = re.fullmatch(r"(.+)\.md", statement.name, flags=re.I)
+    match = re.fullmatch(r"(.+)\.(?:md|pdf)", statement.name, flags=re.I)
     if match:
         return 0, match.group(1)
+    return None
+
+
+def find_statement_pdf(search_dirs: list[Path], index: int, code: str, markdown: Path) -> Path | None:
+    names = [f"{markdown.stem}.pdf", f"{code}.pdf"]
+    if index:
+        names.insert(1, f"{index}_{code}.pdf")
+    lower_to_path: dict[str, Path] = {}
+    for directory in search_dirs:
+        iterator = directory.rglob("*") if directory == search_dirs[-1] else directory.glob("*")
+        for path in iterator:
+            if path.is_file() and path.suffix.lower() == ".pdf":
+                lower_to_path.setdefault(path.name.lower(), path)
+    for name in names:
+        found = lower_to_path.get(name.lower())
+        if found and not found.stem.lower().startswith(("sol_", "solution_")):
+            return found
     return None
 
 

@@ -91,7 +91,7 @@ Luồng sử dụng:
 
 1. Chọn web đích: `HNOJ`, `HNCode` hoặc `TinHocTre`.
 2. Chọn file zip bộ bài hoặc file Markdown tổng hợp bằng cách dán đường dẫn hoặc bấm `Chọn file`.
-   - File zip dùng cấu trúc: mỗi bài có file đề, test zip hoặc `gentest`, lời giải Markdown nếu có.
+   - File zip dùng cấu trúc: mỗi bài có đề Markdown, đề PDF hoặc cả hai; test zip hoặc `gentest`; lời giải Markdown nếu có.
    - File Markdown tổng hợp dùng để up đề bài, mỗi bài bắt đầu bằng dòng `# Bài 1. Tên bài | ma_bai`.
 3. Kiểm tra `Giới hạn thời gian`, `Giới hạn bộ nhớ`, `Ngôn ngữ cho phép`.
 4. Bấm `Mở rộng thông tin khác` nếu cần xem/sửa nhóm thông tin phụ:
@@ -126,7 +126,7 @@ Luồng sử dụng:
 
 1. Chọn `Web đích`.
 2. Nhập `Mã bài`, `Tên bài toán`, `Điểm`, `Tag` nếu cần.
-   - Với HNCode, mã bài được chuẩn hóa về chữ thường và số, ví dụ `nc1_calfunc1` thành `nc1calfunc1`.
+   - Với HNCode và TinHocTre, mã bài được chuẩn hóa về chữ thường, số và dấu gạch dưới; dấu gạch dưới được giữ nguyên.
    - Ô `Tag` có thể để trống. Nếu nhập số ID, tool dùng số đầu tiên làm `Problem types`.
 3. Chỉnh `Giới hạn thời gian` và `Giới hạn bộ nhớ`.
    - Mặc định time là `1.0`.
@@ -134,7 +134,7 @@ Luồng sử dụng:
 4. Mặc định bật `Cho phép điểm thành phần`.
 5. Nếu bài đã có và muốn cập nhật lại đề/test, tích `Ghi đè nếu mã bài đã có`.
 6. Mở từng phần cần dùng:
-   - `Đề bài`: dán Markdown hoặc chọn file `.md`.
+   - `Đề bài`: dán Markdown, chọn file `.md` hoặc chọn file `.pdf`.
    - `Code sinh test`: dán `gentest` Python hoặc chọn file `.py`; cũng có thể chọn zip test có sẵn.
    - `Lời giải / hướng dẫn`: dán Markdown hoặc chọn file `.md`.
 7. Bấm `Chuẩn bị dữ liệu` để tool kiểm tra:
@@ -144,7 +144,7 @@ Luồng sử dụng:
    - Có lời giải Markdown hay không.
 8. Kiểm tra bảng, có thể sửa mã, tên, điểm, time, memory, rồi bấm `Xác nhận Up 1 bài`.
 
-Thiếu phần nào thì tool không up phần đó. Ví dụ chỉ có đề thì chỉ tạo/cập nhật đề; có đề và test thì tạo/cập nhật cả hai.
+Thiếu phần nào thì tool không up phần đó. Ví dụ chỉ có PDF thì tool tạo bài với mô tả ngắn và upload PDF; có đề và test thì tạo/cập nhật cả hai.
 
 Ghi chú về code sinh test:
 
@@ -170,7 +170,7 @@ HNCode:
 - `Python 3`
 - `PyPy 3`
 
-Ghi chú mã bài HNCode: khi tạo bài mới, HNCode mới yêu cầu mã dạng chữ thường và số. Tuy nhiên một số bài cũ có thể vẫn có dấu gạch dưới. Nếu mã có gạch dưới đã tồn tại, tool giữ đúng mã cũ để ghi đè đề/test; nếu tạo bài mới thì tool mới tự đổi sang dạng hợp lệ.
+Ghi chú mã bài HNCode: mã bài mới được phép dùng chữ thường, số và dấu gạch dưới theo dạng `^[a-z0-9_]+$`; tool không bỏ dấu gạch dưới.
 
 TinHocTre:
 
@@ -195,6 +195,7 @@ Cấu trúc zip bộ bài nên dùng:
 ```text
 bo_bai.zip
 ├─ tht26_tongbi.md
+├─ tht26_tongbi.pdf
 ├─ gentest_tht26_tongbi.py
 ├─ sol_tht26_tongbi.py
 ├─ sol_tht26_tongbi.cpp
@@ -207,6 +208,7 @@ bo_bai.zip
 Trong đó:
 
 - `<ma_bai>.md`: file đề bài, dòng đầu nên là `Tên bài | Mã bài | Điểm | Các Tags`.
+- `<ma_bai>.pdf`: file đề bài PDF. Có thể dùng cùng file Markdown hoặc dùng riêng; khi chỉ có PDF, tên/mã lấy từ tên file và các metadata thiếu dùng giá trị mặc định.
 - `gentest_<ma_bai>.py`: file sinh test. Nếu có file này, tool ưu tiên chạy để tạo `<ma_bai>.zip`.
 - `<ma_bai>.zip`: bộ test có sẵn, dùng khi không có file `gentest`.
 - `sol_<ma_bai>.md`: lời giải/hướng dẫn Markdown để up vào trang lời giải nếu bật trong bảng.
@@ -291,7 +293,7 @@ Tool chỉ chuyển contest, problem và test. Tool không chuyển bài nộp c
 
 Trong bảng chuẩn bị dữ liệu, mỗi contest có bảng con liệt kê từng bài, gồm mã bài, điểm, thứ tự, trạng thái và ô chọn/bỏ chọn bài đó khi chuyển.
 
-Khi chuyển bài/contest, nếu đề nguồn chỉ có file PDF mà không có nội dung Markdown, tool tự tạo mô tả dạng link `Tải file đề bài`. Nếu đề dùng ảnh hoặc link tương đối như `/martor/...`, `/pdf/...`, tool tự đổi sang URL tuyệt đối của web nguồn để khi sang web đích vẫn mở được.
+Khi chuyển bài, tool dò và tải file PDF thực tế từ bài nguồn rồi upload lại vào bài đích trên cả HNOJ, HNCode và TinHocTre. Nếu nguồn có cả Markdown và PDF, đích nhận cả hai; nếu chỉ có PDF, tool dùng mô tả ngắn để bài hợp lệ và gắn PDF trực tiếp. Nếu không tải được PDF nhưng còn URL công khai, tool mới dùng liên kết làm phương án dự phòng. Ảnh hoặc link tương đối như `/martor/...`, `/pdf/...` vẫn được đổi sang URL tuyệt đối của web nguồn.
 
 Sau khi bấm `Chuẩn bị dữ liệu`, trạng thái chuẩn bị của phần chuyển contest được lưu xuống `.runtime/contest_transfer_<prepare_id>/state.json`. Vì vậy nếu request xác nhận đi sang worker khác hoặc service vừa restart nhẹ, nút `Xác nhận chuyển contest` vẫn có thể tiếp tục dùng dữ liệu đã chuẩn bị.
 
