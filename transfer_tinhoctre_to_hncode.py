@@ -316,6 +316,8 @@ def fetch_source_problem(
     cases = parse_source_cases(test_page.text)
     if not cases:
         cases = infer_cases_from_zip_paths(test_page.text)
+    if not cases:
+        cases = infer_cases_from_zip_archive(zip_path)
     require(cases, "Could not read source test cases")
     return info, zip_path, cases, zip_url
 
@@ -328,8 +330,10 @@ def parse_source_cases(page: str) -> list[TestCase]:
             TestCase(
                 order=int(input_value(page, f"cases-{idx}-order", str(idx + 1))),
                 kind=selected_option(page, f"cases-{idx}-type", "C") or "C",
-                input_file=input_value(page, f"cases-{idx}-input_file"),
-                output_file=input_value(page, f"cases-{idx}-output_file"),
+                input_file=selected_option(page, f"cases-{idx}-input_file", "")
+                or input_value(page, f"cases-{idx}-input_file"),
+                output_file=selected_option(page, f"cases-{idx}-output_file", "")
+                or input_value(page, f"cases-{idx}-output_file"),
                 points=input_value(page, f"cases-{idx}-points", "1"),
                 is_pretest=checkbox_checked(page, f"cases-{idx}-is_pretest"),
             )
@@ -344,6 +348,33 @@ def infer_cases_from_zip_paths(page: str) -> list[TestCase]:
         out = re.sub(r"\.inp$", ".out", inp)
         cases.append(TestCase(order=order, kind="C", input_file=inp, output_file=out, points="1"))
     return cases
+
+
+def infer_cases_from_zip_archive(zip_path: Path) -> list[TestCase]:
+    with zipfile.ZipFile(zip_path) as archive:
+        names = [name.replace("\\", "/").lstrip("/") for name in archive.namelist() if not name.endswith("/")]
+    by_lower = {name.lower(): name for name in names}
+    suffix_pairs = ((".inp", ".out"), (".in", ".out"), (".in", ".ans"), (".input", ".output"))
+    pairs: list[tuple[str, str]] = []
+    for input_suffix, output_suffix in suffix_pairs:
+        for input_name in names:
+            if not input_name.lower().endswith(input_suffix):
+                continue
+            output_key = input_name[: -len(input_suffix)] + output_suffix
+            output_name = by_lower.get(output_key.lower())
+            if output_name:
+                pairs.append((input_name, output_name))
+        if pairs:
+            break
+    pairs = sorted(set(pairs), key=lambda pair: natural_case_path_key(pair[0]))
+    return [
+        TestCase(order=index, kind="C", input_file=input_name, output_file=output_name, points="1")
+        for index, (input_name, output_name) in enumerate(pairs, 1)
+    ]
+
+
+def natural_case_path_key(value: str) -> tuple:
+    return tuple(int(part) if part.isdigit() else part.casefold() for part in re.split(r"(\d+)", value))
 
 
 def _zip_member_map(names: Iterable[str]) -> dict[str, str]:
@@ -686,6 +717,8 @@ def upload_hncode_zip_with_retry(
     attempts: int = 3,
 ) -> requests.Response:
     last_error: Exception | None = None
+    upload_timeout = hncode_zip_upload_timeout(zip_path)
+    upload_uuid = str(uuid.uuid4())
     for attempt in range(1, attempts + 1):
         try:
             with zip_path.open("rb") as fh:
@@ -693,7 +726,7 @@ def upload_hncode_zip_with_retry(
                     endpoint,
                     data={
                         "csrfmiddlewaretoken": token,
-                        "qquuid": str(uuid.uuid4()),
+                        "qquuid": upload_uuid,
                         "qqfilename": zip_path.name,
                         "qqtotalfilesize": str(zip_path.stat().st_size),
                         "qqtotalparts": "1",
@@ -701,7 +734,7 @@ def upload_hncode_zip_with_retry(
                     },
                     files={"qqfile": (zip_path.name, fh, "application/zip")},
                     headers={"Referer": test_url},
-                    timeout=60,
+                    timeout=upload_timeout,
                 )
             if response.ok or response.status_code not in {408, 429, 500, 502, 503, 504} or attempt == attempts:
                 return response
@@ -712,6 +745,13 @@ def upload_hncode_zip_with_retry(
                 break
         time.sleep(min(2 * attempt, 6))
     raise TransferError(f"HNCode upload zip test cho {problem_code} bị ngắt sau {attempts} lần thử: {last_error}")
+
+
+def hncode_zip_upload_timeout(zip_path: Path) -> int:
+    """Allow slow multipart writes while keeping a finite upper bound."""
+    size = max(0, zip_path.stat().st_size)
+    estimated_seconds = (size + 65535) // 65536 + 180
+    return max(600, min(1800, estimated_seconds))
 
 
 def upload_hncode_tests(

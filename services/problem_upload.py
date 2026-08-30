@@ -13,6 +13,7 @@ from upload_tinhoctre_batch import GeneratedTests, ProblemBundle, clean_statemen
 
 
 HNCODE_LIKE_TARGETS = {"hncode", "tinhoctre"}
+STRICT_DMOJ_CODE_TARGETS = {"lqdoj"}
 
 
 def language_ids_for_target(target_info: dict, names: list[str]) -> list[str]:
@@ -36,10 +37,36 @@ def memory_limit_to_kb(value: object) -> str:
     return str(int(round(amount)))
 
 
+def memory_limit_to_mb(value: object, unit: object = "KB") -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "1024"
+    if re.search(r"[a-zA-Z]", text):
+        kb_value = memory_limit_to_kb(text)
+    else:
+        kb_value = memory_limit_to_kb(f"{text}{str(unit or 'KB').strip()}")
+    try:
+        amount = float(kb_value) / 1024
+    except (TypeError, ValueError):
+        return text
+    return str(int(amount)) if amount.is_integer() else f"{amount:g}"
+
+
+def memory_limit_mb_to_kb(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "1048576"
+    if re.search(r"[a-zA-Z]", text):
+        return memory_limit_to_kb(text)
+    return memory_limit_to_kb(f"{text}MB")
+
+
 def normalize_problem_code_for_target(code: str, target: str) -> str:
     code = (code or "").strip().lower()
     if target in HNCODE_LIKE_TARGETS:
         code = re.sub(r"[^a-z0-9_]+", "", code)
+    elif target in STRICT_DMOJ_CODE_TARGETS:
+        code = re.sub(r"[^a-z0-9]+", "", code)[:30]
     return code
 
 
@@ -49,6 +76,12 @@ def validate_problem_code_for_target(code: str, target: str) -> None:
         hint = f" Gợi ý mã hợp lệ: {normalized}" if normalized else ""
         label = "HNCode/TinHocTre" if target == "tinhoctre" else "HNCode"
         raise RuntimeError(f"{label} cho phép mã bài gồm chữ thường, số và dấu gạch dưới (^[a-z0-9_]+$).{hint}")
+    if target in STRICT_DMOJ_CODE_TARGETS and (
+        len(code or "") > 30 or not re.fullmatch(r"[a-z0-9]+", code or "")
+    ):
+        normalized = normalize_problem_code_for_target(code, target)
+        hint = f" Gợi ý mã hợp lệ: {normalized}" if normalized else ""
+        raise RuntimeError(f"LQDOJ cho phép mã bài gồm chữ thường và số (^[a-z0-9]+$), tối đa 30 ký tự.{hint}")
 
 
 def problem_url(base_url: str, code: str) -> str:
@@ -79,14 +112,15 @@ def problem_exists_for_target(session, target: str, base_url: str, code: str) ->
 
 def resolve_problem_code_for_upload(session, target: str, base_url: str, raw_code: str) -> tuple[str, str]:
     code = (raw_code or "").strip().lower()
-    if target not in HNCODE_LIKE_TARGETS:
+    if target not in HNCODE_LIKE_TARGETS | STRICT_DMOJ_CODE_TARGETS:
         return code, ""
     normalized = normalize_problem_code_for_target(code, target)
     if code and code != normalized and problem_exists_for_target(session, target, base_url, code):
         return code, ""
     validate_problem_code_for_target(normalized, target)
     if code != normalized:
-        return normalized, f"{code}: mã HNCode dùng để tạo mới được đổi thành {normalized}"
+        label = "LQDOJ" if target == "lqdoj" else "HNCode"
+        return normalized, f"{code}: mã {label} dùng để tạo mới được đổi thành {normalized}"
     return code, ""
 
 

@@ -1,18 +1,22 @@
-# Tool HNCode
+# Tool OJ
 
-Project hỗ trợ chuẩn bị dữ liệu, tạo bài mới, upload test, nộp thử lời giải và chuyển bài giữa 3 hệ thống:
+Project hỗ trợ chuẩn bị dữ liệu, tạo bài mới, upload test, nộp thử lời giải và sao chép dữ liệu giữa 4 hệ thống:
 
 - HNOJ: `https://hnoj.edu.vn`
 - HNCode: `https://hncode.edu.vn`
 - TinHocTre: `https://tinhoctre.vn`
+- LQDOJ: `https://lqdoj.edu.vn`
 
-Ba trang hiện dùng chung tài khoản admin nhập trong tab `Tài khoản & Hướng dẫn`. Tool không hard-code mật khẩu trong source.
+Tài khoản admin được nhập trong tab `Tài khoản & Hướng dẫn`. Tool không hard-code mật khẩu trong source.
 
 Tool ưu tiên tạo bài qua admin form:
 
 - `https://hnoj.edu.vn/admin/judge/problem/add/`
 - `https://tinhoctre.vn/admin/judge/problem/add/`
 - `https://hncode.edu.vn/admin/judge/problem/add/`
+- `https://lqdoj.edu.vn/admin/judge/problem/add/`
+
+LQDOJ có thể bật Cloudflare challenge. Khi đăng nhập trực tiếp bị chặn, bấm `Mở Edge đăng nhập LQDOJ`, đăng nhập admin trong cửa sổ vừa mở, rồi bấm `Lấy cookie LQDOJ từ Edge`. Cookie chỉ lưu tạm trong `localStorage` của trình duyệt dùng Tool OJ.
 
 Ghi chú HNCode: trang upload test đúng là
 `https://hncode.edu.vn/problem/<ma_bai>/test_data`. Trang này dùng
@@ -39,13 +43,13 @@ Giao diện dùng favicon từ `static/favicon-HNCode.svg`.
 
 Quy tắc ký tự công thức trong đề bài:
 
-- Khi up hoặc chuyển bài lên `HNOJ`, đề bài dùng `~` thay cho `$`.
+- Khi up hoặc chuyển bài lên `HNOJ` và `LQDOJ`, đề bài dùng `~` thay cho `$`.
 - Khi up hoặc chuyển bài lên `HNCode` và `TinHocTre`, đề bài dùng `$` thay cho `~`.
 
 ## Chạy giao diện web
 
 ```powershell
-cd C:\Users\Admin\Documents\_ChuyenBai
+cd C:\Users\Admin\Documents\ChuyenBai
 pip install -r requirements.txt
 python web_app.py
 ```
@@ -64,7 +68,7 @@ http://127.0.0.1:5050
 
 ## Tab Tài khoản & Hướng dẫn
 
-Lưu tạm tài khoản admin của 3 trang trên trình duyệt máy đang dùng bằng `localStorage`.
+Lưu tạm tài khoản admin của 4 trang trên trình duyệt máy đang dùng bằng `localStorage`.
 
 Có các nút:
 
@@ -89,7 +93,7 @@ Tên bài | Mã bài | Điểm | Các Tags
 
 Luồng sử dụng:
 
-1. Chọn web đích: `HNOJ`, `HNCode` hoặc `TinHocTre`.
+1. Chọn web đích: `HNOJ`, `HNCode`, `TinHocTre` hoặc `LQDOJ`.
 2. Chọn file zip bộ bài hoặc file Markdown tổng hợp bằng cách dán đường dẫn hoặc bấm `Chọn file`.
    - File zip dùng cấu trúc: mỗi bài có đề Markdown, đề PDF hoặc cả hai; test zip hoặc `gentest`; lời giải Markdown nếu có.
    - File Markdown tổng hợp dùng để up đề bài, mỗi bài bắt đầu bằng dòng `# Bài 1. Tên bài | ma_bai`.
@@ -250,11 +254,11 @@ Khi bấm `Chuẩn bị dữ liệu`, tool tự tách từng heading `# Bài n. 
 
 Luồng sử dụng:
 
-1. Chọn nguồn: `HNOJ`, `HNCode` hoặc `TinHocTre`.
-2. Chọn đích: `HNOJ`, `HNCode` hoặc `TinHocTre`.
+1. Chọn nguồn: `HNOJ`, `HNCode`, `TinHocTre` hoặc `LQDOJ`.
+2. Chọn đích: `HNOJ`, `HNCode`, `TinHocTre` hoặc `LQDOJ`.
 3. Chỉnh thông số đích nếu cần:
    - Giới hạn thời gian mặc định.
-   - Giới hạn bộ nhớ mặc định.
+   - Giới hạn bộ nhớ mặc định tính theo MB, mặc định `1024` MB.
    - Ngôn ngữ cho phép ở đích.
    - Người tạo, dạng đề, nhóm bài trong phần mở rộng.
    - `Áp dụng cho tất cả các bài`: lấy time/memory mặc định điền xuống toàn bộ bảng.
@@ -265,31 +269,36 @@ Luồng sử dụng:
    - Mã bài.
    - Tên bài toán.
    - Time limit.
-   - Memory limit.
+   - Memory limit tính theo MB.
    - Link `Bộ test` trỏ tới `/problem/<ma_bai>/test_data`.
    - Số lượng test.
    - Trạng thái.
 7. Có thể sửa mã bài, tên bài, time limit, memory limit trước khi bấm `Xác nhận chuyển bài`.
+8. Nếu mã bài đã có ở đích, bảng báo rõ và mặc định không ghi đè. Chỉ khi tích `Ghi đè nếu trùng`, tool mới cập nhật đề/metadata/test theo các phần đang được chọn.
+
+Các ô memory trong bảng Chuyển bài luôn hiển thị theo MB. Tool tự đổi sang KB khi gửi form quản trị; cũng chấp nhận giá trị có hậu tố như `512MB`, `1GB` hoặc `1048576KB`.
 
 Khi chuyển thành công, cột trạng thái có chữ `Link` để mở trang bài ở hệ thống đích.
-Nếu mã bài đích đã tồn tại, dòng đó sẽ báo `Bài đã tồn tại`, bị bỏ qua và các dòng khác vẫn tiếp tục chuyển.
+Nếu mã bài đích đã tồn tại và không tích ghi đè, tool dùng nguyên bài đích, không thay đề hoặc test. Mọi chức năng chuyển đều là **sao chép**; tool không sửa hoặc xóa dữ liệu nguồn.
+
+Khi đọc bộ test nguồn, tool hỗ trợ cả form dùng `<input>` và form mới dùng `<select>` cho tên file test. Nếu trang test không còn metadata từng case, tool suy ra các cặp `.inp/.out`, `.in/.out`, `.in/.ans` hoặc `.input/.output` trực tiếp từ file zip.
 
 TinHocTre hiện dùng hệ thống mới tương tự HNCode. Tool đăng nhập trực tiếp bằng tài khoản trong tab `Tài khoản & Hướng dẫn` và dùng admin form `/admin/judge/problem/add/`; luồng cookie/Edge cũ không còn nằm trong giao diện chính.
 
 ## Tab Chuyển contest
 
-Tab này dùng cho các contest trên 3 hệ thống chính: `HNOJ`, `HNCode`, `TinHocTre`.
+Tab này dùng cho contest trên `HNOJ`, `HNCode`, `TinHocTre` và `LQDOJ`.
 
 Luồng sử dụng:
 
 1. Chọn `Nguồn` và `Đích`.
 2. Nhập danh sách mã contest, mỗi mã một dòng hoặc cách nhau bằng dấu cách.
-3. Giữ `Nếu bài đã có ở đích thì dùng lại bài đó` để tránh tạo trùng problem.
+3. Bài đã có ở đích luôn được dùng lại nguyên trạng để tránh tạo trùng problem.
 4. Giữ `Tự chuyển bài/test còn thiếu trước khi tạo contest` nếu muốn tool tự kéo đề và test cho các bài chưa có ở đích.
 5. Bấm `Chuẩn bị dữ liệu` để xem tên contest, thời gian và danh sách bài.
 6. Bấm `Xác nhận chuyển contest`.
 
-Tool chỉ chuyển contest, problem và test. Tool không chuyển bài nộp của học sinh.
+Tool chỉ sao chép contest, problem và test. Tool không chuyển bài nộp của học sinh và không thay đổi nguồn.
 
 Trong bảng chuẩn bị dữ liệu, mỗi contest có bảng con liệt kê từng bài, gồm mã bài, điểm, thứ tự, trạng thái và ô chọn/bỏ chọn bài đó khi chuyển.
 
@@ -297,7 +306,11 @@ Khi chuyển bài, tool dò và tải file PDF thực tế từ bài nguồn r�
 
 Sau khi bấm `Chuẩn bị dữ liệu`, trạng thái chuẩn bị của phần chuyển contest được lưu xuống `.runtime/contest_transfer_<prepare_id>/state.json`. Vì vậy nếu request xác nhận đi sang worker khác hoặc service vừa restart nhẹ, nút `Xác nhận chuyển contest` vẫn có thể tiếp tục dùng dữ liệu đã chuẩn bị.
 
-Nếu contest đã tồn tại ở đích, tool mở form sửa contest và thêm các bài chưa có vào cuối danh sách theo đúng thứ tự gửi lên. Bài đã có trong contest được bỏ qua để tránh trùng.
+Nếu contest đã tồn tại ở đích, tool mở form sửa contest, cập nhật metadata/setup và bổ sung bài còn thiếu. Các bài đã có được cập nhật điểm, thứ tự và các thiết lập contest-problem tương thích, không tạo dòng trùng.
+
+Tool sao chép các thiết lập contest tương thích như tên, mô tả, thời gian, visibility, scoreboard, format, rate/freeze/strict settings, điểm và thiết lập từng bài. Khi chuyển chéo website, ảnh trong mô tả được tải từ nguồn, upload sang website đích và lưu bằng URL tương đối. Link nội bộ như bài, contest, lesson và course cũng được đổi sang đường dẫn tương đối hoặc mã tương ứng ở đích; nội dung không giữ URL tuyệt đối của website nguồn. Tài khoản quản trị, thành viên riêng tư và các quan hệ người dùng không tự động sao chép chéo website vì ID người dùng không dùng chung.
+
+Mỗi bài được xử lý độc lập. Một bài lỗi được ghi rõ trong bảng con và `Thông tin trả về`; tool tiếp tục bài kế tiếp và tiếp tục các contest còn lại. Contest có cả bài thành công và bài lỗi được đánh dấu `Hoàn thành một phần`.
 
 ## Tab Tạo contest
 
@@ -315,13 +328,13 @@ Sau khi tạo xong, người dùng có thể vào admin của web đích để c
 
 ## Tab Contest → Lesson
 
-Tab này sao chép danh sách bài từ một contest HNCode/HNOJ vào một lesson HNCode.
+Tab này sao chép danh sách bài từ một contest HNCode/HNOJ/LQDOJ vào một lesson HNCode/LQDOJ.
 
 HNCode hiện dùng domain chính `https://hncode.edu.vn`. Tool vẫn nhận link cũ `https://oj.hncode.edu.vn` ở một số ô nhập cũ, nhưng sẽ ưu tiên chuẩn hóa sang `https://hncode.edu.vn` khi xử lý bài/contest/lesson.
 
 Luồng sử dụng:
 
-1. Chọn nguồn contest `HNCode` hoặc `HNOJ`. Nếu URL có `hnoj.edu.vn` hoặc `hncode.edu.vn`, backend sẽ tự nhận lại nguồn theo URL để tránh chọn nhầm.
+1. Chọn nguồn contest `HNCode`, `HNOJ` hoặc `LQDOJ`, rồi chọn web chứa Lesson đích.
 2. Nhập URL contest nguồn, ví dụ `https://hncode.edu.vn/contest/nt26exam01`.
 3. Nhập URL lesson đích, ví dụ `https://hncode.edu.vn/course/nt26_tuyen3/lesson/3123`.
 4. Bấm `Chuẩn bị dữ liệu`.
@@ -330,6 +343,35 @@ Luồng sử dụng:
 7. Bấm `Sao chép bài`.
 
 Tool mở form sửa lesson `edit_lessons_new/<lesson_id>`, giữ nguyên nội dung lesson và quiz hiện có, chỉ thêm các problem còn thiếu vào cuối danh sách. Nếu bài đã có trong lesson, dòng đó báo `Đã có trong lesson` và bị bỏ qua để tránh trùng.
+
+Nếu problem đã có trên web đích nhưng chưa nằm trong Lesson, tool dùng ID problem đích hiện có. Tool chỉ sao chép problem từ nguồn khi mã đó còn thiếu ở đích.
+
+## Tab Chuyển Lesson
+
+Nhập URL Lesson nguồn và URL Course đích, chọn HNCode/LQDOJ ở hai phía rồi bấm `Chuẩn bị dữ liệu`. Bảng hiển thị mã nguồn, mã đích và trạng thái từng bài. Khi xác nhận:
+
+- Lesson cùng tên đã có ở Course đích: dùng lại, cập nhật tên/mô tả/điểm/thứ tự/visibility và không tạo trùng.
+- Problem đã có ở web đích: dùng lại nguyên trạng.
+- Problem còn thiếu: sao chép đề và test rồi gắn ID mới vào Lesson đích.
+- Dữ liệu Lesson và problem nguồn chỉ được đọc, không bị sửa.
+- Một problem lỗi được ghi vào báo cáo; các problem sau vẫn tiếp tục. Ảnh trong nội dung Lesson được upload sang website đích và dùng URL tương đối; link bài được đổi sang mã bài tương ứng ở đích.
+- Quiz trong Lesson được giữ đầy đủ khi sao chép trong cùng một website. Khi chuyển chéo website, tool báo và bỏ qua quiz vì ID câu hỏi/quiz không dùng chung; không tự gắn nhầm quiz theo ID.
+
+## Tab Chuyển Course
+
+Sao chép toàn bộ Lesson và Contest đã chọn giữa HNCode và LQDOJ. Nếu Course đích chưa tồn tại, tool tự tạo Course bằng slug đã nhập rồi sao chép tên, mô tả, trạng thái công khai/mở và organization tương thích từ nguồn. Nếu Course đích đã tồn tại, slug, vai trò và thành viên hiện có được giữ nguyên; organization chỉ được đồng bộ khi tìm thấy organization cùng tên ở đích.
+
+Lesson cùng tên và Contest đã nằm trong Course đích được dùng lại để cập nhật metadata/setup và bổ sung bài còn thiếu. Tool giữ điểm/thứ tự Lesson, điểm/thứ tự Contest trong Course, mô tả và cấu hình Contest, thứ tự/điểm từng bài; problem trùng được dùng lại theo ID ở website đích. Ảnh được chuyển sang storage của đích; link nội bộ được lưu tương đối, không giữ domain HNCode/LQDOJ nguồn. Nếu một Lesson, Contest hoặc problem lỗi, dòng đó được ghi báo cáo và tiến trình tiếp tục với các mục còn lại.
+
+LQDOJ áp dụng quy tắc mã chặt hơn:
+
+- Mã bài: `^[a-z0-9]+$`, tối đa 30 ký tự.
+- Mã contest: `^[a-z0-9]+$`, tối đa 20 ký tự.
+- Mã course: chữ, số và dấu gạch ngang; không dùng dấu gạch dưới.
+
+Tool hiển thị mã đã chuẩn hóa trong bước chuẩn bị để người dùng kiểm tra trước khi thực hiện.
+
+Các ô URL Contest/Lesson/Course tự nhận diện HNCode, HNOJ hoặc LQDOJ và đồng bộ ô chọn website trước khi gửi yêu cầu. Backend cũng kiểm tra domain; nếu URL và website được chọn không khớp, tool báo rõ hai website thay vì chỉ trả lỗi HTTP 404.
 
 Để chống thay đổi giao diện của HNCode, tool dùng parser chung cho contest và nhận các dạng link bài:
 

@@ -340,6 +340,6 @@ def upload_problem_pdf(
         raise RuntimeError(f"File đề PDF không hợp lệ: {pdf_path}")
     if target == "hnoj":
         return _upload_hnoj_pdf(session, base_url, problem_code, pdf_path)
-    if target in {"hncode", "tinhoctre"}:
+    if target in {"hncode", "tinhoctre", "lqdoj"}:
         return _upload_direct_pdf(session, base_url, problem_code, pdf_path)
     raise RuntimeError(f"Web đích không hỗ trợ PDF: {target}")

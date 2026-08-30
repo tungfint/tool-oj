@@ -7,6 +7,7 @@ import html
 import csv
 import json
 import math
+import mimetypes
 import os
 import re
 import requests
@@ -22,7 +23,7 @@ from collections import Counter, defaultdict
 from dataclasses import replace
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import quote, urljoin
+from urllib.parse import quote, urljoin, urlsplit
 from urllib.request import urlopen
 from http.cookies import SimpleCookie
 
@@ -31,6 +32,7 @@ from flask import Flask, Response, jsonify, render_template_string, request, sen
 from services import hncode as hncode_service
 from services import jobs as job_service
 from services import last_submissions as last_submissions_service
+from services import lqdoj as lqdoj_service
 from services import problem_bundle as bundle_service
 from services import problem_export as export_service
 from services import problem_pdf as problem_pdf_service
@@ -122,6 +124,15 @@ TARGETS = {
             "Scratch": "23",
         },
         "default_user": "MrTee",
+        "test_backend": "dmoj",
+    },
+    "lqdoj": {
+        "label": "LQDOJ",
+        "base_url": "https://lqdoj.edu.vn",
+        "type_id": "",
+        "group_id": "",
+        "languages": {"C++17": "15", "C++20": "18", "Pascal": "14", "Python 3": "8"},
+        "default_user": "quangvu",
         "test_backend": "dmoj",
     },
 }
@@ -285,6 +296,7 @@ prepared_transfers: dict[str, dict] = {}
 prepared_contest_transfers: dict[str, dict] = {}
 prepared_quizzes: dict[str, dict] = {}
 prepared_lesson_copies: dict[str, dict] = {}
+prepared_lesson_transfers: dict[str, dict] = {}
 prepared_course_clones: dict[str, dict] = {}
 prepared_hncode_grading: dict[str, dict] = {}
 
@@ -1459,7 +1471,7 @@ def require_basic_auth():
     return Response(
         "Authentication required",
         401,
-        {"WWW-Authenticate": 'Basic realm="Tool HNCode"'},
+        {"WWW-Authenticate": 'Basic realm="Tool OJ"'},
     )
 
 
@@ -1469,7 +1481,7 @@ PAGE = r"""
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tool HNCode</title>
+  <title>Tool OJ</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon-HNCode.svg">
   <style>
     :root { --bg:#f5f7fb; --panel:#fff; --ink:#172033; --muted:#667085; --line:#d8dee9; --soft:#eef2f6; --accent:#0f766e; --ok:#087443; --bad:#b42318; --warn:#b54708; --code:#101828; }
@@ -1528,6 +1540,13 @@ PAGE = r"""
     .login-badge { display:inline-flex; align-items:center; min-height:24px; border-radius:999px; padding:3px 9px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:700; margin-top:6px; }
     .login-badge.ok { background:#dcfae6; color:var(--ok); }
     .login-badge.err { background:#fee4e2; color:var(--bad); }
+    .account-list { display:grid; gap:10px; margin-top:14px; }
+    .account-row { display:grid; grid-template-columns:minmax(150px, 190px) minmax(180px, 1fr) 24px minmax(220px, 1fr); gap:10px; align-items:end; border:1px solid var(--line); background:#fafbfc; border-radius:8px; padding:12px; }
+    .account-site { align-self:center; display:flex; flex-direction:column; align-items:flex-start; font-weight:800; color:#1d2939; }
+    .account-field label { margin:0 0 6px; font-size:12px; color:var(--muted); }
+    .account-separator { align-self:center; text-align:center; color:#98a2b3; font-weight:800; }
+    .password-input { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:6px; }
+    button.password-toggle { min-width:58px; padding:8px 10px; box-shadow:none; }
     table { width:100%; border-collapse:collapse; margin-top:14px; font-size:13px; }
     th, td { border-bottom:1px solid var(--line); padding:8px; vertical-align:top; text-align:left; }
     th { background:#f8fafc; font-weight:700; }
@@ -1539,12 +1558,12 @@ PAGE = r"""
     .lang-list { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; margin-top:8px; }
     .check { display:flex; align-items:center; gap:7px; }
     .hidden { display:none; }
-    @media (max-width:980px) { main { display:block; padding:14px; } .log-panel { width:100%; max-width:none; margin-top:14px; resize:vertical; } .grid-2,.grid-3,.lang-list { grid-template-columns:1fr; } }
+    @media (max-width:980px) { main { display:block; padding:14px; } .log-panel { width:100%; max-width:none; margin-top:14px; resize:vertical; } .grid-2,.grid-3,.lang-list { grid-template-columns:1fr; } .account-row { grid-template-columns:1fr; } .account-separator { display:none; } }
   </style>
 </head>
 <body>
   <header>
-    <h1>Tool HNCode</h1>
+    <h1>Tool OJ</h1>
     <div class="nav">
       <div class="nav-group">
         <span class="nav-label">Chung</span>
@@ -1561,7 +1580,8 @@ PAGE = r"""
         <button type="button" data-panel="contest-transfer">Chuyển contest</button>
         <button type="button" data-panel="contest-create">Tạo contest</button>
         <button type="button" data-panel="contest-lesson-copy">Contest → Lesson</button>
-        <button type="button" data-panel="course-clone">Clone Course</button>
+        <button type="button" data-panel="lesson-transfer">Chuyển Lesson</button>
+        <button type="button" data-panel="course-clone">Chuyển Course</button>
       </div>
       <div class="nav-group">
         <span class="nav-label">Khác</span>
@@ -1576,20 +1596,40 @@ PAGE = r"""
       <div class="panel active" id="panel-accounts">
         <h2>Tài khoản & Hướng dẫn</h2>
         <p>Lưu tạm tài khoản trên trình duyệt máy này. Khi chạy tác vụ, form sẽ tự điền các thông tin đã lưu.</p>
-        <div class="grid-3">
-          <div><label>HNOJ user</label><input id="acct_hnoj_user" type="text" value="MrTee"><span id="login_hnoj" class="login-badge">Chưa kiểm tra</span></div>
-          <div><label>HNCode user</label><input id="acct_hncode_user" type="text" value="MrTee"><span id="login_hncode" class="login-badge">Chưa kiểm tra</span></div>
-          <div><label>TinHocTre user</label><input id="acct_tinhoctre_user" type="text" value="MrTee"><span id="login_tinhoctre" class="login-badge">Chưa kiểm tra</span></div>
-        </div>
-        <div class="grid-3">
-          <div><label>HNOJ password</label><input id="acct_hnoj_pass" type="password"></div>
-          <div><label>HNCode password</label><input id="acct_hncode_pass" type="password"></div>
-          <div><label>TinHocTre password</label><input id="acct_tinhoctre_pass" type="password"></div>
+        <div class="account-list">
+          <div class="account-row">
+            <div class="account-site">HNOJ<span id="login_hnoj" class="login-badge">Chưa kiểm tra</span></div>
+            <div class="account-field"><label for="acct_hnoj_user">User</label><input id="acct_hnoj_user" type="text" value="MrTee" autocomplete="username"></div>
+            <div class="account-separator">-</div>
+            <div class="account-field"><label for="acct_hnoj_pass">Password</label><div class="password-input"><input id="acct_hnoj_pass" type="password" autocomplete="current-password"><button class="action password-toggle" type="button" data-password-target="acct_hnoj_pass" aria-pressed="false">Hiện</button></div></div>
+          </div>
+          <div class="account-row">
+            <div class="account-site">HNCode<span id="login_hncode" class="login-badge">Chưa kiểm tra</span></div>
+            <div class="account-field"><label for="acct_hncode_user">User</label><input id="acct_hncode_user" type="text" value="MrTee" autocomplete="username"></div>
+            <div class="account-separator">-</div>
+            <div class="account-field"><label for="acct_hncode_pass">Password</label><div class="password-input"><input id="acct_hncode_pass" type="password" autocomplete="current-password"><button class="action password-toggle" type="button" data-password-target="acct_hncode_pass" aria-pressed="false">Hiện</button></div></div>
+          </div>
+          <div class="account-row">
+            <div class="account-site">TinHocTre<span id="login_tinhoctre" class="login-badge">Chưa kiểm tra</span></div>
+            <div class="account-field"><label for="acct_tinhoctre_user">User</label><input id="acct_tinhoctre_user" type="text" value="MrTee" autocomplete="username"></div>
+            <div class="account-separator">-</div>
+            <div class="account-field"><label for="acct_tinhoctre_pass">Password</label><div class="password-input"><input id="acct_tinhoctre_pass" type="password" autocomplete="current-password"><button class="action password-toggle" type="button" data-password-target="acct_tinhoctre_pass" aria-pressed="false">Hiện</button></div></div>
+          </div>
+          <div class="account-row">
+            <div class="account-site">LQDOJ<span id="login_lqdoj" class="login-badge">Chưa kiểm tra</span></div>
+            <div class="account-field"><label for="acct_lqdoj_user">User</label><input id="acct_lqdoj_user" type="text" value="quangvu" autocomplete="username"></div>
+            <div class="account-separator">-</div>
+            <div class="account-field"><label for="acct_lqdoj_pass">Password</label><div class="password-input"><input id="acct_lqdoj_pass" type="password" autocomplete="current-password"><button class="action password-toggle" type="button" data-password-target="acct_lqdoj_pass" aria-pressed="false">Hiện</button></div></div>
+          </div>
         </div>
         <textarea id="acct_tinhoctre_cookie" class="hidden"></textarea>
+        <textarea id="acct_lqdoj_cookie" class="hidden"></textarea>
+        <input id="acct_lqdoj_user_agent" class="hidden" type="text">
         <div class="actions">
           <button class="action primary" type="button" id="saveAccounts">Lưu tạm</button>
           <button class="action" type="button" id="checkAccounts">Kiểm tra đăng nhập</button>
+          <button class="action" type="button" id="openLqdojBrowser">Mở Edge đăng nhập LQDOJ</button>
+          <button class="action" type="button" id="pullLqdojCookie">Lấy cookie LQDOJ từ Edge</button>
           <button class="action" type="button" id="clearAccounts">Xóa thông tin đã lưu</button>
         </div>
         <button class="action" type="button" id="toggleGuide">Ẩn / Hiện hướng dẫn prompt</button>
@@ -1606,6 +1646,7 @@ PAGE = r"""
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
+              <option value="lqdoj">LQDOJ</option>
             </select><span id="uploadTargetLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
           <div>
@@ -1676,6 +1717,7 @@ PAGE = r"""
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
+              <option value="lqdoj">LQDOJ</option>
             </select><span id="singleUploadLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
           <div>
@@ -1754,12 +1796,12 @@ PAGE = r"""
         <h2>Chuyển bài</h2>
         <p>Chọn nguồn, đích và danh sách mã bài. Tool sẽ lấy đề/test từ nguồn rồi tạo bài và upload test ở đích.</p>
         <div class="grid-2">
-          <div><label>Nguồn</label><select id="transferSource"><option value="tinhoctre">TinHocTre</option><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option></select><span id="transferSourceLogin" class="login-badge">Chưa kiểm tra</span></div>
-          <div><label>Đích</label><select id="transferDest"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option><option value="tinhoctre">TinHocTre</option></select><span id="transferDestLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Nguồn</label><select id="transferSource"><option value="tinhoctre">TinHocTre</option><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option><option value="lqdoj">LQDOJ</option></select><span id="transferSourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Đích</label><select id="transferDest"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option><option value="tinhoctre">TinHocTre</option><option value="lqdoj">LQDOJ</option></select><span id="transferDestLogin" class="login-badge">Chưa kiểm tra</span></div>
         </div>
         <div class="grid-2">
           <div><label>Giới hạn thời gian mặc định</label><input id="transferTimeLimit" type="text" value="1.0"></div>
-          <div><label>Giới hạn bộ nhớ mặc định</label><input id="transferMemoryLimit" type="text" value="1048576"></div>
+          <div><label>Giới hạn bộ nhớ mặc định (MB)</label><input id="transferMemoryLimit" type="text" value="1024"></div>
         </div>
         <div class="actions">
           <button class="action" type="button" id="applyTransferLimits">Áp dụng cho tất cả các bài</button>
@@ -1796,6 +1838,7 @@ PAGE = r"""
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
+              <option value="lqdoj">LQDOJ</option>
             </select><span id="contestSourceLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
           <div>
@@ -1804,6 +1847,7 @@ PAGE = r"""
               <option value="hnoj">HNOJ</option>
               <option value="hncode">HNCode</option>
               <option value="tinhoctre">TinHocTre</option>
+              <option value="lqdoj">LQDOJ</option>
             </select><span id="contestDestLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
         </div>
@@ -1826,7 +1870,7 @@ PAGE = r"""
         <h2>Tạo contest từ mã bài</h2>
         <p>Tạo contest cơ bản và gắn các mã bài đã có trên web đích. Các thiết lập chi tiết có thể chỉnh lại trong admin sau.</p>
         <div class="grid-2">
-          <div><label>Web đích</label><select id="createContestTarget"><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option><option value="tinhoctre">TinHocTre</option></select><span id="createContestLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Web đích</label><select id="createContestTarget"><option value="hnoj">HNOJ</option><option value="hncode">HNCode</option><option value="tinhoctre">TinHocTre</option><option value="lqdoj">LQDOJ</option></select><span id="createContestLogin" class="login-badge">Chưa kiểm tra</span></div>
           <div><label>Mã contest</label><input id="createContestKey" type="text" placeholder="tht2026_hn_ck_a"></div>
         </div>
         <label>Tên contest</label><input id="createContestName" type="text" placeholder="TIN HỌC TRẺ 2026 - HÀ NỘI - CHUNG KẾT - BẢNG A">
@@ -1847,15 +1891,16 @@ PAGE = r"""
       </div>
 
       <div class="panel" id="panel-contest-lesson-copy">
-        <h2>Sao chép bài từ Contest → Lesson HNCode</h2>
-        <p>Lấy danh sách bài theo đúng thứ tự trong contest HNCode/HNOJ, chuyển bài thiếu sang HNCode nếu cần, rồi thêm vào lesson HNCode. Bài đã có trong lesson sẽ được báo rõ và bỏ qua.</p>
+        <h2>Sao chép bài từ Contest → Lesson</h2>
+        <p>Lấy danh sách bài theo đúng thứ tự trong contest, dùng lại bài đã có ở đích, chỉ chuyển bài còn thiếu rồi thêm vào Lesson. Dữ liệu nguồn không bị thay đổi.</p>
         <div class="grid-2">
-          <div><label>Nguồn contest</label><select id="lessonCopySource"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option></select><span id="lessonCopySourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Nguồn contest</label><select id="lessonCopySource"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option><option value="lqdoj">LQDOJ</option></select><span id="lessonCopySourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Web chứa Lesson đích</label><select id="lessonCopyDest"><option value="hncode">HNCode</option><option value="lqdoj">LQDOJ</option></select><span id="lessonCopyLogin" class="login-badge">Chưa kiểm tra</span></div>
+        </div>
+        <div class="grid-2">
+          <div><label>Contest nguồn</label><input id="lessonCopyContestUrl" type="text" value="https://hnoj.edu.vn/contest/ctp_4"></div>
           <div><label>Lesson đích</label><input id="lessonCopyLessonUrl" type="text" value="https://hncode.edu.vn/course/26nc202/lesson/3073"></div>
         </div>
-        <div><label>HNCode đích</label><input id="lessonCopyUserMirror" type="text" value="MrTee" readonly><span id="lessonCopyLogin" class="login-badge">Chưa kiểm tra</span></div>
-        <label>Contest nguồn</label>
-        <input id="lessonCopyContestUrl" type="text" value="https://hnoj.edu.vn/contest/ctp_4">
         <div class="actions">
           <button class="action primary" type="button" id="prepareContestLessonCopy">Chuẩn bị dữ liệu</button>
           <button class="action primary" type="button" id="confirmContestLessonCopy" disabled>Sao chép bài</button>
@@ -1867,13 +1912,32 @@ PAGE = r"""
         <div id="contestLessonCopyTable"></div>
       </div>
 
-      <div class="panel" id="panel-course-clone">
-        <h2>Clone Course HNCode</h2>
-        <p>Clone các lesson và contest từ course nguồn sang course đích. Lesson dùng nút Nhân bản native của HNCode; contest sẽ tạo bản clone với mã mới để không đụng contest gốc.</p>
+      <div class="panel" id="panel-lesson-transfer">
+        <h2>Chuyển Lesson</h2>
+        <p>Sao chép một Lesson sang Course đích. Bài đã có ở đích được dùng lại; chỉ bài còn thiếu mới được sao chép. Nguồn không bị thay đổi.</p>
         <div class="grid-2">
-          <div><label>HNCode user</label><input id="courseCloneUserMirror" type="text" value="MrTee" readonly><span id="courseCloneLogin" class="login-badge">Chưa kiểm tra</span></div>
-          <div><label>Hậu tố mã contest đích</label><input id="courseCloneContestSuffix" type="text" placeholder="Để trống thì tự dùng _<course đích>"></div>
+          <div><label>Web nguồn</label><select id="lessonTransferSource"><option value="hncode">HNCode</option><option value="lqdoj">LQDOJ</option></select><span id="lessonTransferSourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Web đích</label><select id="lessonTransferDest"><option value="lqdoj">LQDOJ</option><option value="hncode">HNCode</option></select><span id="lessonTransferDestLogin" class="login-badge">Chưa kiểm tra</span></div>
         </div>
+        <label>Lesson nguồn</label>
+        <input id="lessonTransferSourceUrl" type="text" placeholder="https://hncode.edu.vn/course/<course>/lesson/<id>">
+        <label>Course đích</label>
+        <input id="lessonTransferDestUrl" type="text" placeholder="https://lqdoj.edu.vn/course/<course>">
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareLessonTransfer">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmLessonTransfer" disabled>Xác nhận chuyển Lesson</button>
+        </div>
+        <div id="lessonTransferTable"></div>
+      </div>
+
+      <div class="panel" id="panel-course-clone">
+        <h2>Chuyển Course</h2>
+        <p>Sao chép Lesson và Contest giữa HNCode/LQDOJ. Nội dung đã có trong Course đích được dùng lại để cập nhật và bổ sung; dữ liệu nguồn không bị thay đổi. Website được tự nhận diện theo URL.</p>
+        <div class="grid-2">
+          <div><label>Web nguồn</label><select id="courseCloneSource"><option value="hncode">HNCode</option><option value="lqdoj">LQDOJ</option></select><span id="courseCloneSourceLogin" class="login-badge">Chưa kiểm tra</span></div>
+          <div><label>Web đích</label><select id="courseCloneDest"><option value="hncode">HNCode</option><option value="lqdoj">LQDOJ</option></select><span id="courseCloneLogin" class="login-badge">Chưa kiểm tra</span></div>
+        </div>
+        <div><label>Hậu tố mã contest đích</label><input id="courseCloneContestSuffix" type="text" placeholder="Khác web: mặc định giữ mã; cùng web: mặc định thêm mã course đích"></div>
         <label>Course nguồn</label>
         <input id="courseCloneSourceUrl" type="text" value="https://hncode.edu.vn/course/sach_cppcoban_share">
         <label>Course đích</label>
@@ -2041,6 +2105,7 @@ let preparedTransfer = null;
 let preparedContestTransfer = null;
 let preparedQuiz = null;
 let preparedContestLessonCopy = null;
+let preparedLessonTransfer = null;
 let preparedCourseClone = null;
 let preparedGrading = null;
 let selectedZipFile = null;
@@ -2088,6 +2153,10 @@ const accountFields = {
   tinhoctre_user: document.getElementById("acct_tinhoctre_user"),
   tinhoctre_pass: document.getElementById("acct_tinhoctre_pass"),
   tinhoctre_cookie: document.getElementById("acct_tinhoctre_cookie"),
+  lqdoj_user: document.getElementById("acct_lqdoj_user"),
+  lqdoj_pass: document.getElementById("acct_lqdoj_pass"),
+  lqdoj_cookie: document.getElementById("acct_lqdoj_cookie"),
+  lqdoj_user_agent: document.getElementById("acct_lqdoj_user_agent"),
 };
 function loadAccounts() {
   for (const [key, input] of Object.entries(accountFields)) {
@@ -2099,8 +2168,44 @@ function saveAccounts() {
   for (const [key, input] of Object.entries(accountFields)) localStorage.setItem("chuyenbai." + key, input.value);
 }
 loadAccounts();
+document.querySelectorAll("[data-password-target]").forEach(button => {
+  button.addEventListener("click", () => {
+    const input = document.getElementById(button.dataset.passwordTarget);
+    if (!input) return;
+    const visible = input.type === "text";
+    input.type = visible ? "password" : "text";
+    button.textContent = visible ? "Hiện" : "Ẩn";
+    button.setAttribute("aria-pressed", visible ? "false" : "true");
+  });
+});
 document.getElementById("saveAccounts").onclick = () => { saveAccounts(); append("Đã lưu tạm tài khoản."); };
 document.getElementById("checkAccounts").onclick = () => { log("Đang kiểm tra đăng nhập các trang..."); checkAllAccounts(); };
+document.getElementById("openLqdojBrowser").onclick = async () => {
+  try {
+    status("running");
+    const data = await postJson("/api/lqdoj-browser/start", {});
+    append(data.message || "Đã mở Edge đăng nhập LQDOJ.");
+    status("ready", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+document.getElementById("pullLqdojCookie").onclick = async () => {
+  try {
+    status("running");
+    const data = await postJson("/api/lqdoj-browser/cookie", {});
+    accountFields.lqdoj_cookie.value = data.cookie || "";
+    accountFields.lqdoj_user_agent.value = data.user_agent || "";
+    saveAccounts();
+    append(data.message || "Đã lấy cookie LQDOJ từ Edge.");
+    await checkLogin("lqdoj", "login_lqdoj");
+    status("ready", "ok");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
 const openTinHocTreBrowserButton = document.getElementById("openTinHocTreBrowser");
 if (openTinHocTreBrowserButton) openTinHocTreBrowserButton.onclick = async () => {
   try {
@@ -2176,7 +2281,7 @@ document.getElementById("resetTransferLimits").onclick = () => {
     const timeInput = tr.querySelector(".row-time");
     const memoryInput = tr.querySelector(".row-memory");
     if (timeInput) timeInput.value = tr.dataset.sourceTime || "1.0";
-    if (memoryInput) memoryInput.value = tr.dataset.sourceMemory || "1048576";
+    if (memoryInput) memoryInput.value = tr.dataset.sourceMemory || "1024";
   }
   append("Đã trả time/memory về thông số lấy từ nguồn.");
 };
@@ -2303,16 +2408,50 @@ document.getElementById("contestDest").addEventListener("change", checkContestLo
 document.getElementById("contestCodes").addEventListener("blur", checkContestLogins);
 document.getElementById("createContestTarget").addEventListener("change", checkCreateContestLogin);
 document.getElementById("lessonCopySource").addEventListener("change", checkLessonCopyLogin);
+document.getElementById("lessonCopyDest").addEventListener("change", checkLessonCopyLogin);
+document.getElementById("lessonTransferSource").addEventListener("change", checkLessonTransferLogin);
+document.getElementById("lessonTransferDest").addEventListener("change", checkLessonTransferLogin);
+document.getElementById("courseCloneSource").addEventListener("change", checkCourseCloneLogin);
+document.getElementById("courseCloneDest").addEventListener("change", checkCourseCloneLogin);
+function structureTargetFromUrl(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.includes("lqdoj.edu.vn")) return "lqdoj";
+  if (normalized.includes("hncode.edu.vn") || normalized.includes("oj.hncode.edu.vn")) return "hncode";
+  if (normalized.includes("hnoj.edu.vn")) return "hnoj";
+  if (normalized.includes("tinhoctre.vn")) return "tinhoctre";
+  return "";
+}
+function syncStructureTarget(selectId, inputId, loginCheck) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  const detected = structureTargetFromUrl(input && input.value);
+  if (select && detected && [...select.options].some(option => option.value === detected)) {
+    select.value = detected;
+  }
+  if (loginCheck) loginCheck();
+  return select ? select.value : detected;
+}
 document.getElementById("lessonCopyContestUrl").addEventListener("blur", () => {
   const value = document.getElementById("lessonCopyContestUrl").value.toLowerCase();
   if (value.includes("hnoj.edu.vn")) document.getElementById("lessonCopySource").value = "hnoj";
   if (value.includes("hncode.edu.vn") || value.includes("oj.hncode.edu.vn")) document.getElementById("lessonCopySource").value = "hncode";
+  if (value.includes("lqdoj.edu.vn")) document.getElementById("lessonCopySource").value = "lqdoj";
   checkLessonCopyLogin();
 });
+document.getElementById("lessonCopyLessonUrl").addEventListener("blur", () => {
+  const value = document.getElementById("lessonCopyLessonUrl").value.toLowerCase();
+  if (value.includes("hncode.edu.vn")) document.getElementById("lessonCopyDest").value = "hncode";
+  if (value.includes("lqdoj.edu.vn")) document.getElementById("lessonCopyDest").value = "lqdoj";
+  checkLessonCopyLogin();
+});
+document.getElementById("lessonTransferSourceUrl").addEventListener("blur", () => syncStructureTarget("lessonTransferSource", "lessonTransferSourceUrl", checkLessonTransferLogin));
+document.getElementById("lessonTransferDestUrl").addEventListener("blur", () => syncStructureTarget("lessonTransferDest", "lessonTransferDestUrl", checkLessonTransferLogin));
+document.getElementById("courseCloneSourceUrl").addEventListener("blur", () => syncStructureTarget("courseCloneSource", "courseCloneSourceUrl", checkCourseCloneLogin));
+document.getElementById("courseCloneDestUrl").addEventListener("blur", () => syncStructureTarget("courseCloneDest", "courseCloneDestUrl", checkCourseCloneLogin));
 renderLanguages();
 renderSingleLanguages();
 renderTransferLanguages();
-setTimeout(() => { checkUploadLogin(); checkSingleUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); checkLessonCopyLogin(); checkCourseCloneLogin(); }, 300);
+setTimeout(() => { checkUploadLogin(); checkSingleUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); checkLessonCopyLogin(); checkLessonTransferLogin(); checkCourseCloneLogin(); }, 300);
 
 function selectedLanguages() {
   return [...document.querySelectorAll("#languages input:checked")].map(item => item.value);
@@ -2329,6 +2468,10 @@ function accountPayload(target) {
     password: accountFields[target + "_pass"].value,
   };
   if (target === "tinhoctre") payload.cookie = accountFields.tinhoctre_cookie.value;
+  if (target === "lqdoj") {
+    payload.cookie = accountFields.lqdoj_cookie.value;
+    payload.user_agent = accountFields.lqdoj_user_agent.value;
+  }
   return payload;
 }
 function firstToken(value) {
@@ -2372,6 +2515,7 @@ async function checkAllAccounts() {
     checkLogin("hnoj", "login_hnoj"),
     checkLogin("hncode", "login_hncode"),
     checkLogin("tinhoctre", "login_tinhoctre", firstToken(document.getElementById("transferCodes").value)),
+    checkLogin("lqdoj", "login_lqdoj"),
   ]);
 }
 function checkUploadLogin() {
@@ -2397,14 +2541,18 @@ function checkQuizLogin() {
   checkLogin(document.getElementById("quizTarget").value, "quizLogin");
 }
 function checkLessonCopyLogin() {
-  document.getElementById("lessonCopyUserMirror").value = accountFields.hncode_user.value || "MrTee";
   const source = document.getElementById("lessonCopySource").value;
+  const dest = document.getElementById("lessonCopyDest").value;
   checkLogin(source, "lessonCopySourceLogin");
-  checkLogin("hncode", "lessonCopyLogin");
+  checkLogin(dest, "lessonCopyLogin");
 }
 function checkCourseCloneLogin() {
-  document.getElementById("courseCloneUserMirror").value = accountFields.hncode_user.value || "MrTee";
-  checkLogin("hncode", "courseCloneLogin");
+  checkLogin(document.getElementById("courseCloneSource").value, "courseCloneSourceLogin");
+  checkLogin(document.getElementById("courseCloneDest").value, "courseCloneLogin");
+}
+function checkLessonTransferLogin() {
+  checkLogin(document.getElementById("lessonTransferSource").value, "lessonTransferSourceLogin");
+  checkLogin(document.getElementById("lessonTransferDest").value, "lessonTransferDestLogin");
 }
 function uploadSettings() {
   const target = document.getElementById("uploadTarget").value;
@@ -2736,6 +2884,7 @@ document.getElementById("prepareTransfer").onclick = async () => {
     const data = await postJson("/api/prepare-transfer", {
       source, dest, codes,
       source_account: accountPayload(source),
+      dest_account: accountPayload(dest),
       settings: transferSettings(),
       progress_id: progressId,
     });
@@ -2756,13 +2905,14 @@ function renderTransferTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#transferTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#transferTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Time</th><th>Memory</th><th>Up đề</th><th>Định dạng đề</th><th>Up test</th><th>Bộ test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
-    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}">
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Time</th><th>Memory (MB)</th><th>Ghi đè nếu trùng</th><th>Up đề</th><th>Định dạng đề</th><th>Up test</th><th>Bộ test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}" data-source-time="${escapeHtml(row.source_time_limit || row.time_limit || "1.0")}" data-source-memory="${escapeHtml(row.source_memory_limit || row.memory_limit || "1024")}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
       <td><input type="text" class="row-name" value="${escapeHtml(row.name || "")}"></td>
       <td><input type="text" class="row-time" value="${escapeHtml(row.time_limit || "1.0")}"></td>
-      <td><input type="text" class="row-memory" value="${escapeHtml(row.memory_limit || "1048576")}"></td>
+      <td><input type="text" class="row-memory" value="${escapeHtml(row.memory_limit || "1024")}"></td>
+      <td><input type="checkbox" class="row-overwrite" ${row.overwrite ? "checked" : ""}></td>
       <td><input type="checkbox" class="row-statement" checked></td>
       <td>${escapeHtml(row.statement_file || "Markdown")}</td>
       <td><input type="checkbox" class="row-tests" checked></td>
@@ -2880,12 +3030,14 @@ document.getElementById("prepareContestLessonCopy").onclick = async () => {
   try {
     status("running");
     log("Đang đọc danh sách bài trong contest và lesson đích...");
+    const source = syncStructureTarget("lessonCopySource", "lessonCopyContestUrl", checkLessonCopyLogin);
+    const dest = syncStructureTarget("lessonCopyDest", "lessonCopyLessonUrl", checkLessonCopyLogin);
     saveAccounts();
-    const source = document.getElementById("lessonCopySource").value;
     const data = await postJson("/api/prepare-contest-to-lesson", {
       source,
+      dest,
       source_account: accountPayload(source),
-      account: accountPayload("hncode"),
+      account: accountPayload(dest),
       contest_url: document.getElementById("lessonCopyContestUrl").value.trim(),
       lesson_url: document.getElementById("lessonCopyLessonUrl").value.trim(),
     });
@@ -2907,14 +3059,16 @@ document.getElementById("confirmContestLessonCopy").onclick = async () => {
   try {
     if (!preparedContestLessonCopy) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi sao chép bài.");
     status("running");
-    log("Đang sao chép bài vào lesson HNCode...");
+    log("Đang sao chép bài vào lesson đích...");
     markRowsProcessing("#contestLessonCopyTable", "Đang thêm...");
     saveAccounts();
     const source = document.getElementById("lessonCopySource").value;
+    const dest = document.getElementById("lessonCopyDest").value;
     const res = await fetch("/api/confirm-contest-to-lesson", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
       prepare_id: preparedContestLessonCopy,
+      dest,
       source_account: accountPayload(source),
-      account: accountPayload("hncode"),
+      account: accountPayload(dest),
       rows: collectContestLessonCopyRows(),
     })});
     const data = await parseJsonResponse(res);
@@ -2945,12 +3099,12 @@ function renderContestLessonCopyTable(rows) {
   </div><table>
     <thead><tr><th>Chọn</th><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm lesson</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-code="${escapeHtml(row.code)}">
-      <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.problem_id ? "" : "disabled"}></td>
+      <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""}></td>
       <td>${escapeHtml(row.index || "")}</td>
-      <td><a class="problem-link" href="https://hncode.edu.vn/problem/${escapeHtml(row.code)}" target="_blank" rel="noopener">${escapeHtml(row.code)}</a></td>
+      <td><a class="problem-link" href="${escapeHtml(row.problem_link || "#")}" target="_blank" rel="noopener">${escapeHtml(row.code)}</a></td>
       <td>${escapeHtml(row.title || "")}</td>
       <td><input type="text" class="row-score" value="${escapeHtml(row.score || "100")}"></td>
-      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}</td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : ""}</td>
     </tr>`).join("")}</tbody></table>`;
 }
 
@@ -2972,13 +3126,77 @@ function applyContestLessonCopyStatuses(rows) {
   }
 }
 
+document.getElementById("prepareLessonTransfer").onclick = async () => {
+  try {
+    status("running");
+    const source = syncStructureTarget("lessonTransferSource", "lessonTransferSourceUrl", checkLessonTransferLogin);
+    const dest = syncStructureTarget("lessonTransferDest", "lessonTransferDestUrl", checkLessonTransferLogin);
+    saveAccounts();
+    const data = await postJson("/api/prepare-lesson-transfer", {
+      source,
+      dest,
+      source_account: accountPayload(source),
+      dest_account: accountPayload(dest),
+      source_url: document.getElementById("lessonTransferSourceUrl").value.trim(),
+      dest_url: document.getElementById("lessonTransferDestUrl").value.trim(),
+    });
+    preparedLessonTransfer = data.prepare_id;
+    document.getElementById("lessonTransferTable").innerHTML = `<table><thead><tr><th>STT</th><th>Mã nguồn</th><th>Mã đích</th><th>Tên bài</th><th>Trạng thái</th></tr></thead><tbody>${(data.rows || []).map(row => `<tr data-source-code="${escapeHtml(row.source_code || "")}"><td>${escapeHtml(row.index || "")}</td><td>${escapeHtml(row.source_code || "")}</td><td>${escapeHtml(row.code || "")}</td><td>${escapeHtml(row.title || "")}</td><td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : ""}</td></tr>`).join("")}</tbody></table>`;
+    document.getElementById("confirmLessonTransfer").disabled = !data.can_transfer;
+    log(data.log);
+    status(data.can_transfer ? "ready" : "done", data.can_transfer ? "ok" : "warn");
+  } catch (err) {
+    preparedLessonTransfer = null;
+    document.getElementById("confirmLessonTransfer").disabled = true;
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+document.getElementById("confirmLessonTransfer").onclick = async () => {
+  try {
+    if (!preparedLessonTransfer) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước.");
+    status("running");
+    saveAccounts();
+    const source = document.getElementById("lessonTransferSource").value;
+    const dest = document.getElementById("lessonTransferDest").value;
+    const data = await postJson("/api/confirm-lesson-transfer", {
+      prepare_id: preparedLessonTransfer,
+      source_account: accountPayload(source),
+      dest_account: accountPayload(dest),
+    });
+    applyLessonTransferStatuses(data.rows || []);
+    log(data.log);
+    if (data.link) append(`Link Lesson đích: ${data.link}`);
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "warn");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+function applyLessonTransferStatuses(rows) {
+  const bySource = new Map(rows.map(row => [row.source_code, row]));
+  for (const tr of document.querySelectorAll("#lessonTransferTable tbody tr")) {
+    const row = bySource.get(tr.dataset.sourceCode);
+    if (!row) continue;
+    const detail = row.error ? "\n" + row.error : "";
+    setStatusCell(tr.querySelector(".row-status"), (row.status || "") + detail, row.link || "");
+  }
+}
+
 document.getElementById("prepareCourseClone").onclick = async () => {
   try {
     status("running");
     log("Đang đọc lesson và contest của course nguồn...");
+    const source = syncStructureTarget("courseCloneSource", "courseCloneSourceUrl", checkCourseCloneLogin);
+    const dest = syncStructureTarget("courseCloneDest", "courseCloneDestUrl", checkCourseCloneLogin);
     saveAccounts();
     const data = await postJson("/api/prepare-course-clone", {
-      account: accountPayload("hncode"),
+      source,
+      dest,
+      source_account: accountPayload(source),
+      dest_account: accountPayload(dest),
       source_url: document.getElementById("courseCloneSourceUrl").value.trim(),
       dest_url: document.getElementById("courseCloneDestUrl").value.trim(),
       contest_suffix: document.getElementById("courseCloneContestSuffix").value.trim(),
@@ -3003,12 +3221,17 @@ document.getElementById("confirmCourseClone").onclick = async () => {
   try {
     if (!preparedCourseClone) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi Clone Course.");
     status("running");
-    log("Đang clone course HNCode...");
+    log("Đang sao chép course...");
     markRowsProcessing("#courseCloneTable", "Đang clone...");
     saveAccounts();
+    const source = document.getElementById("courseCloneSource").value;
+    const dest = document.getElementById("courseCloneDest").value;
     const res = await fetch("/api/confirm-course-clone", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
       prepare_id: preparedCourseClone,
-      account: accountPayload("hncode"),
+      source,
+      dest,
+      source_account: accountPayload(source),
+      dest_account: accountPayload(dest),
       rows: collectCourseCloneRows(),
     })});
     const data = await parseJsonResponse(res);
@@ -3035,7 +3258,7 @@ function renderCourseCloneTable(rows) {
       <td>${escapeHtml(row.key || "")}</td>
       <td>${escapeHtml(row.title || "")}</td>
       <td>${row.kind === "contest" ? `<input type="text" class="row-new-key" value="${escapeHtml(row.new_key || "")}">` : ""}</td>
-      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}</td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : ""}</td>
     </tr>`).join("")}</tbody></table>`;
 }
 
@@ -3482,19 +3705,20 @@ function renderContestTransferTable(rows) {
       <td><input type="text" class="row-name" value="${escapeHtml(row.name || "")}"></td>
       <td><div class="test-meta">${escapeHtml(row.start_time || "")}<br>${escapeHtml(row.end_time || "")}</div></td>
       <td>${renderContestProblemList(row.problems || [])}</td>
-      <td class="row-status">${escapeHtml(row.status)}</td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status)}${row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : ""}</td>
     </tr>`).join("")}</tbody></table>`;
 }
 
 function renderContestProblemList(problems) {
   if (!problems.length) return `<div class="test-meta">Không có bài.</div>`;
-  return `<table class="inner-table"><thead><tr><th>Chọn</th><th>Mã bài</th><th>Điểm</th><th>Thứ tự</th><th>Trạng thái</th></tr></thead><tbody>
-    ${problems.map(p => `<tr data-problem-code="${escapeHtml(p.code)}">
-      <td><input type="checkbox" class="problem-selected" checked></td>
-      <td>${escapeHtml(p.code)}</td>
+  return `<table class="inner-table"><thead><tr><th>Chọn</th><th>Mã nguồn</th><th>Mã đích</th><th>Điểm</th><th>Thứ tự</th><th>Trạng thái</th></tr></thead><tbody>
+    ${problems.map(p => `<tr data-problem-code="${escapeHtml(p.source_code || p.code)}">
+      <td><input type="checkbox" class="problem-selected" ${p.selected === false ? "" : "checked"}></td>
+      <td>${escapeHtml(p.source_code || p.code)}</td>
+      <td><input type="text" class="problem-dest-code" value="${escapeHtml(p.dest_code || p.code)}"></td>
       <td>${escapeHtml(p.points || "100")}</td>
       <td>${escapeHtml(p.order || "")}</td>
-      <td>${escapeHtml(p.status || "")}</td>
+      <td class="problem-status ${statusClass(p.status)}">${escapeHtml(p.status || "")}${p.error ? `<div class="test-meta">${escapeHtml(p.error)}</div>` : ""}</td>
     </tr>`).join("")}
   </tbody></table>`;
 }
@@ -3506,7 +3730,8 @@ function collectContestRows() {
     key: tr.querySelector(".row-key").value.trim(),
     name: tr.querySelector(".row-name").value.trim(),
     problems: [...tr.querySelectorAll(".inner-table tbody tr")].map(pr => ({
-      code: pr.dataset.problemCode,
+      source_code: pr.dataset.problemCode,
+      code: pr.querySelector(".problem-dest-code").value.trim(),
       selected: pr.querySelector(".problem-selected").checked,
     })),
   }));
@@ -3517,7 +3742,15 @@ function applyContestStatuses(rows) {
   for (const tr of document.querySelectorAll("#contestTransferTable > table > tbody > tr")) {
     const row = byOriginal.get(tr.dataset.original);
     if (!row) continue;
-    setStatusCell(tr.querySelector(".row-status"), row.status, row.link || "");
+    const detail = row.error ? "\n" + row.error : "";
+    setStatusCell(tr.querySelector(".row-status"), (row.status || "") + detail, row.link || "");
+    const problemResults = new Map((row.problem_results || []).map(item => [item.source_code, item]));
+    for (const problemRow of tr.querySelectorAll(".inner-table tbody tr")) {
+      const problem = problemResults.get(problemRow.dataset.problemCode);
+      if (!problem) continue;
+      const detail = problem.error ? "\n" + problem.error : "";
+      setStatusCell(problemRow.querySelector(".problem-status"), (problem.status || "") + detail, problem.link || "");
+    }
   }
 }
 
@@ -3531,6 +3764,7 @@ function collectRows(selector) {
     memory_limit: tr.querySelector(".row-memory") ? tr.querySelector(".row-memory").value.trim() : "",
     upload_statement: tr.querySelector(".row-statement").checked,
     upload_tests: tr.querySelector(".row-tests").checked,
+    overwrite: Boolean(tr.querySelector(".row-overwrite") && tr.querySelector(".row-overwrite").checked),
   }));
 }
 function setRowSelection(selector, checked) {
@@ -3634,17 +3868,14 @@ def api_check_login():
     account = payload.get("account", {})
     probe_code = (payload.get("probe_code") or "").strip()
     try:
-        if target == "tinhoctre":
-            login_hncode(TARGETS[target]["base_url"], account.get("username", ""), account.get("password", ""))
-            return jsonify({"ok": True, "message": "Đăng nhập OK"})
         if target in QUIZ_TARGETS:
             login_quiz_target(target, account)
             return jsonify({"ok": True, "message": "Đăng nhập OK"})
         if target == "contest_hnoj":
             info = CONTEST_TARGETS[target]
+            login_hncode(info["base_url"], account.get("username", ""), account.get("password", ""))
         else:
-            info = TARGETS[target]
-        login_hncode(info["base_url"], account.get("username", ""), account.get("password", ""))
+            login_target_account(target, account)
         return jsonify({"ok": True, "message": "Đăng nhập OK"})
     except Exception as exc:
         return jsonify({"ok": False, "message": str(exc)[:180]})
@@ -4127,85 +4358,295 @@ def api_prepare_quiz():
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+@app.post("/api/prepare-lesson-transfer")
+def api_prepare_lesson_transfer():
+    payload = request.get_json(force=True)
+    source = payload.get("source", "hncode")
+    dest = payload.get("dest", "lqdoj")
+    try:
+        source_url = payload.get("source_url", "")
+        dest_url = payload.get("dest_url", "")
+        validate_structure_target_url(source_url, source, "Lesson nguồn")
+        validate_structure_target_url(dest_url, dest, "Course đích")
+        source_course, lesson_id = extract_hncode_lesson_ref(source_url)
+        dest_course = extract_hncode_course_slug(dest_url)
+        if source == dest and source_course == dest_course:
+            raise RuntimeError("Course nguồn và đích đang trùng nhau.")
+        if source == "lqdoj":
+            lqdoj_service.validate_course_slug(source_course)
+        if dest == "lqdoj":
+            lqdoj_service.validate_course_slug(dest_course)
+        src_session = login_target_account(source, payload.get("source_account", {}))
+        dst_session = src_session if source == dest else login_target_account(dest, payload.get("dest_account", {}))
+        source_edit_url = hncode_course_page_url(source_course, f"/edit_lessons_new/{lesson_id}", source)
+        source_page = src_session.get(source_edit_url, timeout=30)
+        if not source_page.ok:
+            raise RuntimeError(f"Không mở được lesson nguồn: HTTP {source_page.status_code}")
+        title = input_value_from_page(source_page.text, "title", f"Lesson {lesson_id}") or f"Lesson {lesson_id}"
+        existing_lesson = find_hncode_course_lesson_url(dst_session, dest_course, title, dest)
+        rows = []
+        for index, item in enumerate(lesson_problem_rows_from_page(source_page.text, lesson_id), 1):
+            try:
+                source_code, name = admin_problem_code_name_by_id(
+                    src_session, TARGETS[source]["base_url"], str(item.get("problem") or "")
+                )
+                dest_code = normalize_problem_code_for_target(source_code, dest)
+                validate_problem_code_for_target(dest_code, dest)
+                dest_id = admin_problem_id(dst_session, TARGETS[dest]["base_url"], dest_code)
+                rows.append(
+                    {
+                        "index": index,
+                        "source_code": source_code,
+                        "code": dest_code,
+                        "title": name,
+                        "status": "Đã có ở đích - sẽ dùng lại" if dest_id else "Thiếu ở đích - sẽ sao chép",
+                    }
+                )
+            except Exception as problem_exc:
+                rows.append(
+                    {
+                        "index": index,
+                        "source_code": f"problem-id:{item.get('problem') or index}",
+                        "code": "",
+                        "title": "",
+                        "status": "✗ Lỗi chuẩn bị",
+                        "error": str(problem_exc),
+                    }
+                )
+        status_text = "Đã có Lesson cùng tên - sẽ cập nhật metadata và bổ sung bài" if existing_lesson else "✓ Sẵn sàng"
+        prepare_id = uuid.uuid4().hex
+        prepared_lesson_transfers[prepare_id] = {
+            "created_at": time.time(),
+            "source": source,
+            "dest": dest,
+            "source_course": source_course,
+            "lesson_id": lesson_id,
+            "title": title,
+            "dest_course": dest_course,
+            "existing_link": existing_lesson or "",
+            "rows": rows,
+        }
+        log_lines = [
+            f"Chuẩn bị chuyển Lesson: {TARGETS[source]['label']} → {TARGETS[dest]['label']}",
+            f"Lesson: {title} ({lesson_id})",
+            f"Số bài: {len(rows)}",
+            status_text,
+            "Nguồn chỉ được đọc; bài trùng ở đích được dùng lại nguyên trạng.",
+        ]
+        return jsonify(
+            {
+                "ok": True,
+                "prepare_id": prepare_id,
+                "rows": rows,
+                "can_transfer": True,
+                "log": "\n".join(log_lines),
+                "link": existing_lesson or "",
+            }
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/confirm-lesson-transfer")
+def api_confirm_lesson_transfer():
+    payload = request.get_json(force=True)
+    state = prepared_lesson_transfers.get(payload.get("prepare_id", ""))
+    if not state:
+        return jsonify({"ok": False, "error": "Dữ liệu chuẩn bị chuyển Lesson đã hết hạn. Hãy chuẩn bị lại."}), 400
+    try:
+        source = state["source"]
+        dest = state["dest"]
+        src_session = login_target_account(source, payload.get("source_account", {}))
+        dst_session = src_session if source == dest else login_target_account(dest, payload.get("dest_account", {}))
+        root = RUNTIME / ("lesson_transfer_" + payload["prepare_id"])
+        root.mkdir(parents=True, exist_ok=True)
+        log_lines = [
+            f"Chuyển Lesson: {TARGETS[source]['label']} → {TARGETS[dest]['label']}",
+            "Nguồn không bị thay đổi.",
+        ]
+        problem_results: list[dict] = []
+        if source == dest == "hncode":
+            link = clone_hncode_lesson_native(
+                dst_session,
+                state["source_course"],
+                state["lesson_id"],
+                state["title"],
+                state["dest_course"],
+                hncode_course_admin_id(dst_session, state["dest_course"], dest),
+            )
+            problem_results = [
+                dict(row, status="✓ Đã sao chép") for row in state.get("rows", [])
+            ]
+        else:
+            link = clone_course_lesson_between_sites(
+                src_session,
+                dst_session,
+                source,
+                dest,
+                state["source_course"],
+                state["lesson_id"],
+                state["title"],
+                state["dest_course"],
+                root,
+                log_lines,
+                problem_results,
+                state.get("existing_link", ""),
+            )
+        failed = [row for row in problem_results if row.get("error")]
+        status_text = (
+            f"⚠ Đã tạo/cập nhật Lesson, {len(problem_results) - len(failed)} bài thành công, {len(failed)} bài lỗi"
+            if failed
+            else "✓ Đã tạo/cập nhật Lesson"
+        )
+        log_lines.append(f"{status_text}: {link}")
+        return jsonify(
+            {
+                "ok": not failed,
+                "link": link,
+                "rows": problem_results,
+                "errors": [row["error"] for row in failed],
+                "log": "\n".join(log_lines),
+            }
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
 @app.post("/api/prepare-course-clone")
 def api_prepare_course_clone():
     payload = request.get_json(force=True)
-    account = payload.get("account", {})
+    source = payload.get("source", "hncode")
+    dest = payload.get("dest", "hncode")
+    source_account = payload.get("source_account", payload.get("account", {}))
+    dest_account = payload.get("dest_account", payload.get("account", {}))
     try:
-        source_slug = extract_hncode_course_slug(payload.get("source_url", ""))
-        dest_slug = extract_hncode_course_slug(payload.get("dest_url", ""))
-        if source_slug == dest_slug:
+        source_url = payload.get("source_url", "")
+        dest_url = payload.get("dest_url", "")
+        validate_structure_target_url(source_url, source, "Course nguồn")
+        validate_structure_target_url(dest_url, dest, "Course đích")
+        source_slug = extract_hncode_course_slug(source_url)
+        dest_slug = extract_hncode_course_slug(dest_url)
+        if source == "lqdoj":
+            lqdoj_service.validate_course_slug(source_slug)
+        if dest == "lqdoj":
+            lqdoj_service.validate_course_slug(dest_slug)
+        if source == dest and source_slug == dest_slug:
             raise RuntimeError("Course nguồn và course đích đang trùng nhau.")
         include_lessons = bool(payload.get("include_lessons", True))
         include_contests = bool(payload.get("include_contests", True))
         if not include_lessons and not include_contests:
             raise RuntimeError("Hãy chọn Clone lesson hoặc Clone contest.")
-        session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
-        dest_course_id = hncode_course_admin_id(session, dest_slug)
-        source_lessons = hncode_course_lessons(session, source_slug) if include_lessons else []
-        source_contests = hncode_course_contests(session, source_slug) if include_contests else []
-        dest_lessons = hncode_course_lessons(session, dest_slug)
-        dest_contests = hncode_course_contests(session, dest_slug)
+        src_session = login_target_account(source, source_account)
+        dst_session = src_session if source == dest else login_target_account(dest, dest_account)
+        course_metadata: dict = {}
+        course_metadata_error = ""
+        try:
+            course_metadata = fetch_course_metadata(src_session, source_slug, source)
+        except Exception as metadata_exc:
+            course_metadata_error = str(metadata_exc)
+            course_metadata = {
+                "name": source_slug,
+                "about": "",
+                "is_public": False,
+                "is_open": False,
+                "organization_labels": [],
+            }
+        course_metadata["source_slug"] = source_slug
+        log_lines = [
+            "Chuẩn bị sao chép Course",
+            f"Nguồn: {TARGETS[source]['label']} / {source_slug}",
+            f"Đích: {TARGETS[dest]['label']} / {dest_slug}",
+            "Nguồn chỉ được đọc; bài trùng ở đích sẽ được dùng lại.",
+        ]
+        dest_course_id, destination_created = ensure_destination_course(
+            src_session,
+            dst_session,
+            source,
+            dest,
+            dest_slug,
+            course_metadata,
+            log_lines,
+        )
+        source_lessons = hncode_course_lessons(src_session, source_slug, source) if include_lessons else []
+        source_contests = hncode_course_contests(src_session, source_slug, source) if include_contests else []
+        dest_lessons = hncode_course_lessons(dst_session, dest_slug, dest)
+        dest_contests = hncode_course_contests(dst_session, dest_slug, dest)
         dest_lesson_titles = {row["title"].strip().casefold() for row in dest_lessons}
         dest_contest_keys = {row["key"] for row in dest_contests}
         rows: list[dict] = []
-        log_lines = [
-            "Chuẩn bị Clone Course HNCode",
-            f"Nguồn: {source_slug}",
-            f"Đích: {dest_slug}",
-            f"Lesson nguồn: {len(source_lessons)}",
-            f"Contest nguồn: {len(source_contests)}",
-        ]
+        log_lines.extend(
+            [
+                f"Lesson nguồn: {len(source_lessons)}",
+                f"Contest nguồn: {len(source_contests)}",
+            ]
+        )
+        if course_metadata:
+            log_lines.append(
+                f"Metadata Course: {course_metadata.get('name')}; mô tả {len(course_metadata.get('about') or '')} ký tự."
+            )
+        if course_metadata_error:
+            log_lines.append(f"⚠ Chưa đọc được metadata Course: {course_metadata_error}. Vẫn tiếp tục đọc Lesson/Contest.")
         for item in source_lessons:
-            exists = item["title"].strip().casefold() in dest_lesson_titles
-            row = {
-                **item,
-                "selected": not exists,
-                "can_clone": not exists,
-                "status": "Đã có lesson cùng tên ở đích" if exists else "✓ Sẵn sàng",
-                "new_key": "",
-            }
+            try:
+                row = build_course_lesson_prepare_row(
+                    item, dst_session, dest_slug, dest, dest_lesson_titles
+                )
+            except Exception as item_exc:
+                row = {
+                    **item,
+                    "selected": False,
+                    "can_clone": False,
+                    "status": "✗ Lỗi chuẩn bị Lesson",
+                    "error": str(item_exc),
+                    "new_key": "",
+                }
             rows.append(row)
             log_lines.append(f"Lesson {item['order']}. {item['title']}: {row['status']}")
         suffix = payload.get("contest_suffix", "")
         for item in source_contests:
-            new_key = default_course_clone_contest_key(item["key"], dest_slug, suffix)
-            in_dest = new_key in dest_contest_keys
-            global_exists = False
-            if not in_dest:
-                try:
-                    global_exists = bool(admin_contest_change_url(session, TARGETS["hncode"]["base_url"], new_key))
-                except Exception:
-                    global_exists = False
-            if in_dest:
-                status_text = "Đã có contest đích trong course"
-            elif global_exists:
-                status_text = "Mã contest đích đã tồn tại trên HNCode"
-            else:
-                status_text = "✓ Sẵn sàng"
-            row = {
-                **item,
-                "selected": status_text.startswith("✓"),
-                "can_clone": status_text.startswith("✓"),
-                "status": status_text,
-                "new_key": new_key,
-            }
+            try:
+                row = build_course_contest_prepare_row(
+                    item,
+                    source,
+                    dest,
+                    dest_slug,
+                    suffix,
+                    dest_contest_keys,
+                    dst_session,
+                )
+            except Exception as item_exc:
+                row = {
+                    **item,
+                    "selected": False,
+                    "can_clone": False,
+                    "status": "✗ Lỗi chuẩn bị Contest",
+                    "error": str(item_exc),
+                    "new_key": "",
+                }
             rows.append(row)
-            log_lines.append(f"Contest {item['key']} → {new_key}: {status_text}")
+            log_lines.append(
+                f"Contest {item['key']} → {row.get('new_key') or '?'}: {row['status']}"
+                + (f" - {row['error']}" if row.get("error") else "")
+            )
         prepare_id = uuid.uuid4().hex
         prepared_course_clones[prepare_id] = {
             "created_at": time.time(),
             "source_slug": source_slug,
             "dest_slug": dest_slug,
+            "source": source,
+            "dest": dest,
             "dest_course_id": dest_course_id,
             "rows": rows,
+            "course_metadata": course_metadata,
+            "course_metadata_error": course_metadata_error,
+            "destination_created": destination_created,
         }
         return jsonify(
             {
                 "ok": True,
                 "prepare_id": prepare_id,
                 "rows": rows,
-                "can_clone": any(row.get("selected") for row in rows),
+                "can_clone": bool(course_metadata) or any(row.get("selected") for row in rows),
                 "log": "\n".join(log_lines),
             }
         )
@@ -4216,7 +4657,8 @@ def api_prepare_course_clone():
 @app.post("/api/confirm-course-clone")
 def api_confirm_course_clone():
     payload = request.get_json(force=True)
-    account = payload.get("account", {})
+    source_account = payload.get("source_account", payload.get("account", {}))
+    dest_account = payload.get("dest_account", payload.get("account", {}))
     prepare_id = payload.get("prepare_id", "")
     state = prepared_course_clones.get(prepare_id)
     if not state:
@@ -4226,12 +4668,44 @@ def api_confirm_course_clone():
     result_rows = []
     ok = True
     log_lines = [
-        "Clone Course HNCode",
-        f"Nguồn: {state['source_slug']}",
-        f"Đích: {state['dest_slug']}",
+        "Sao chép Course",
+        f"Nguồn: {TARGETS[state.get('source', 'hncode')]['label']} / {state['source_slug']}",
+        f"Đích: {TARGETS[state.get('dest', 'hncode')]['label']} / {state['dest_slug']}",
+        "Bài trùng ở đích được dùng lại; nguồn không bị thay đổi.",
     ]
+    response_errors: list[str] = []
+    metadata_synced = False
     try:
-        session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+        source = state.get("source", "hncode")
+        dest = state.get("dest", "hncode")
+        src_session = login_target_account(source, source_account)
+        dst_session = src_session if source == dest else login_target_account(dest, dest_account)
+        root = RUNTIME / ("course_clone_" + prepare_id)
+        root.mkdir(parents=True, exist_ok=True)
+        if state.get("destination_created"):
+            metadata_synced = True
+            log_lines.append("✓ Course đích đã được tự tạo cùng metadata/setup ở bước Chuẩn bị dữ liệu.")
+        else:
+            try:
+                metadata_link, metadata_warnings = sync_course_metadata(
+                    src_session,
+                    dst_session,
+                    source,
+                    dest,
+                    state["source_slug"],
+                    state["dest_slug"],
+                    log_lines,
+                )
+                log_lines.append(f"✓ Đã đồng bộ tên/mô tả/setup Course: {metadata_link}")
+                metadata_synced = True
+                for warning in metadata_warnings:
+                    log_lines.append(f"⚠ Course: {warning}")
+                    response_errors.append(warning)
+            except Exception as metadata_exc:
+                ok = False
+                message = f"Metadata Course: {metadata_exc}"
+                response_errors.append(message)
+                log_lines.append(f"✗ {message}. Vẫn tiếp tục clone Lesson/Contest.")
         for requested in requested_rows:
             key = requested.get("key", "")
             kind = requested.get("kind", "")
@@ -4246,18 +4720,113 @@ def api_confirm_course_clone():
                 continue
             try:
                 if kind == "lesson":
-                    link = clone_hncode_lesson_native(session, state["source_slug"], key, base.get("title") or f"Lesson {key}", state["dest_slug"], state["dest_course_id"])
-                    base["status"] = "✓ Đã clone"
+                    lesson_problem_results: list[dict] = []
+                    if source == dest == "hncode":
+                        link = clone_hncode_lesson_native(
+                            dst_session,
+                            state["source_slug"],
+                            key,
+                            base.get("title") or f"Lesson {key}",
+                            state["dest_slug"],
+                            state["dest_course_id"],
+                        )
+                        lesson_problem_results = []
+                    else:
+                        link = clone_course_lesson_between_sites(
+                            src_session,
+                            dst_session,
+                            source,
+                            dest,
+                            state["source_slug"],
+                            key,
+                            base.get("title") or f"Lesson {key}",
+                            state["dest_slug"],
+                            root,
+                            log_lines,
+                            lesson_problem_results,
+                            base.get("existing_link", ""),
+                        )
+                    base["problem_results"] = lesson_problem_results
+                    failed_lesson_problems = [item for item in lesson_problem_results if item.get("error")]
+                    if failed_lesson_problems:
+                        ok = False
+                        base["error"] = "; ".join(
+                            f"{item.get('source_code')}: {item.get('error')}" for item in failed_lesson_problems
+                        )
+                    base["status"] = (
+                        f"⚠ Đã clone Lesson, {len(failed_lesson_problems)} bài lỗi"
+                        if failed_lesson_problems
+                        else "✓ Đã clone"
+                    )
                     base["link"] = link
-                    log_lines.append(f"✓ Lesson {key}: đã clone.")
+                    log_lines.append(
+                        f"{'⚠' if failed_lesson_problems else '✓'} Lesson {key}: đã clone; "
+                        f"{len(failed_lesson_problems)} bài lỗi."
+                    )
                 elif kind == "contest":
-                    new_key = base.get("new_key", "")
-                    if not re.fullmatch(r"[a-z0-9_-]+", new_key):
-                        raise RuntimeError("Mã contest đích chỉ nên gồm chữ thường, số, dấu gạch dưới hoặc gạch ngang.")
-                    link = clone_hncode_contest_native(session, key, new_key, state["dest_slug"], state["dest_course_id"])
-                    base["status"] = "✓ Đã clone"
+                    new_key = normalize_contest_key_for_target(base.get("new_key", ""), dest)
+                    validate_contest_key_for_target(new_key, dest)
+                    info = fetch_contest_info(src_session, TARGETS[source]["base_url"], key)
+                    def copy_course_contest_problem(source_code: str, _problem: dict) -> tuple[str, str]:
+                        return ensure_problem_for_copy(
+                            src_session,
+                            dst_session,
+                            source,
+                            dest,
+                            source_code,
+                            root,
+                            log_lines,
+                        )
+
+                    refs, problem_results = copy_problem_refs_with_report(
+                        info.get("problems", []), copy_course_contest_problem, log_lines
+                    )
+                    base["problem_results"] = problem_results
+                    failed_problems = [item for item in problem_results if item.get("error")]
+                    if failed_problems:
+                        ok = False
+                        base["error"] = "; ".join(
+                            f"{item.get('source_code')}: {item.get('error')}" for item in failed_problems
+                        )
+                    if info.get("problems") and not refs:
+                        raise RuntimeError("Không có bài nào sao chép thành công để tạo contest trong Course")
+                    description = rewrite_internal_problem_links(
+                        info.get("description", ""),
+                        {
+                            str(item.get("source_code") or ""): str(item.get("code") or "")
+                            for item in problem_results
+                            if not item.get("error")
+                        },
+                    )
+                    description = description.replace(f"/contest/{key}", f"/contest/{new_key}")
+                    info["description"] = migrate_structure_content(
+                        src_session,
+                        dst_session,
+                        source,
+                        dest,
+                        description,
+                        log_lines,
+                    )
+                    link = create_course_contest_from_info(
+                        dst_session,
+                        dest,
+                        state["dest_slug"],
+                        new_key,
+                        info,
+                        refs,
+                        str(base.get("points") or ""),
+                        str(base.get("order") or ""),
+                    )
+                    base["status"] = (
+                        f"⚠ Đã clone một phần: {len(refs)} bài thành công, {len(failed_problems)} lỗi"
+                        if failed_problems
+                        else "✓ Đã clone"
+                    )
                     base["link"] = link
-                    log_lines.append(f"✓ Contest {key} → {new_key}: đã clone.")
+                    log_lines.append(
+                        f"{'⚠' if failed_problems else '✓'} Contest {key} → {new_key}: "
+                        f"đã clone {len(refs)} bài, {len(failed_problems)} bài lỗi."
+                    )
                 else:
                     raise RuntimeError(f"Loại dòng không hợp lệ: {kind}")
             except Exception as item_exc:
@@ -4267,9 +4836,22 @@ def api_confirm_course_clone():
                 log_lines.append(f"✗ {kind} {key}: {item_exc}")
             result_rows.append(base)
         if not result_rows:
-            ok = False
-            log_lines.append("Không có dòng nào được gửi lên để clone.")
-        return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines), "course_link": hncode_course_page_url(state["dest_slug"])})
+            if metadata_synced:
+                log_lines.append("Không có Lesson/Contest mới; chỉ đồng bộ metadata Course.")
+            else:
+                ok = False
+                log_lines.append("Không có dòng nào được gửi lên để clone.")
+        return jsonify(
+            {
+                "ok": ok,
+                "rows": result_rows,
+                "log": "\n".join(log_lines),
+                "errors": response_errors + [
+                    row.get("error") for row in result_rows if row.get("error")
+                ],
+                "course_link": hncode_course_page_url(state["dest_slug"], target=state.get("dest", "hncode")),
+            }
+        )
     except Exception as exc:
         return jsonify({"ok": False, "rows": result_rows, "error": str(exc)}), 400
 
@@ -4279,36 +4861,43 @@ def api_prepare_contest_to_lesson():
     payload = request.get_json(force=True)
     contest_url_value = payload.get("contest_url", "")
     source = contest_lesson_source_from_url(payload.get("source", "hncode"), contest_url_value)
+    dest = payload.get("dest", "hncode")
     source_account = payload.get("source_account", {})
     account = payload.get("account", {})
     try:
+        validate_structure_target_url(contest_url_value, source, "Contest nguồn")
+        validate_structure_target_url(payload.get("lesson_url", ""), dest, "Lesson đích")
         contest_key = extract_hncode_contest_key(contest_url_value)
         course_slug, lesson_id = extract_hncode_lesson_ref(payload.get("lesson_url", ""))
-        dst_session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+        dst_session = login_target_account(dest, account)
         if source == "hnoj":
-            src_session = login_hncode(TARGETS["hnoj"]["base_url"], source_account.get("username", ""), source_account.get("password", ""))
+            src_session = login_target_account("hnoj", source_account)
             contest_rows = hnoj_contest_problem_rows(src_session, contest_key)
             source_label = "HNOJ"
         else:
-            contest_rows = hncode_contest_problem_rows(dst_session, contest_key)
-            source_label = "HNCode"
-        lesson_page = dst_session.get(hncode_lesson_edit_url(course_slug, lesson_id), timeout=30)
+            src_session = dst_session if source == dest else login_target_account(source, source_account)
+            contest_rows = hncode_service.list_contest_problems(
+                src_session, TARGETS[source]["base_url"], contest_key, default_points="100"
+            )
+            source_label = TARGETS[source]["label"]
+        lesson_page = dst_session.get(hncode_lesson_edit_url(course_slug, lesson_id, dest), timeout=30)
         if not lesson_page.ok:
             raise RuntimeError(f"Không mở được lesson đích: HTTP {lesson_page.status_code}")
         existing_ids = {row["problem"] for row in lesson_problem_rows_from_page(lesson_page.text, lesson_id)}
         rows = []
         log_lines = [
-            f"Chuẩn bị sao chép bài {source_label} Contest → Lesson HNCode",
+            f"Chuẩn bị sao chép bài {source_label} Contest → Lesson {TARGETS[dest]['label']}",
             f"Contest: {contest_key}",
-            f"Lesson: {hncode_lesson_url(course_slug, lesson_id)}",
+            f"Lesson: {hncode_lesson_url(course_slug, lesson_id, dest)}",
         ]
         for item in contest_rows:
             source_code = item["code"]
-            dest_code = normalize_problem_code_for_target(source_code, "hncode")
-            problem_id = admin_problem_id(dst_session, TARGETS["hncode"]["base_url"], dest_code)
+            dest_code = normalize_problem_code_for_target(source_code, dest)
+            validate_problem_code_for_target(dest_code, dest)
+            problem_id = admin_problem_id(dst_session, TARGETS[dest]["base_url"], dest_code)
             if not problem_id:
-                status_text = "Thiếu trên HNCode, sẽ chuyển khi xác nhận" if source == "hnoj" else "✗ Không tìm thấy bài trong admin HNCode"
-                selected = source == "hnoj"
+                status_text = f"Thiếu trên {TARGETS[dest]['label']}, sẽ sao chép khi xác nhận"
+                selected = source != dest
             elif problem_id in existing_ids:
                 status_text = "Đã có trong lesson"
                 selected = False
@@ -4322,6 +4911,7 @@ def api_prepare_contest_to_lesson():
                 "title": item["title"],
                 "score": item["points"],
                 "problem_id": problem_id or "",
+                "problem_link": problem_url(TARGETS[dest]["base_url"], dest_code),
                 "selected": selected,
                 "status": status_text,
             }
@@ -4333,6 +4923,7 @@ def api_prepare_contest_to_lesson():
         prepared_lesson_copies[prepare_id] = {
             "created_at": time.time(),
             "source": source,
+            "dest": dest,
             "contest_key": contest_key,
             "course_slug": course_slug,
             "lesson_id": lesson_id,
@@ -4345,7 +4936,7 @@ def api_prepare_contest_to_lesson():
                 "prepare_id": prepare_id,
                 "rows": rows,
                 "can_copy": any(row.get("selected") for row in rows),
-                "lesson_link": hncode_lesson_url(course_slug, lesson_id),
+                "lesson_link": hncode_lesson_url(course_slug, lesson_id, dest),
                 "log": "\n".join(log_lines),
             }
         )
@@ -4368,11 +4959,13 @@ def api_confirm_contest_to_lesson():
         selected_refs = []
         result_rows = []
         source = state.get("source", "hncode")
-        source_label = "HNOJ" if source == "hnoj" else "HNCode"
+        dest = state.get("dest", payload.get("dest", "hncode"))
+        source_label = TARGETS[source]["label"]
         log_lines = [
-            f"Sao chép bài từ Contest {source_label} → Lesson HNCode",
+            f"Sao chép bài từ Contest {source_label} → Lesson {TARGETS[dest]['label']}",
             f"Contest: {state['contest_key']}",
-            f"Lesson: {hncode_lesson_url(state['course_slug'], state['lesson_id'])}",
+            f"Lesson: {hncode_lesson_url(state['course_slug'], state['lesson_id'], dest)}",
+            "Nguồn chỉ được đọc; mọi thay đổi chỉ thực hiện ở đích.",
         ]
         dst_session = None
         src_session = None
@@ -4387,44 +4980,52 @@ def api_confirm_contest_to_lesson():
                 base["status"] = "Đã có trong lesson"
             else:
                 if not dst_session:
-                    dst_session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
-                if not base.get("problem_id") and source == "hnoj":
+                    dst_session = login_target_account(dest, account)
+                if not base.get("problem_id") and source != dest:
                     if not src_session:
-                        src_session = login_hncode(TARGETS["hnoj"]["base_url"], source_account.get("username", ""), source_account.get("password", ""))
+                        src_session = login_target_account(source, source_account)
                     source_code = base.get("source_code") or code
-                    log_lines.append(f"Đang chuyển {source_code} sang HNCode...")
+                    log_lines.append(f"Đang sao chép {source_code} sang {TARGETS[dest]['label']}...")
                     try:
-                        info, zip_path, cases, _attachments = fetch_source_problem(src_session, TARGETS["hnoj"]["base_url"], source_code, state["root"])
+                        info, zip_path, cases, _attachments = fetch_source_problem(src_session, TARGETS[source]["base_url"], source_code, state["root"])
+                        info.description = migrate_structure_content(
+                            src_session,
+                            dst_session,
+                            source,
+                            dest,
+                            info.description,
+                            log_lines,
+                        )
                         upload_transfer_to_dmoj(
                             dst_session,
-                            "hncode",
+                            dest,
                             code,
                             info,
                             zip_path,
                             cases,
                             {"upload_statement": True, "upload_tests": True},
-                            list(TARGETS["hncode"]["languages"].values()),
+                            list(TARGETS[dest]["languages"].values()),
                             log_lines,
                         )
                     except ProblemAlreadyExists:
-                        log_lines.append(f"{code}: bài đã có trên HNCode, dùng lại bài hiện có.")
-                    base["problem_id"] = admin_problem_id(dst_session, TARGETS["hncode"]["base_url"], code) or ""
+                        log_lines.append(f"{code}: bài đã có trên {TARGETS[dest]['label']}, dùng lại bài hiện có.")
+                    base["problem_id"] = admin_problem_id(dst_session, TARGETS[dest]["base_url"], code) or ""
                 if not base.get("problem_id"):
-                    base["status"] = "✗ Không tìm thấy bài trong admin HNCode"
+                    base["status"] = f"✗ Không tìm thấy bài trong admin {TARGETS[dest]['label']}"
                 else:
                     selected_refs.append(base)
                     base["status"] = "Đang thêm..."
             result_rows.append(base)
-        link = hncode_lesson_url(state["course_slug"], state["lesson_id"])
+        link = hncode_lesson_url(state["course_slug"], state["lesson_id"], dest)
         if selected_refs:
             if not dst_session:
-                dst_session = login_hncode(TARGETS["hncode"]["base_url"], account.get("username", ""), account.get("password", ""))
+                dst_session = login_target_account(dest, account)
             added_ids: set[str] = set()
             failed_by_id: dict[str, str] = {}
             for ref in selected_refs:
                 problem_id = str(ref.get("problem_id") or ref.get("id") or "")
                 try:
-                    link = copy_hncode_contest_to_lesson(dst_session, state["course_slug"], state["lesson_id"], [ref])
+                    link = copy_hncode_contest_to_lesson(dst_session, state["course_slug"], state["lesson_id"], [ref], dest)
                     added_ids.add(problem_id)
                 except Exception as item_exc:
                     failed_by_id[problem_id] = str(item_exc)
@@ -5175,6 +5776,47 @@ def api_tinhoctre_browser_cookie():
         return jsonify({"error": str(exc)}), 400
 
 
+@app.post("/api/lqdoj-browser/start")
+def api_lqdoj_browser_start():
+    try:
+        browser = find_edge_executable()
+        port = int(os.getenv("LQDOJ_CHROME_DEBUG_PORT", "9224"))
+        subprocess.Popen(
+            [
+                str(browser),
+                f"--remote-debugging-port={port}",
+                "--remote-debugging-address=127.0.0.1",
+                "--remote-allow-origins=*",
+                "--profile-directory=Default",
+                "--new-window",
+                "https://lqdoj.edu.vn/admin/judge/problem/add/",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return jsonify({"ok": True, "message": "Đã mở Edge tới trang admin LQDOJ. Đăng nhập xong rồi bấm Lấy cookie LQDOJ từ Edge."})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/lqdoj-browser/cookie")
+def api_lqdoj_browser_cookie():
+    try:
+        port = int(os.getenv("LQDOJ_CHROME_DEBUG_PORT", "9224"))
+        cookie, user_agent = cookie_from_debug_browser("lqdoj.edu.vn", port, "LQDOJ")
+        lqdoj_service.login_admin("", "", cookie=cookie, user_agent=user_agent)
+        return jsonify(
+            {
+                "ok": True,
+                "cookie": cookie,
+                "user_agent": user_agent,
+                "message": "Đã lấy cookie LQDOJ và kiểm tra được quyền mở form admin.",
+            }
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
 @app.post("/api/tinhoctre-browser/quick-cookie")
 def api_tinhoctre_browser_quick_cookie():
     try:
@@ -5331,7 +5973,9 @@ def api_prepare_single_upload():
         if not name:
             raise RuntimeError("Hãy nhập tên bài toán.")
         prepare_note = ""
-        if target in {"hncode", "tinhoctre"} and not re.fullmatch(r"[a-z0-9_]+", code):
+        if target in {"hncode", "tinhoctre", "lqdoj"} and not re.fullmatch(
+            r"[a-z0-9]+" if target == "lqdoj" else r"[a-z0-9_]+", code
+        ):
             normalized = normalize_problem_code_for_target(code, target)
             label = TARGETS.get(target, {}).get("label", "HNCode/TinHocTre")
             prepare_note = (
@@ -5602,9 +6246,27 @@ def upload_rows(target: str, settings: dict, rows: list[dict], state: dict, prog
     return result_rows, log_lines
 
 
+def login_target_account(target: str, account: dict):
+    if target not in TARGETS:
+        raise RuntimeError(f"Trang OJ không được hỗ trợ: {target}")
+    if target == "lqdoj":
+        return lqdoj_service.login_admin(
+            account.get("username", ""),
+            account.get("password", ""),
+            cookie=account.get("cookie", ""),
+            user_agent=account.get("user_agent", ""),
+        )
+    target_info = TARGETS[target]
+    try:
+        return login_hncode(target_info["base_url"], account.get("username", ""), account.get("password", ""))
+    except Exception as exc:
+        label = target_info.get("label", target)
+        raise RuntimeError(str(exc).replace("HNCode", label)) from exc
+
+
 def login_upload_target(target: str, target_info: dict, settings: dict):
     try:
-        return login_hncode(target_info["base_url"], settings.get("username", ""), settings.get("password", ""))
+        return login_target_account(target, settings)
     except Exception as exc:
         label = target_info.get("label", target)
         message = str(exc).replace("HNCode", label)
@@ -5965,7 +6627,7 @@ def upload_one_problem(
     base_url = target_info["base_url"]
 
     def refresh_hncode_metadata() -> None:
-        if target not in {"hncode", "tinhoctre"}:
+        if target not in {"hncode", "tinhoctre", "lqdoj"}:
             return
         tags_text = row.get("tags") or settings.get("tags")
         type_ids = type_ids_from_tags(tags_text, target) or [target_info["type_id"]]
@@ -6068,7 +6730,7 @@ def upload_one_problem(
         log_lines.append(f"{bundle.code}: không upload test.")
 
     submit_if_requested(session, base_url, bundle, settings, log_lines)
-    if target in {"hncode", "tinhoctre"} and row.get("upload_statement"):
+    if target in {"hncode", "tinhoctre", "lqdoj"} and row.get("upload_statement"):
         refresh_hncode_metadata()
     return "✓ " + " và ".join(actions) if actions else "✓ Thành công"
 
@@ -6081,6 +6743,149 @@ def resolve_problem_code_for_upload(session, target: str, base_url: str, raw_cod
 
 def statement_for_target(target: str, statement: str, *, skip_title_line: bool = False) -> str:
     return upload_service.statement_for_target(target, statement, skip_title_line=skip_title_line)
+
+
+def structure_base_url(target: str) -> str:
+    if target in TARGETS:
+        return TARGETS[target]["base_url"]
+    return CONTEST_TARGETS[target]["base_url"]
+
+
+def structure_content_for_target(source: str, dest: str, content: str) -> str:
+    """Normalize math and turn source-hosted internal links into destination-relative links."""
+    normalized = statement_for_target(dest, content or "")
+    source_host = urlsplit(structure_base_url(source)).netloc
+    if not source_host:
+        return normalized
+    normalized = re.sub(
+        r"https?://" + re.escape(source_host) + r"(?=/|\b)",
+        "",
+        normalized,
+        flags=re.I,
+    )
+    normalized = re.sub(
+        r"//" + re.escape(source_host) + r"(?=/|\b)",
+        "",
+        normalized,
+        flags=re.I,
+    )
+    return normalized
+
+
+def destination_relative_url(value: str, dest: str) -> str:
+    parsed = urlsplit(urljoin(TARGETS[dest]["base_url"], value or ""))
+    dest_host = urlsplit(TARGETS[dest]["base_url"]).netloc.casefold()
+    if parsed.netloc.casefold() == dest_host:
+        result = parsed.path or "/"
+        if parsed.query:
+            result += "?" + parsed.query
+        if parsed.fragment:
+            result += "#" + parsed.fragment
+        return result
+    return value
+
+
+def markdown_image_urls(content: str) -> list[str]:
+    urls = re.findall(r"!\[[^\]]*\]\(\s*<?([^)>\s]+)>?", content or "", re.I)
+    urls.extend(
+        re.findall(r"<img\b[^>]*\bsrc=[\"']([^\"']+)[\"']", content or "", re.I)
+    )
+    return list(dict.fromkeys(html.unescape(url.strip()) for url in urls if url.strip()))
+
+
+def upload_structure_image(
+    src_session: requests.Session,
+    dst_session: requests.Session,
+    source: str,
+    dest: str,
+    image_url: str,
+) -> str:
+    source_url = urljoin(structure_base_url(source), image_url)
+    source_host = urlsplit(structure_base_url(source)).netloc.casefold()
+    if urlsplit(source_url).netloc.casefold() != source_host:
+        return image_url
+    response = src_session.get(source_url, timeout=60)
+    if not response.ok:
+        raise RuntimeError(f"Không tải được ảnh {source_url}: HTTP {response.status_code}")
+    content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip()
+    filename = Path(urlsplit(source_url).path).name or "image.png"
+    if not content_type.startswith("image/"):
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    upload_url = urljoin(TARGETS[dest]["base_url"], "/pagedown/image-upload/")
+    token = dst_session.cookies.get("csrftoken", "")
+    result = dst_session.post(
+        upload_url,
+        data={"csrfmiddlewaretoken": token},
+        files={"image": (filename, response.content, content_type)},
+        headers={
+            "Referer": urljoin(TARGETS[dest]["base_url"], "/admin/"),
+            "X-CSRFToken": token,
+        },
+        timeout=90,
+    )
+    try:
+        payload = result.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Upload ảnh {filename} không trả JSON (HTTP {result.status_code}).") from exc
+    uploaded = payload.get("url") or payload.get("data", {}).get("url")
+    if not result.ok or not uploaded:
+        raise RuntimeError(
+            f"Upload ảnh {filename} lên {TARGETS[dest]['label']} thất bại: "
+            + str(payload.get("error") or f"HTTP {result.status_code}")
+        )
+    return destination_relative_url(str(uploaded), dest)
+
+
+def migrate_structure_content(
+    src_session: requests.Session,
+    dst_session: requests.Session,
+    source: str,
+    dest: str,
+    content: str,
+    log_lines: list[str] | None = None,
+) -> str:
+    normalized = content or ""
+    if source != dest:
+        for image_url in markdown_image_urls(normalized):
+            absolute = urljoin(structure_base_url(source), image_url)
+            source_host = urlsplit(structure_base_url(source)).netloc.casefold()
+            if urlsplit(absolute).netloc.casefold() != source_host:
+                continue
+            try:
+                uploaded = upload_structure_image(
+                    src_session, dst_session, source, dest, image_url
+                )
+                normalized = normalized.replace(image_url, uploaded)
+                if log_lines is not None:
+                    log_lines.append(f"  ✓ Đã chuyển ảnh {image_url} → {uploaded}")
+            except Exception as exc:
+                fallback = destination_relative_url(
+                    structure_content_for_target(source, dest, absolute), dest
+                )
+                normalized = normalized.replace(image_url, fallback)
+                if log_lines is not None:
+                    log_lines.append(
+                        f"  ⚠ Không upload lại được ảnh {image_url}: {exc}. Đã đổi thành link tương đối {fallback}."
+                    )
+    return structure_content_for_target(source, dest, normalized)
+
+
+def rewrite_internal_problem_links(content: str, code_map: dict[str, str]) -> str:
+    rewritten = content or ""
+    for source_code, dest_code in code_map.items():
+        if not source_code or not dest_code or source_code == dest_code:
+            continue
+        rewritten = re.sub(
+            r"/contest/[^/\s?#]+/problems/" + re.escape(source_code) + r"(?=([/?#\s)\"']|$))",
+            f"/problem/{dest_code}",
+            rewritten,
+        )
+        rewritten = re.sub(
+            r"/problem/" + re.escape(source_code) + r"(?=([/?#\s)\"']|$))",
+            f"/problem/{dest_code}",
+            rewritten,
+        )
+    return rewritten
 
 def problem_info_for_target(info: ProblemInfo, target: str) -> ProblemInfo:
     return replace(info, description=statement_for_target(target, info.description))
@@ -6208,7 +7013,7 @@ def upload_tests_for_target(session, target: str, base_url: str, code: str, test
     upload_service.upload_tests_for_target(session, target, base_url, code, tests, upload_hncode_tests, upload_tinhoctre_tests)
 
 def submit_if_requested(session, base_url: str, bundle: ProblemBundle, settings: dict, log_lines: list[str]) -> None:
-    fallback = None if ("hncode.edu.vn" in base_url or "tinhoctre.vn" in base_url) else submit_solution
+    fallback = None if any(domain in base_url for domain in ("hncode.edu.vn", "tinhoctre.vn", "lqdoj.edu.vn")) else submit_solution
     upload_service.submit_if_requested(session, base_url, bundle, settings, log_lines, compact_form_red_errors, fallback_submit_solution=fallback)
 
 def submit_solution_file(session, base_url: str, code: str, source_path: Path, preferred_languages: list[str]) -> str:
@@ -6225,6 +7030,22 @@ def language_ids_for_target(target: str, names: list[str]) -> list[str]:
 
 def memory_limit_to_kb(value: object) -> str:
     return upload_service.memory_limit_to_kb(value)
+
+
+def memory_limit_to_mb(value: object, unit: object = "KB") -> str:
+    return upload_service.memory_limit_to_mb(value, unit)
+
+
+def memory_limit_mb_to_kb(value: object) -> str:
+    return upload_service.memory_limit_mb_to_kb(value)
+
+
+def apply_transfer_resource_limits(info: ProblemInfo, row: dict, settings: dict) -> None:
+    info.time_limit = row.get("time_limit") or settings.get("time_limit") or info.time_limit or "1.0"
+    info.memory_limit = memory_limit_mb_to_kb(
+        row.get("memory_limit") or settings.get("memory_limit") or "1024"
+    )
+    info.memory_unit = "KB"
 
 def type_id_from_tags(value: object) -> str:
     match = re.search(r"\b\d+\b", str(value or ""))
@@ -6320,6 +7141,62 @@ def cdp_json(path: str, port: int) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def cookie_from_debug_browser(domain: str, port: int, label: str) -> tuple[str, str]:
+    try:
+        import websocket
+    except Exception as exc:
+        raise RuntimeError("Thiếu thư viện websocket-client để đọc cookie Edge. Hãy cài: pip install websocket-client") from exc
+
+    deadline = time.time() + 20
+    last_error: Exception | None = None
+    version = None
+    while time.time() < deadline:
+        try:
+            version = cdp_json("/json/version", port)
+            break
+        except Exception as exc:
+            last_error = exc
+            time.sleep(0.5)
+    if not version:
+        raise RuntimeError(f"Không kết nối được Edge đăng nhập {label} ở cổng {port}. Hãy mở Edge từ nút của tool trước.") from last_error
+    ws_url = version.get("webSocketDebuggerUrl")
+    if not ws_url:
+        raise RuntimeError("Edge DevTools không trả webSocketDebuggerUrl.")
+    ws = websocket.create_connection(ws_url, timeout=10)
+    counter = 0
+
+    def cdp(method: str, params: dict | None = None):
+        nonlocal counter
+        counter += 1
+        ws.send(json.dumps({"id": counter, "method": method, "params": params or {}}))
+        while True:
+            message = json.loads(ws.recv())
+            if message.get("id") == counter:
+                if "error" in message:
+                    raise RuntimeError(message["error"].get("message", str(message["error"])))
+                return message.get("result", {})
+
+    try:
+        try:
+            cookies = cdp("Network.getAllCookies").get("cookies", [])
+        except Exception:
+            cookies = cdp("Storage.getCookies").get("cookies", [])
+    finally:
+        ws.close()
+    useful = []
+    for item in cookies:
+        cookie_domain = str(item.get("domain", ""))
+        name = str(item.get("name", ""))
+        value = str(item.get("value", ""))
+        if domain in cookie_domain and name and value:
+            useful.append((name, value))
+    if not useful:
+        raise RuntimeError(f"Không thấy cookie {domain} trong Edge. Hãy đăng nhập admin {label} rồi thử lại.")
+    priority = {"cf_clearance": 0, "aws-waf-token": 1, "csrftoken": 2, "sessionid": 3}
+    useful.sort(key=lambda item: (priority.get(item[0], 50), item[0]))
+    return "; ".join(f"{name}={value}" for name, value in useful), str(version.get("User-Agent") or USER_AGENT)
+
+
 def cookie_from_tinhoctre_debug_browser() -> str:
     try:
         import websocket
@@ -6391,12 +7268,9 @@ def login_tinhoctre_source(account: dict, first_code: str):
 
 
 def login_problem_source(target: str, account: dict, first_code: str):
-    base_url = TARGETS[target]["base_url"]
-    username = account.get("username", "")
-    password = account.get("password", "")
     if target == "tinhoctre":
         return login_tinhoctre_source(account, first_code)
-    return login_hncode(base_url, username, password)
+    return login_target_account(target, account)
 
 
 def contest_url(base_url: str, key: str) -> str:
@@ -6610,22 +7484,283 @@ def extract_hncode_course_slug(value: str) -> str:
     raise RuntimeError("Không đọc được mã course. Hãy nhập URL dạng https://hncode.edu.vn/course/<ma_course>.")
 
 
-def hncode_course_page_url(course_slug: str, path: str = "") -> str:
-    return urljoin(TARGETS["hncode"]["base_url"], f"/course/{course_slug}{path}")
+def structure_target_from_url(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if "lqdoj.edu.vn" in normalized:
+        return "lqdoj"
+    if "hncode.edu.vn" in normalized or "oj.hncode.edu.vn" in normalized:
+        return "hncode"
+    if "hnoj.edu.vn" in normalized:
+        return "hnoj"
+    if "tinhoctre.vn" in normalized:
+        return "tinhoctre"
+    return ""
 
 
-def hncode_course_admin_id(session: requests.Session, course_slug: str) -> str:
-    page = session.get(hncode_course_page_url(course_slug, "/edit_lessons"), timeout=30)
+def validate_structure_target_url(value: str, target: str, field_label: str) -> None:
+    detected = structure_target_from_url(value)
+    if detected and detected != target:
+        raise RuntimeError(
+            f"{field_label} thuộc {TARGETS[detected]['label']} nhưng ô chọn website đang là "
+            f"{TARGETS[target]['label']}. Hãy chọn đúng website hoặc nhập lại URL."
+        )
+
+
+def hncode_course_page_url(course_slug: str, path: str = "", target: str = "hncode") -> str:
+    return urljoin(TARGETS[target]["base_url"], f"/course/{course_slug}{path}")
+
+
+def hncode_course_admin_id(session: requests.Session, course_slug: str, target: str = "hncode") -> str:
+    course_url = hncode_course_page_url(course_slug, "/edit_lessons", target)
+    page = session.get(course_url, timeout=30)
     if not page.ok:
-        raise RuntimeError(f"Không mở được course {course_slug}: HTTP {page.status_code}")
+        raise RuntimeError(
+            f"Không mở được Course {course_slug} trên {TARGETS[target]['label']}: "
+            f"HTTP {page.status_code} ({course_url})"
+        )
     match = re.search(r"/admin/judge/course/(\d+)/change/", page.text)
     if not match:
         raise RuntimeError(f"Không đọc được ID admin của course {course_slug}.")
     return match.group(1)
 
 
-def hncode_course_lessons(session: requests.Session, course_slug: str) -> list[dict]:
-    page = session.get(hncode_course_page_url(course_slug, "/edit_lessons"), timeout=30)
+def course_admin_change_url(session: requests.Session, course_slug: str, target: str = "hncode") -> str:
+    course_id = hncode_course_admin_id(session, course_slug, target)
+    return urljoin(TARGETS[target]["base_url"], f"/admin/judge/course/{course_id}/change/")
+
+
+def create_destination_course(
+    src_session: requests.Session,
+    dst_session: requests.Session,
+    source: str,
+    dest: str,
+    dest_slug: str,
+    source_metadata: dict,
+    log_lines: list[str] | None = None,
+) -> str:
+    add_url = urljoin(TARGETS[dest]["base_url"], "/admin/judge/course/add/")
+    page = dst_session.get(add_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(
+            f"Không mở được form tạo Course trên {TARGETS[dest]['label']}: HTTP {page.status_code}"
+        )
+    form_data = collect_form_with_field(page.text, "name")
+    if not form_data:
+        raise RuntimeError(f"Không tìm thấy form tạo Course trên {TARGETS[dest]['label']}.")
+    about = migrate_structure_content(
+        src_session,
+        dst_session,
+        source,
+        dest,
+        source_metadata.get("about", ""),
+        log_lines,
+    )
+    source_slug = str(source_metadata.get("source_slug") or "").strip()
+    if source_slug:
+        about = about.replace(f"/course/{source_slug}", f"/course/{dest_slug}")
+    data = replace_form_fields(
+        [
+            (name, value)
+            for name, value in form_data
+            if name
+            not in {
+                "_save",
+                "_addanother",
+                "_continue",
+                "is_public",
+                "is_open",
+                "organizations",
+            }
+        ],
+        {
+            "name": source_metadata.get("name") or dest_slug,
+            "about": about,
+            "slug": dest_slug,
+        },
+    )
+    for field_name in ("is_public", "is_open"):
+        if source_metadata.get(field_name) and form_has_field(page.text, field_name):
+            data.append((field_name, "on"))
+    destination_orgs = option_values_by_label(page.text, "organizations")
+    for label in source_metadata.get("organization_labels", []):
+        value = destination_orgs.get(str(label).casefold())
+        if value:
+            data.append(("organizations", value))
+        elif log_lines is not None:
+            log_lines.append(
+                f"⚠ Không tìm thấy organization {label!r} trên {TARGETS[dest]['label']}; bỏ qua organization này."
+            )
+    data.append(("_continue", "Save and continue editing"))
+    result = dst_session.post(
+        add_url,
+        data=data,
+        headers={"Referer": add_url},
+        allow_redirects=True,
+        timeout=90,
+    )
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if not result.ok or errors:
+        raise RuntimeError(
+            "Form tạo Course báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"])
+        )
+    return hncode_course_admin_id(dst_session, dest_slug, dest)
+
+
+def ensure_destination_course(
+    src_session: requests.Session,
+    dst_session: requests.Session,
+    source: str,
+    dest: str,
+    dest_slug: str,
+    source_metadata: dict,
+    log_lines: list[str] | None = None,
+) -> tuple[str, bool]:
+    course_url = hncode_course_page_url(dest_slug, "/edit_lessons", dest)
+    page = dst_session.get(course_url, timeout=30)
+    if page.ok:
+        match = re.search(r"/admin/judge/course/(\d+)/change/", page.text)
+        if not match:
+            raise RuntimeError(f"Không đọc được ID admin của Course {dest_slug}.")
+        return match.group(1), False
+    if page.status_code != 404:
+        raise RuntimeError(
+            f"Không mở được Course {dest_slug} trên {TARGETS[dest]['label']}: "
+            f"HTTP {page.status_code} ({course_url})"
+        )
+    course_id = create_destination_course(
+        src_session,
+        dst_session,
+        source,
+        dest,
+        dest_slug,
+        source_metadata,
+        log_lines,
+    )
+    if log_lines is not None:
+        log_lines.append(
+            f"✓ Đã tự tạo Course {dest_slug} trên {TARGETS[dest]['label']} (ID {course_id})."
+        )
+    return course_id, True
+
+
+def selected_option_labels(page: str, name: str) -> list[str]:
+    match = re.search(
+        r"<select\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>(.*?)</select>",
+        page,
+        re.S | re.I,
+    )
+    if not match:
+        return []
+    labels: list[str] = []
+    for option in re.finditer(r"<option\b([^>]*)>(.*?)</option>", match.group(1), re.S | re.I):
+        if re.search(r"\bselected\b", option.group(1), re.I):
+            labels.append(strip_html_text(option.group(2)))
+    return labels
+
+
+def option_values_by_label(page: str, name: str) -> dict[str, str]:
+    match = re.search(
+        r"<select\b[^>]*name=[\"']" + re.escape(name) + r"[\"'][^>]*>(.*?)</select>",
+        page,
+        re.S | re.I,
+    )
+    if not match:
+        return {}
+    values: dict[str, str] = {}
+    for option in re.finditer(r"<option\b([^>]*)>(.*?)</option>", match.group(1), re.S | re.I):
+        value_match = re.search(r"\bvalue=[\"']([^\"']*)", option.group(1), re.I)
+        if value_match:
+            values[strip_html_text(option.group(2)).casefold()] = html.unescape(value_match.group(1))
+    return values
+
+
+def fetch_course_metadata(session: requests.Session, course_slug: str, target: str) -> dict:
+    change_url = course_admin_change_url(session, course_slug, target)
+    page = session.get(change_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không đọc được metadata Course {course_slug}: HTTP {page.status_code}")
+    data = collect_form_with_field(page.text, "name")
+    if not data:
+        raise RuntimeError(f"Không tìm thấy form metadata Course {course_slug}.")
+    return {
+        "name": next((value for name, value in data if name == "name"), course_slug),
+        "about": next((value for name, value in data if name == "about"), ""),
+        "is_public": input_checked(page.text, "is_public"),
+        "is_open": input_checked(page.text, "is_open"),
+        "organization_labels": selected_option_labels(page.text, "organizations"),
+        "change_url": change_url,
+    }
+
+
+def sync_course_metadata(
+    src_session: requests.Session,
+    dst_session: requests.Session,
+    source: str,
+    dest: str,
+    source_slug: str,
+    dest_slug: str,
+    log_lines: list[str] | None = None,
+) -> tuple[str, list[str]]:
+    source_url = course_admin_change_url(src_session, source_slug, source)
+    dest_url = course_admin_change_url(dst_session, dest_slug, dest)
+    source_page = src_session.get(source_url, timeout=30)
+    dest_page = dst_session.get(dest_url, timeout=30)
+    if not source_page.ok or not dest_page.ok:
+        raise RuntimeError(
+            f"Không mở được form Course nguồn/đích: HTTP {source_page.status_code}/{dest_page.status_code}"
+        )
+    source_data = collect_form_with_field(source_page.text, "name")
+    dest_data = collect_form_with_field(dest_page.text, "name")
+    if not source_data or not dest_data:
+        raise RuntimeError("Không đọc được form metadata Course nguồn hoặc đích.")
+    source_values = {name: value for name, value in source_data if name in {"name", "about"}}
+    source_values["about"] = migrate_structure_content(
+        src_session,
+        dst_session,
+        source,
+        dest,
+        source_values.get("about", ""),
+        log_lines,
+    )
+    source_values["about"] = source_values["about"].replace(
+        f"/course/{source_slug}", f"/course/{dest_slug}"
+    )
+    data = replace_form_fields(
+        [
+            (name, value)
+            for name, value in dest_data
+            if name not in {"_save", "_addanother", "_continue", "is_public", "is_open"}
+        ],
+        {
+            "name": source_values.get("name") or dest_slug,
+            "about": source_values.get("about") or "",
+        },
+    )
+    for field_name in ("is_public", "is_open"):
+        if input_checked(source_page.text, field_name) and form_has_field(dest_page.text, field_name):
+            data.append((field_name, "on"))
+    warnings: list[str] = []
+    source_orgs = selected_option_labels(source_page.text, "organizations")
+    destination_orgs = option_values_by_label(dest_page.text, "organizations")
+    mapped_orgs = [destination_orgs[label.casefold()] for label in source_orgs if label.casefold() in destination_orgs]
+    missing_orgs = [label for label in source_orgs if label.casefold() not in destination_orgs]
+    if source_orgs and mapped_orgs and not missing_orgs:
+        data = [(name, value) for name, value in data if name != "organizations"]
+        data.extend(("organizations", value) for value in mapped_orgs)
+    elif missing_orgs:
+        warnings.append(
+            "Không tìm thấy organization cùng tên ở đích, giữ organization hiện tại: " + ", ".join(missing_orgs)
+        )
+    data.append(("_continue", "Save and continue editing"))
+    result = dst_session.post(dest_url, data=data, headers={"Referer": dest_url}, allow_redirects=True, timeout=60)
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if not result.ok or errors:
+        raise RuntimeError("Form cập nhật Course báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
+    return result.url, warnings
+
+
+def hncode_course_lessons(session: requests.Session, course_slug: str, target: str = "hncode") -> list[dict]:
+    page = session.get(hncode_course_page_url(course_slug, "/edit_lessons", target), timeout=30)
     if not page.ok:
         raise RuntimeError(f"Không mở được danh sách lesson course {course_slug}: HTTP {page.status_code}")
     rows: list[dict] = []
@@ -6649,13 +7784,17 @@ def hncode_course_lessons(session: requests.Session, course_slug: str) -> list[d
     return rows
 
 
-def hncode_course_contests(session: requests.Session, course_slug: str) -> list[dict]:
-    page = session.get(hncode_course_page_url(course_slug, "/contests"), timeout=30)
+def hncode_course_contests(session: requests.Session, course_slug: str, target: str = "hncode") -> list[dict]:
+    page = session.get(hncode_course_page_url(course_slug, "/contests", target), timeout=30)
     if not page.ok:
         raise RuntimeError(f"Không mở được danh sách contest course {course_slug}: HTTP {page.status_code}")
     rows: list[dict] = []
     seen: set[str] = set()
-    for block in re.findall(r'<li\b[^>]*class=["\'][^"\']*\bsortable-item\b[^"\']*["\'][^>]*>(.*?)</li>', page.text, re.S | re.I):
+    for relation_id, block in re.findall(
+        r'<li\b[^>]*class=["\'][^"\']*\bsortable-item\b[^"\']*["\'][^>]*data-id=["\']?(\d+)["\']?[^>]*>(.*?)</li>',
+        page.text,
+        re.S | re.I,
+    ):
         link_match = re.search(r'<a\b[^>]*href=["\']/contest/([A-Za-z0-9_-]+)["\'][^>]*>(.*?)</a>', block, re.S | re.I)
         if not link_match:
             continue
@@ -6668,6 +7807,7 @@ def hncode_course_contests(session: requests.Session, course_slug: str) -> list[
         rows.append(
             {
                 "kind": "contest",
+                "relation_id": relation_id,
                 "key": key,
                 "title": strip_html_text(link_match.group(2)) or key,
                 "order": strip_html_text(order_match.group(1)).rstrip(".") if order_match else str(len(rows) + 1),
@@ -6677,24 +7817,90 @@ def hncode_course_contests(session: requests.Session, course_slug: str) -> list[
     return rows
 
 
-def find_hncode_course_lesson_url(session: requests.Session, course_slug: str, title: str) -> str | None:
+def sync_course_contest_relation(
+    session: requests.Session,
+    course_slug: str,
+    target: str,
+    contest_key: str,
+    points: str = "",
+    order: str = "",
+) -> None:
+    """Synchronize the CourseContest points and order through the course page actions."""
+    page_url = hncode_course_page_url(course_slug, "/contests", target)
+    page = session.get(page_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được danh sách contest Course {course_slug}: HTTP {page.status_code}")
+    rows = hncode_course_contests(session, course_slug, target)
+    current = next((row for row in rows if row.get("key") == contest_key), None)
+    if not current or not current.get("relation_id"):
+        raise RuntimeError(f"Không tìm thấy quan hệ contest {contest_key} trong Course {course_slug}.")
+    token = csrf_token(page.text)
+    if str(points or "").strip():
+        result = session.post(
+            page_url,
+            data={
+                "action": "update_points",
+                "cc_id": current["relation_id"],
+                "points": str(points).strip(),
+                "csrfmiddlewaretoken": token,
+            },
+            headers={"Referer": page_url},
+            timeout=30,
+        )
+        try:
+            response_data = result.json()
+        except ValueError:
+            response_data = {}
+        if not result.ok or response_data.get("success") is False:
+            raise RuntimeError(
+                f"Không cập nhật được điểm contest {contest_key} trong Course: "
+                + str(response_data.get("error") or f"HTTP {result.status_code}")
+            )
+    if str(order or "").strip().isdigit():
+        relation_ids = [str(row["relation_id"]) for row in rows if row.get("relation_id")]
+        current_id = str(current["relation_id"])
+        relation_ids = [item_id for item_id in relation_ids if item_id != current_id]
+        insert_at = max(0, min(int(str(order)) - 1, len(relation_ids)))
+        relation_ids.insert(insert_at, current_id)
+        result = session.post(
+            page_url,
+            data={
+                "action": "reorder_contests",
+                "order_data": json.dumps(relation_ids),
+                "csrfmiddlewaretoken": token,
+            },
+            headers={"Referer": page_url},
+            timeout=30,
+        )
+        try:
+            response_data = result.json()
+        except ValueError:
+            response_data = {}
+        if not result.ok or response_data.get("success") is False:
+            raise RuntimeError(
+                f"Không cập nhật được thứ tự contest {contest_key} trong Course: "
+                + str(response_data.get("error") or f"HTTP {result.status_code}")
+            )
+
+
+def find_hncode_course_lesson_url(session: requests.Session, course_slug: str, title: str, target: str = "hncode") -> str | None:
     wanted = (title or "").strip().casefold()
     if not wanted:
         return None
-    matches = [row for row in hncode_course_lessons(session, course_slug) if row.get("title", "").strip().casefold() == wanted]
+    matches = [row for row in hncode_course_lessons(session, course_slug, target) if row.get("title", "").strip().casefold() == wanted]
     if not matches:
         return None
     chosen = matches[-1]
-    return hncode_course_page_url(course_slug, f"/lesson/{chosen['key']}")
+    return hncode_course_page_url(course_slug, f"/lesson/{chosen['key']}", target)
 
 
-def find_hncode_course_contest_url(session: requests.Session, course_slug: str, contest_key: str) -> str | None:
+def find_hncode_course_contest_url(session: requests.Session, course_slug: str, contest_key: str, target: str = "hncode") -> str | None:
     contest_key = (contest_key or "").strip()
     if not contest_key:
         return None
-    for row in hncode_course_contests(session, course_slug):
+    for row in hncode_course_contests(session, course_slug, target):
         if row.get("key") == contest_key:
-            return urljoin(TARGETS["hncode"]["base_url"], f"/contest/{contest_key}")
+            return urljoin(TARGETS[target]["base_url"], f"/contest/{contest_key}")
     return None
 
 
@@ -6708,6 +7914,84 @@ def default_course_clone_contest_key(source_key: str, dest_slug: str, suffix: st
     raw = re.sub(r"[^a-z0-9_-]+", "_", raw)
     raw = re.sub(r"_+", "_", raw).strip("_-")
     return raw or source_key
+
+
+def build_course_lesson_prepare_row(
+    item: dict,
+    dst_session: requests.Session,
+    dest_slug: str,
+    dest: str,
+    dest_lesson_titles: set[str],
+) -> dict:
+    exists = item["title"].strip().casefold() in dest_lesson_titles
+    existing_link = (
+        find_hncode_course_lesson_url(dst_session, dest_slug, item["title"], dest) or ""
+        if exists
+        else ""
+    )
+    return {
+        **item,
+        "selected": True,
+        "can_clone": True,
+        "status": "Đã có Lesson - sẽ cập nhật metadata và bổ sung bài" if exists else "✓ Sẵn sàng",
+        "new_key": "",
+        "existing_link": existing_link,
+    }
+
+
+def build_course_contest_prepare_row(
+    item: dict,
+    source: str,
+    dest: str,
+    dest_slug: str,
+    suffix: str,
+    dest_contest_keys: set[str],
+    dst_session: requests.Session,
+) -> dict:
+    new_key = (
+        normalize_contest_key_for_target(
+            default_course_clone_contest_key(item["key"], dest_slug, suffix), dest
+        )
+        if source == dest
+        else normalize_contest_key_for_target(item["key"], dest)
+    )
+    validate_contest_key_for_target(new_key, dest)
+    in_dest = new_key in dest_contest_keys
+    global_exists = False
+    if not in_dest:
+        global_exists = bool(admin_contest_change_url(dst_session, TARGETS[dest]["base_url"], new_key))
+    if in_dest:
+        status_text = "Đã có Contest trong Course - sẽ cập nhật metadata và bài"
+    elif global_exists:
+        status_text = "Mã contest đích đã tồn tại nhưng chưa nằm trong Course"
+    else:
+        status_text = "✓ Sẵn sàng"
+    return {
+        **item,
+        "selected": in_dest or status_text.startswith("✓"),
+        "can_clone": in_dest or status_text.startswith("✓"),
+        "status": status_text,
+        "new_key": new_key,
+        "existing_link": (
+            find_hncode_course_contest_url(dst_session, dest_slug, new_key, dest) or ""
+            if in_dest
+            else ""
+        ),
+    }
+
+
+def normalize_contest_key_for_target(value: str, target: str) -> str:
+    if target == "lqdoj":
+        return lqdoj_service.normalize_contest_key(value)
+    return re.sub(r"[^a-z0-9_-]+", "_", (value or "").strip().lower()).strip("_-")
+
+
+def validate_contest_key_for_target(value: str, target: str) -> None:
+    if target == "lqdoj":
+        lqdoj_service.validate_contest_key(value)
+        return
+    if not re.fullmatch(r"[a-z0-9_-]+", value or ""):
+        raise RuntimeError("Mã contest chỉ được gồm chữ thường, số, dấu gạch dưới hoặc gạch ngang.")
 
 
 def collect_form_with_field(page: str, field_name: str) -> list[tuple[str, str]]:
@@ -6851,8 +8135,26 @@ def clone_hncode_lesson_native(session: requests.Session, source_course: str, le
         raise RuntimeError(f"Không mở được form sửa lesson nguồn {lesson_id}: HTTP {source_page.status_code}")
     title = input_value_from_page(source_page.text, "title", title) or title
     points = input_value_from_page(source_page.text, "points", "100") or "100"
-    content = textarea_value(source_page.text, "content")
+    content = structure_content_for_target("hncode", "hncode", textarea_value(source_page.text, "content"))
     order = input_value_from_page(source_page.text, "order", "")
+    existing_link = find_hncode_course_lesson_url(session, dest_course_slug, title)
+    if existing_link:
+        match = re.search(r"/lesson/(\d+)", existing_link)
+        if not match:
+            raise RuntimeError(f"Không đọc được ID lesson đích từ {existing_link}.")
+        update_lesson_metadata(
+            session,
+            "hncode",
+            dest_course_slug,
+            match.group(1),
+            title,
+            points,
+            content,
+            order,
+            input_checked(source_page.text, "is_visible"),
+        )
+        copy_hncode_lesson_items(session, dest_course_slug, match.group(1), source_page.text, lesson_id)
+        return existing_link
     create_url = hncode_course_page_url(dest_course_slug, "/lesson/create")
     page = session.get(create_url, timeout=30)
     if not page.ok:
@@ -6943,6 +8245,307 @@ def clone_hncode_contest_native(session: requests.Session, contest_key: str, new
     return link
 
 
+def ensure_problem_for_copy(
+    src_session: requests.Session,
+    dst_session: requests.Session,
+    source: str,
+    dest: str,
+    source_code: str,
+    root: Path,
+    log_lines: list[str],
+) -> tuple[str, str]:
+    dest_code = normalize_problem_code_for_target(source_code, dest)
+    validate_problem_code_for_target(dest_code, dest)
+    problem_id = admin_problem_id(dst_session, TARGETS[dest]["base_url"], dest_code)
+    if problem_id:
+        log_lines.append(f"{source_code} → {dest_code}: đã có ở đích, dùng lại nguyên trạng.")
+        return dest_code, problem_id
+    info, zip_path, cases, _attachments = fetch_source_problem(
+        src_session, TARGETS[source]["base_url"], source_code, root
+    )
+    info.description = migrate_structure_content(
+        src_session,
+        dst_session,
+        source,
+        dest,
+        info.description,
+        log_lines,
+    )
+    upload_transfer_to_dmoj(
+        dst_session,
+        dest,
+        dest_code,
+        info,
+        zip_path,
+        cases,
+        {"upload_statement": True, "upload_tests": True},
+        list(TARGETS[dest]["languages"].values()),
+        log_lines,
+    )
+    problem_id = admin_problem_id(dst_session, TARGETS[dest]["base_url"], dest_code)
+    if not problem_id:
+        raise RuntimeError(f"Không tìm thấy ID đích của bài {dest_code} sau khi sao chép.")
+    return dest_code, problem_id
+
+
+def copy_problem_refs_with_report(problems: list[dict], copier, log_lines: list[str]) -> tuple[list[dict], list[dict]]:
+    refs: list[dict] = []
+    results: list[dict] = []
+    for index, problem in enumerate(problems, 1):
+        source_code = str(problem.get("source_code") or problem.get("code") or "").strip()
+        result = {
+            "index": index,
+            "source_code": source_code,
+            "code": str(problem.get("dest_code") or problem.get("code") or source_code),
+        }
+        try:
+            dest_code, dest_id = copier(source_code, problem)
+            ref = dict(problem)
+            ref["code"] = dest_code
+            ref["id"] = dest_id
+            refs.append(ref)
+            result.update({"code": dest_code, "status": "✓ Đã sao chép/dùng lại"})
+            log_lines.append(f"  ✓ Bài {source_code} → {dest_code}: sẵn sàng ở đích.")
+        except Exception as exc:
+            result.update({"status": "✗ Lỗi", "error": str(exc)})
+            log_lines.append(f"  ✗ Bài {source_code or index}: {exc}. Tiếp tục bài kế tiếp.")
+        results.append(result)
+    return refs, results
+
+
+def clone_course_lesson_between_sites(
+    src_session: requests.Session,
+    dst_session: requests.Session,
+    source: str,
+    dest: str,
+    source_course: str,
+    lesson_id: str,
+    fallback_title: str,
+    dest_course: str,
+    root: Path,
+    log_lines: list[str],
+    problem_results: list[dict] | None = None,
+    existing_link: str = "",
+) -> str:
+    source_edit_url = hncode_course_page_url(source_course, f"/edit_lessons_new/{lesson_id}", source)
+    source_page = src_session.get(source_edit_url, timeout=30)
+    if not source_page.ok:
+        raise RuntimeError(f"Không mở được form lesson nguồn {lesson_id}: HTTP {source_page.status_code}")
+    title = input_value_from_page(source_page.text, "title", fallback_title) or fallback_title
+    points = input_value_from_page(source_page.text, "points", "100") or "100"
+    content = migrate_structure_content(
+        src_session,
+        dst_session,
+        source,
+        dest,
+        textarea_value(source_page.text, "content"),
+        log_lines,
+    )
+    order = input_value_from_page(source_page.text, "order", "")
+    existing_link = existing_link or find_hncode_course_lesson_url(
+        dst_session, dest_course, title, dest
+    ) or ""
+    refs: list[dict] = []
+    report = problem_results if problem_results is not None else []
+    source_items = lesson_problem_rows_from_page(source_page.text, lesson_id)
+    for index, item in enumerate(source_items, 1):
+        source_code = ""
+        result_row = {"index": index, "source_code": "", "code": ""}
+        try:
+            source_code, _name = admin_problem_code_name_by_id(
+                src_session, TARGETS[source]["base_url"], str(item.get("problem") or "")
+            )
+            result_row["source_code"] = source_code
+            dest_code, dest_id = ensure_problem_for_copy(
+                src_session, dst_session, source, dest, source_code, root, log_lines
+            )
+            refs.append(
+                {
+                    "code": dest_code,
+                    "problem_id": dest_id,
+                    "score": str(item.get("score") or "100"),
+                }
+            )
+            result_row.update({"code": dest_code, "status": "✓ Đã sao chép/dùng lại"})
+        except Exception as exc:
+            result_row.update(
+                {
+                    "source_code": source_code or f"problem-id:{item.get('problem') or index}",
+                    "code": source_code,
+                    "status": "✗ Lỗi",
+                    "error": str(exc),
+                }
+            )
+            log_lines.append(
+                f"  ✗ Lesson {lesson_id} / bài {result_row['source_code']}: {exc}. Tiếp tục bài kế tiếp."
+            )
+        report.append(result_row)
+    content = rewrite_internal_problem_links(
+        content,
+        {
+            str(row.get("source_code") or ""): str(row.get("code") or "")
+            for row in report
+            if not row.get("error")
+        },
+    )
+    source_quizzes = lesson_quiz_rows_from_page(source_page.text, lesson_id)
+    if source_quizzes and source != dest:
+        log_lines.append(f"Lesson {lesson_id}: bỏ qua {len(source_quizzes)} quiz vì quiz không dùng chung ID giữa hai website.")
+    if existing_link:
+        match = re.search(r"/lesson/(\d+)", existing_link)
+        if not match:
+            raise RuntimeError(f"Không đọc được ID lesson đích từ {existing_link}.")
+        dest_lesson_id = match.group(1)
+        update_lesson_metadata(
+            dst_session,
+            dest,
+            dest_course,
+            dest_lesson_id,
+            title,
+            points,
+            content,
+            order,
+            input_checked(source_page.text, "is_visible"),
+        )
+        if refs:
+            copy_hncode_contest_to_lesson(dst_session, dest_course, dest_lesson_id, refs, dest)
+        elif source_items:
+            log_lines.append(
+                f"⚠ Lesson {lesson_id}: không có bài nào sao chép thành công; đã cập nhật mô tả/setup Lesson hiện có."
+            )
+        return existing_link
+    create_url = hncode_course_page_url(dest_course, "/lesson/create", dest)
+    create_page = dst_session.get(create_url, timeout=30)
+    if not create_page.ok:
+        raise RuntimeError(f"Không mở được form tạo lesson đích: HTTP {create_page.status_code}")
+    form_data = collect_form_with_field(create_page.text, "title")
+    if not form_data:
+        raise RuntimeError("Không tìm thấy form tạo lesson ở course đích.")
+    data = replace_form_fields(
+        form_data,
+        {"title": title, "points": points, "content": content, "order": order},
+        remove_names={"is_visible"},
+    )
+    if input_checked(source_page.text, "is_visible"):
+        data.append(("is_visible", "on"))
+    result = dst_session.post(create_url, data=data, headers={"Referer": create_url}, allow_redirects=True, timeout=60)
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if not result.ok or errors:
+        raise RuntimeError("Form tạo lesson đích báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
+    link = find_hncode_course_lesson_url(dst_session, dest_course, title, dest)
+    if not link:
+        raise RuntimeError(f"Đã gửi form nhưng chưa tìm thấy lesson mới {title!r} ở course đích.")
+    match = re.search(r"/lesson/(\d+)", link)
+    if not match:
+        raise RuntimeError(f"Không đọc được ID lesson mới từ {link}.")
+    if refs:
+        copy_hncode_contest_to_lesson(dst_session, dest_course, match.group(1), refs, dest)
+    elif source_items:
+        log_lines.append(f"⚠ Lesson {lesson_id}: không có bài nào sao chép thành công; vẫn giữ phần mô tả và thiết lập lesson.")
+    return link
+
+
+def update_lesson_metadata(
+    session: requests.Session,
+    target: str,
+    course_slug: str,
+    lesson_id: str,
+    title: str,
+    points: str,
+    content: str,
+    order: str,
+    is_visible: bool,
+) -> str:
+    edit_url = hncode_course_page_url(course_slug, f"/edit_lessons_new/{lesson_id}", target)
+    page = session.get(edit_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được form Lesson đích {lesson_id}: HTTP {page.status_code}")
+    form_data = collect_form_with_field(page.text, "title")
+    if not form_data:
+        raise RuntimeError(f"Không tìm thấy form Lesson đích {lesson_id}.")
+    data = replace_form_fields(
+        [(name, value) for name, value in form_data if name not in {"_save", "_continue"}],
+        {"title": title, "points": points, "content": content, "order": order},
+        remove_names={"is_visible"},
+    )
+    if is_visible:
+        data.append(("is_visible", "on"))
+    data.append(("_continue", "Save and continue editing"))
+    result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=60)
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if not result.ok or errors:
+        raise RuntimeError("Form cập nhật Lesson báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
+    return result.url
+
+
+def create_course_contest_from_info(
+    dst_session: requests.Session,
+    dest: str,
+    dest_course: str,
+    new_key: str,
+    info: dict,
+    refs: list[dict],
+    course_points: str = "",
+    course_order: str = "",
+) -> str:
+    validate_contest_key_for_target(new_key, dest)
+    existing_link = find_hncode_course_contest_url(dst_session, dest_course, new_key, dest)
+    if existing_link:
+        contest_info = dict(info)
+        contest_info["key"] = new_key
+        create_contest(
+            dst_session,
+            TARGETS[dest]["base_url"],
+            dest,
+            contest_info,
+            refs,
+        )
+        sync_course_contest_relation(
+            dst_session, dest_course, dest, new_key, course_points, course_order
+        )
+        return existing_link
+    add_url = hncode_course_page_url(dest_course, "/add_contest", dest)
+    page = dst_session.get(add_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(f"Không mở được form thêm contest vào course đích: HTTP {page.status_code}")
+    form_data = collect_form_with_field(page.text, "key")
+    if not form_data:
+        raise RuntimeError("Không tìm thấy form thêm contest vào course đích.")
+    data = replace_form_fields(
+        form_data,
+        {
+            "points": str(course_points or "1000"),
+            "key": new_key,
+            "name": info.get("name") or new_key,
+            "start_time": info.get("start_time") or "",
+            "end_time": info.get("end_time") or "",
+        },
+        remove_names={"problems"},
+    )
+    for ref in sorted(refs, key=lambda item: int(str(item.get("order") or "0")) if str(item.get("order") or "0").isdigit() else 0):
+        data.append(("problems", str(ref["id"])))
+    result = dst_session.post(add_url, data=data, headers={"Referer": add_url}, allow_redirects=True, timeout=90)
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if not result.ok or errors:
+        raise RuntimeError("Form thêm contest vào course báo lỗi: " + "; ".join(errors or [f"HTTP {result.status_code}"]))
+    link = find_hncode_course_contest_url(dst_session, dest_course, new_key, dest)
+    if not link:
+        raise RuntimeError(f"Đã tạo contest {new_key} nhưng chưa thấy trong course đích {dest_course}.")
+    contest_info = dict(info)
+    contest_info["key"] = new_key
+    create_contest(
+        dst_session,
+        TARGETS[dest]["base_url"],
+        dest,
+        contest_info,
+        refs,
+    )
+    sync_course_contest_relation(
+        dst_session, dest_course, dest, new_key, course_points, course_order
+    )
+    return link
+
+
 def extract_hncode_contest_key(value: str) -> str:
     value = (value or "").strip()
     if not value:
@@ -6961,7 +8564,9 @@ def contest_lesson_source_from_url(source: str, contest_url_value: str) -> str:
         return "hnoj"
     if "hncode.edu.vn" in text or "oj.hncode.edu.vn" in text:
         return "hncode"
-    return source if source in {"hncode", "hnoj"} else "hncode"
+    if "lqdoj.edu.vn" in text:
+        return "lqdoj"
+    return source if source in {"hncode", "hnoj", "lqdoj"} else "hncode"
 
 
 def extract_hncode_lesson_ref(value: str) -> tuple[str, str]:
@@ -6974,12 +8579,12 @@ def extract_hncode_lesson_ref(value: str) -> tuple[str, str]:
     return html.unescape(match.group(1)), match.group(2)
 
 
-def hncode_lesson_url(course_slug: str, lesson_id: str) -> str:
-    return urljoin(TARGETS["hncode"]["base_url"], f"/course/{course_slug}/lesson/{lesson_id}")
+def hncode_lesson_url(course_slug: str, lesson_id: str, target: str = "hncode") -> str:
+    return urljoin(TARGETS[target]["base_url"], f"/course/{course_slug}/lesson/{lesson_id}")
 
 
-def hncode_lesson_edit_url(course_slug: str, lesson_id: str) -> str:
-    return urljoin(TARGETS["hncode"]["base_url"], f"/course/{course_slug}/edit_lessons_new/{lesson_id}")
+def hncode_lesson_edit_url(course_slug: str, lesson_id: str, target: str = "hncode") -> str:
+    return urljoin(TARGETS[target]["base_url"], f"/course/{course_slug}/edit_lessons_new/{lesson_id}")
 
 
 def contest_lesson_score(value: str, default: str = "100") -> str:
@@ -7129,8 +8734,8 @@ def append_lesson_problem_formset(data: list[tuple[str, str]], lesson_id: str, r
     return out
 
 
-def copy_hncode_contest_to_lesson(session, course_slug: str, lesson_id: str, problem_refs: list[dict]) -> str:
-    edit_url = hncode_lesson_edit_url(course_slug, lesson_id)
+def copy_hncode_contest_to_lesson(session, course_slug: str, lesson_id: str, problem_refs: list[dict], target: str = "hncode") -> str:
+    edit_url = hncode_lesson_edit_url(course_slug, lesson_id, target)
     page = session.get(edit_url, timeout=30)
     if not page.ok:
         raise RuntimeError(f"Không mở được form sửa lesson HNCode: HTTP {page.status_code}")
@@ -7165,7 +8770,7 @@ def copy_hncode_contest_to_lesson(session, course_slug: str, lesson_id: str, pro
         existing_problem_ids.add(problem_id)
         added += 1
     if added == 0:
-        return hncode_lesson_url(course_slug, lesson_id)
+        return hncode_lesson_url(course_slug, lesson_id, target)
     data = append_lesson_problem_formset(base_data, lesson_id, current_rows, initial_forms)
     data = append_lesson_quiz_formset(data, lesson_id, quiz_rows, quiz_initial)
     result = session.post(edit_url, data=data, headers={"Referer": edit_url}, allow_redirects=True, timeout=60)
@@ -7189,7 +8794,7 @@ def copy_hncode_contest_to_lesson(session, course_slug: str, lesson_id: str, pro
                 + ", ".join(missing)
                 + f"\nĐã lưu HTML debug: {debug_post} và {debug_verify}"
             )
-    return hncode_lesson_url(course_slug, lesson_id)
+    return hncode_lesson_url(course_slug, lesson_id, target)
 
 
 def remove_contest_problem_fields(data: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -7252,6 +8857,46 @@ def split_datetime(value: str) -> tuple[str, str]:
     return value, ""
 
 
+CONTEST_TEXT_SETTING_FIELDS = (
+    "time_limit",
+    "format_config",
+    "frozen_last_minutes",
+    "rate_limit",
+    "freeze_after",
+    "problem_label_script",
+    "rating_floor",
+    "rating_ceiling",
+    "access_code",
+    "ranking_access_code",
+    "scoreboard_cache_timeout",
+    "summary",
+    "view_contest_scoreboard",
+    "strict_violation_limit",
+    "strict_grace_seconds",
+)
+
+CONTEST_CHECKBOX_SETTING_FIELDS = (
+    "use_clarifications",
+    "push_announcements",
+    "hide_problem_tags",
+    "hide_problem_authors",
+    "show_short_display",
+    "show_submission_list",
+    "public_scoreboard",
+    "run_pretests_only",
+    "rate_all",
+    "is_strict",
+    "strict_autoban",
+)
+
+
+def contest_text_setting(page: str, name: str, default: str = "") -> str:
+    if re.search(r"<textarea\b[^>]*name=[\"']" + re.escape(name) + r"[\"']", page, re.I):
+        return textarea_value(page, name)
+    selected = selected_option(page, name, "")
+    return selected if selected != "" else input_value(page, name, default)
+
+
 def fetch_contest_info(session, base_url: str, key: str) -> dict:
     change_url = admin_contest_change_url(session, base_url, key)
     if not change_url:
@@ -7264,7 +8909,7 @@ def fetch_contest_info(session, base_url: str, key: str) -> dict:
     entries = []
     order_rows = []
     for idx in range(total):
-        problem_id = input_value(page.text, f"contest_problems-{idx}-problem")
+        problem_id = selected_option(page.text, f"contest_problems-{idx}-problem", "") or input_value(page.text, f"contest_problems-{idx}-problem")
         if not problem_id:
             continue
         order_rows.append(
@@ -7274,7 +8919,11 @@ def fetch_contest_info(session, base_url: str, key: str) -> dict:
                 "points": input_value(page.text, f"contest_problems-{idx}-points", "100") or "100",
                 "partial": checkbox_checked(page.text, f"contest_problems-{idx}-partial"),
                 "is_pretested": checkbox_checked(page.text, f"contest_problems-{idx}-is_pretested"),
+                "is_result_hidden": checkbox_checked(page.text, f"contest_problems-{idx}-is_result_hidden"),
+                "show_testcases": checkbox_checked(page.text, f"contest_problems-{idx}-show_testcases"),
                 "max_submissions": input_value(page.text, f"contest_problems-{idx}-max_submissions", ""),
+                "hidden_subtasks": input_value(page.text, f"contest_problems-{idx}-hidden_subtasks", ""),
+                "output_prefix_override": input_value(page.text, f"contest_problems-{idx}-output_prefix_override", ""),
                 "order": input_value(page.text, f"contest_problems-{idx}-order", str(idx)) or str(idx),
             }
         )
@@ -7285,7 +8934,7 @@ def fetch_contest_info(session, base_url: str, key: str) -> dict:
         entries = [{"code": code, "points": "100", "partial": True, "is_pretested": False, "max_submissions": "", "order": str(i)} for i, code in enumerate(problem_codes)]
     start_time = f"{input_value(page.text, 'start_time_0', '')} {input_value(page.text, 'start_time_1', '')}".strip()
     end_time = f"{input_value(page.text, 'end_time_0', '')} {input_value(page.text, 'end_time_1', '')}".strip()
-    return {
+    info = {
         "key": input_value(page.text, "key", key) or key,
         "name": input_value(page.text, "name", key) or key,
         "description": textarea_value(page.text, "description"),
@@ -7300,6 +8949,9 @@ def fetch_contest_info(session, base_url: str, key: str) -> dict:
         "problems": entries,
         "change_url": change_url,
     }
+    info.update({name: contest_text_setting(page.text, name) for name in CONTEST_TEXT_SETTING_FIELDS})
+    info.update({name: checkbox_checked(page.text, name) for name in CONTEST_CHECKBOX_SETTING_FIELDS})
+    return info
 
 
 def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest: str, author_ids: list[str] | None = None) -> list[tuple[str, str]]:
@@ -7361,13 +9013,19 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
         "public_scoreboard",
         "run_pretests_only",
         "rate_all",
+        "is_strict",
+        "strict_autoban",
     ]:
-        if info.get(flag):
+        if info.get(flag) and form_has_field(page, flag):
             data.append((flag, "on"))
     if info.get("is_rated"):
         data.append(("is_rated", "on"))
     if info.get("is_private"):
         data.append(("is_private", "on"))
+    for name in ("strict_violation_limit", "strict_grace_seconds"):
+        if form_has_field(page, name):
+            data = [(field, value) for field, value in data if field != name]
+            data.append((name, str(info.get(name) or input_value(page, name, ""))))
     has_quiz = form_has_field(page, "contest_problems-0-quiz") or form_has_field(page, "contest_problems-__prefix__-quiz")
     has_result_hidden = form_has_field(page, "contest_problems-0-is_result_hidden") or form_has_field(page, "contest_problems-__prefix__-is_result_hidden")
     has_show_testcases = form_has_field(page, "contest_problems-0-show_testcases") or form_has_field(page, "contest_problems-__prefix__-show_testcases")
@@ -7469,7 +9127,49 @@ def append_contest_problem_fields(data: list[tuple[str, str]], page: str, rows: 
             data.append((f"contest_problems-{idx}-show_testcases", "on"))
 
 
-def append_problems_to_existing_contest(session, base_url: str, dest: str, change_url: str, problem_ids: list[dict]) -> str:
+def apply_contest_metadata_to_existing_form(
+    data: list[tuple[str, str]], page: str, info: dict, dest: str
+) -> list[tuple[str, str]]:
+    start_date, start_clock = split_datetime(info.get("start_time", ""))
+    end_date, end_clock = split_datetime(info.get("end_time", ""))
+    updates = {
+        "name": info.get("name") or input_value(page, "name", ""),
+        "description": statement_for_target(dest, info.get("description", "")),
+        "scoreboard_visibility": valid_select_value(
+            page, "scoreboard_visibility", info.get("scoreboard_visibility") or "", "V"
+        ),
+        "points_precision": info.get("points_precision") or "3",
+        "start_time_0": start_date,
+        "start_time_1": start_clock,
+        "end_time_0": end_date,
+        "end_time_1": end_clock,
+        "format_name": valid_select_value(page, "format_name", info.get("format_name") or "", "vnoj"),
+    }
+    for name in CONTEST_TEXT_SETTING_FIELDS:
+        if form_has_field(page, name):
+            updates[name] = str(info.get(name) or "")
+    checkbox_names = {
+        "is_visible",
+        "is_rated",
+        "is_private",
+        *CONTEST_CHECKBOX_SETTING_FIELDS,
+    }
+    out = [(name, value) for name, value in data if name not in set(updates) | checkbox_names]
+    out.extend((name, value) for name, value in updates.items() if form_has_field(page, name))
+    for name in checkbox_names:
+        if info.get(name) and form_has_field(page, name):
+            out.append((name, "on"))
+    return out
+
+
+def append_problems_to_existing_contest(
+    session,
+    base_url: str,
+    dest: str,
+    change_url: str,
+    problem_ids: list[dict],
+    info: dict | None = None,
+) -> str:
     page = session.get(change_url)
     if not page.ok:
         raise RuntimeError(f"Không mở được form sửa contest: HTTP {page.status_code}")
@@ -7484,6 +9184,23 @@ def append_problems_to_existing_contest(session, base_url: str, dest: str, chang
     for problem in problem_ids:
         problem_id = str(problem["id"])
         if problem_id in existing_ids:
+            for existing_row in rows:
+                if str(existing_row.get("id")) != problem_id:
+                    continue
+                for field in (
+                    "points",
+                    "partial",
+                    "is_pretested",
+                    "is_result_hidden",
+                    "show_testcases",
+                    "max_submissions",
+                    "hidden_subtasks",
+                    "output_prefix_override",
+                    "order",
+                ):
+                    if field in problem:
+                        existing_row[field] = problem[field]
+                break
             continue
         item = dict(problem)
         item["form_id"] = ""
@@ -7494,13 +9211,15 @@ def append_problems_to_existing_contest(session, base_url: str, dest: str, chang
         rows.append(item)
         existing_ids.add(problem_id)
         added += 1
-    if not added:
+    if not added and not info:
         return change_url
     data = [
         (name, clean_contest_base_field(name, value))
         for name, value in base_data
         if name not in {"_save", "_addanother", "_continue"}
     ]
+    if info:
+        data = apply_contest_metadata_to_existing_form(data, page.text, info, dest)
     append_contest_problem_fields(data, page.text, rows, initial_forms, dest)
     data.append(("_continue", "Save and continue editing"))
     result = session.post(change_url, data=data, headers={"Referer": change_url}, allow_redirects=True)
@@ -7517,7 +9236,7 @@ def append_problems_to_existing_contest(session, base_url: str, dest: str, chang
 def create_contest(session, base_url: str, dest: str, info: dict, problem_ids: list[dict], author_username: str = "") -> str:
     change_url = admin_contest_change_url(session, base_url, info["key"])
     if change_url:
-        return append_problems_to_existing_contest(session, base_url, dest, change_url, problem_ids)
+        return append_problems_to_existing_contest(session, base_url, dest, change_url, problem_ids, info)
     add_url = urljoin(base_url, "/admin/judge/contest/add/")
     page = session.get(add_url)
     if not page.ok:
@@ -7586,27 +9305,45 @@ def api_prepare_contest_transfer():
         root.mkdir(parents=True, exist_ok=True)
         source_account = payload["source_account"]
         source_info = CONTEST_TARGETS[source]
-        src = login_hncode(source_info["base_url"], source_account["username"], source_account["password"])
+        src = (
+            login_hncode(source_info["base_url"], source_account.get("username", ""), source_account.get("password", ""))
+            if source == "contest_hnoj"
+            else login_target_account(source, source_account)
+        )
+        dst_probe = login_target_account(dest, payload.get("dest_account", {}))
         rows = []
         items = {}
-        log_lines = [f"Đọc contest nguồn: {source_info['label']} → {TARGETS[dest]['label']}"]
+        log_lines = [
+            f"Đọc contest nguồn: {source_info['label']} → {TARGETS[dest]['label']}",
+            "Chỉ sao chép; contest và bài ở nguồn được giữ nguyên.",
+        ]
         progress_update(progress_id, phase="prepare-contest-transfer", done=0, total=len(codes), rows=rows, message="Bắt đầu đọc contest nguồn")
         for index, key in enumerate(codes, 1):
             try:
                 info = fetch_contest_info(src, source_info["base_url"], key)
-                dest_exists = False
-                try:
-                    dest_account = payload.get("dest_account", {})
-                    dst_probe = login_hncode(TARGETS[dest]["base_url"], dest_account.get("username", ""), dest_account.get("password", ""))
-                    dest_exists = bool(admin_contest_change_url(dst_probe, TARGETS[dest]["base_url"], info["key"]))
-                    for problem in info["problems"]:
-                        pid = admin_problem_id(dst_probe, TARGETS[dest]["base_url"], problem["code"])
-                        if pid:
-                            problem["status"] = "Đã có ở đích, có test" if problem_has_test_zip(dst_probe, TARGETS[dest]["base_url"], problem["code"]) else "Đã có ở đích, thiếu test"
-                        else:
-                            problem["status"] = "Thiếu ở đích"
-                except Exception:
-                    dest_exists = False
+                source_contest_key = info["key"]
+                info["key"] = normalize_contest_key_for_target(source_contest_key, dest)
+                validate_contest_key_for_target(info["key"], dest)
+                dest_exists = bool(admin_contest_change_url(dst_probe, TARGETS[dest]["base_url"], info["key"]))
+                for problem_index, problem in enumerate(info["problems"], 1):
+                    source_code = problem.get("code", "")
+                    problem["source_code"] = source_code
+                    problem["selected"] = True
+                    try:
+                        dest_code = normalize_problem_code_for_target(source_code, dest)
+                        validate_problem_code_for_target(dest_code, dest)
+                        problem["dest_code"] = dest_code
+                        problem["code"] = dest_code
+                        pid = admin_problem_id(dst_probe, TARGETS[dest]["base_url"], dest_code)
+                        problem["status"] = "Đã có ở đích - sẽ dùng lại" if pid else "Thiếu ở đích - sẽ sao chép"
+                    except Exception as problem_exc:
+                        problem["dest_code"] = source_code
+                        problem["selected"] = False
+                        problem["status"] = "✗ Lỗi chuẩn bị"
+                        problem["error"] = str(problem_exc)
+                        log_lines.append(
+                            f"  ✗ {key} / bài {source_code or problem_index}: {problem_exc}. Tiếp tục bài kế tiếp."
+                        )
                 items[key] = info
                 rows.append(
                     {
@@ -7616,15 +9353,15 @@ def api_prepare_contest_transfer():
                         "start_time": info["start_time"],
                         "end_time": info["end_time"],
                         "problems": info["problems"],
-                        "can_transfer": not dest_exists,
-                        "status": "Đã tồn tại ở đích" if dest_exists else "Đã đọc",
+                        "can_transfer": True,
+                        "status": "Đã có contest ở đích - sẽ cập nhật setup và bổ sung bài" if dest_exists else "✓ Sẵn sàng",
                     }
                 )
                 log_lines.append(f"- {key}: {info['name']}, {len(info['problems'])} bài")
                 if dest_exists:
-                    log_lines.append(f"  Contest {info['key']} đã tồn tại ở đích, mặc định bỏ chọn để tránh tạo trùng.")
+                    log_lines.append(f"  Contest {info['key']} đã tồn tại ở đích; tool sẽ cập nhật metadata/setup và bổ sung bài còn thiếu.")
             except Exception as exc:
-                rows.append({"original_key": key, "key": key, "name": "", "start_time": "", "end_time": "", "problems": [], "can_transfer": False, "status": "✗ Lỗi đọc nguồn"})
+                rows.append({"original_key": key, "key": key, "name": "", "start_time": "", "end_time": "", "problems": [], "can_transfer": False, "status": "✗ Lỗi đọc nguồn", "error": str(exc)})
                 log_lines.append(f"✗ {key}: {exc}")
             progress_update(progress_id, phase="prepare-contest-transfer", done=index, total=len(codes), rows=rows, message=f"{key}: {rows[-1]['status']}")
         state = {"root": root, "source": source, "dest": dest, "items": items}
@@ -7655,8 +9392,12 @@ def api_confirm_contest_transfer():
     try:
         source_account = payload["source_account"]
         dest_account = payload["dest_account"]
-        src = login_hncode(CONTEST_TARGETS[source]["base_url"], source_account["username"], source_account["password"])
-        dst = login_hncode(TARGETS[dest]["base_url"], dest_account["username"], dest_account["password"])
+        src = (
+            login_hncode(CONTEST_TARGETS[source]["base_url"], source_account.get("username", ""), source_account.get("password", ""))
+            if source == "contest_hnoj"
+            else login_target_account(source, source_account)
+        )
+        dst = login_target_account(dest, dest_account)
         root = state["root"]
         language_ids = list(TARGETS[dest]["languages"].values())
         total = len([row for row in rows if row.get("selected")])
@@ -7672,60 +9413,121 @@ def api_confirm_contest_transfer():
                 info = dict(state["items"].get(row["original_key"]) or {})
                 if not info:
                     raise RuntimeError("Chưa đọc được dữ liệu contest nguồn")
-                info["key"] = row.get("key") or info["key"]
+                info["key"] = normalize_contest_key_for_target(row.get("key") or info["key"], dest)
+                validate_contest_key_for_target(info["key"], dest)
                 info["name"] = row.get("name") or info["name"]
-                selected_codes = {problem.get("code") for problem in row.get("problems", []) if problem.get("selected")}
+                requested_problems = {
+                    problem.get("source_code") or problem.get("code"): problem
+                    for problem in row.get("problems", [])
+                    if problem.get("selected")
+                }
                 if row.get("problems"):
-                    info["problems"] = [problem for problem in info["problems"] if problem["code"] in selected_codes]
+                    info["problems"] = [
+                        problem
+                        for problem in info["problems"]
+                        if (problem.get("source_code") or problem.get("code")) in requested_problems
+                    ]
                 if not info["problems"]:
                     raise RuntimeError("Chưa chọn bài nào trong contest")
-                problem_refs = []
-                for problem in info["problems"]:
-                    code = problem["code"]
+                def copy_contest_problem(source_code: str, problem: dict) -> tuple[str, str]:
+                    requested_problem = requested_problems.get(source_code, {})
+                    code = normalize_problem_code_for_target(requested_problem.get("code") or problem.get("dest_code") or problem["code"], dest)
+                    validate_problem_code_for_target(code, dest)
                     pid = admin_problem_id(dst, TARGETS[dest]["base_url"], code)
-                    if pid and not settings.get("reuse_existing_problems", True):
-                        raise RuntimeError(f"Bài {code} đã có ở đích và tùy chọn dùng lại bài đã có đang tắt")
                     if not pid and not settings.get("create_missing_problems", True):
                         raise RuntimeError(f"Bài {code} chưa có ở đích")
                     if not pid:
-                        pinfo, zip_path, cases, _zip_url = fetch_source_problem(src, CONTEST_TARGETS[source]["base_url"], code, root)
+                        pinfo, zip_path, cases, _zip_url = fetch_source_problem(src, CONTEST_TARGETS[source]["base_url"], source_code, root)
+                        pinfo.description = migrate_structure_content(
+                            src,
+                            dst,
+                            source,
+                            dest,
+                            pinfo.description,
+                            log_lines,
+                        )
                         pinfo.time_limit = pinfo.time_limit or settings.get("time_limit") or "1.0"
                         pinfo.memory_limit = pinfo.memory_limit or settings.get("memory_limit") or "1048576"
                         transfer_row = {"upload_statement": True, "upload_tests": True}
-                        if dest == "tinhoctre":
-                            upload_transfer_to_tinhoctre(dst, dest, code, pinfo, zip_path, cases, transfer_row, root, language_ids, log_lines)
-                        else:
-                            upload_transfer_to_dmoj(dst, dest, code, pinfo, zip_path, cases, transfer_row, language_ids, log_lines)
+                        upload_transfer_to_dmoj(dst, dest, code, pinfo, zip_path, cases, transfer_row, language_ids, log_lines)
                         pid = admin_problem_id(dst, TARGETS[dest]["base_url"], code)
-                    elif settings.get("create_missing_problems", True) and not problem_has_test_zip(dst, TARGETS[dest]["base_url"], code):
-                        _pinfo, zip_path, cases, _zip_url = fetch_source_problem(src, CONTEST_TARGETS[source]["base_url"], code, root)
-                        upload_existing_problem_tests(dst, dest, code, zip_path, cases)
-                        log_lines.append(f"{code}: đã bổ sung test cho bài đã có.")
+                    else:
+                        log_lines.append(f"{code}: bài đã có ở đích, dùng lại nguyên trạng; không ghi đè đề hoặc test.")
                     if not pid:
                         raise RuntimeError(f"Không tìm thấy ID admin của bài {code} sau khi chuyển")
-                    problem_ref = dict(problem)
-                    problem_ref["id"] = pid
-                    problem_refs.append(problem_ref)
+                    return code, pid
+
+                problem_refs, problem_results = copy_problem_refs_with_report(
+                    info["problems"], copy_contest_problem, log_lines
+                )
+                row["problem_results"] = problem_results
+                failed_problems = [item for item in problem_results if item.get("error")]
+                if failed_problems:
+                    row["error"] = "; ".join(
+                        f"{item.get('source_code')}: {item.get('error')}" for item in failed_problems
+                    )
+                if not problem_refs:
+                    raise RuntimeError("Không có bài nào chuyển thành công để tạo/cập nhật contest")
+                info["description"] = rewrite_internal_problem_links(
+                    info.get("description", ""),
+                    {
+                        str(item.get("source_code") or ""): str(item.get("code") or "")
+                        for item in problem_results
+                        if not item.get("error")
+                    },
+                )
+                info["description"] = info["description"].replace(
+                    f"/contest/{row.get('original_key')}", f"/contest/{info['key']}"
+                )
+                info["description"] = migrate_structure_content(
+                    src,
+                    dst,
+                    source,
+                    dest,
+                    info.get("description", ""),
+                    log_lines,
+                )
                 create_contest(dst, TARGETS[dest]["base_url"], dest, info, problem_refs, dest_account.get("username", ""))
-                row["status"] = "✓ Thành công"
+                row["status"] = (
+                    f"⚠ Hoàn thành một phần: {len(problem_refs)} thành công, {len(failed_problems)} lỗi"
+                    if failed_problems
+                    else "✓ Thành công"
+                )
                 row["link"] = contest_url(TARGETS[dest]["base_url"], info["key"])
-                log_lines.append(f"✓ {info['key']}: đã tạo/cập nhật contest với {len(problem_refs)} bài theo đúng thứ tự gửi lên.")
+                log_lines.append(
+                    f"{'⚠' if failed_problems else '✓'} {info['key']}: đã tạo/cập nhật contest với "
+                    f"{len(problem_refs)} bài; {len(failed_problems)} bài lỗi đã được ghi báo cáo."
+                )
             except ContestAlreadyExists as exc:
                 row["status"] = "✗ Contest đã tồn tại"
+                row["error"] = str(exc)
                 row["link"] = contest_url(TARGETS[dest]["base_url"], row.get("key") or row.get("original_key"))
                 log_lines.append(f"✗ {row.get('key')}: {exc}. Bỏ qua contest này.")
-            except ProblemAlreadyExists:
+            except ProblemAlreadyExists as exc:
                 row["status"] = "✗ Bài đã tồn tại nhưng chưa dùng lại được"
+                row["error"] = str(exc)
                 log_lines.append(f"✗ {row.get('key')}: gặp bài đã tồn tại khi chuyển problem, hãy bật dùng lại bài đã có hoặc kiểm tra mã bài.")
             except Exception as exc:
                 row["status"] = "✗ Lỗi"
+                row["error"] = str(exc)
                 log_lines.append(f"✗ {row.get('key')}: {exc}")
             result_rows.append(row)
             done += 1
             progress_update(progress_id, phase="confirm-contest-transfer", done=done, total=total, rows=result_rows, message=f"{row.get('key')}: {row.get('status')}")
         ok = all((not row.get("selected")) or row.get("status", "").startswith("✓") for row in result_rows)
         progress_finish(progress_id, ok, "Đã hoàn tất chuyển contest")
-        return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
+        errors = []
+        for result_row in result_rows:
+            if result_row.get("status", "").startswith("✗"):
+                errors.append(
+                    f"{result_row.get('key')}: {result_row.get('error') or result_row.get('status')}"
+                )
+            errors.extend(
+                f"{item.get('source_code')}: {item.get('error')}"
+                for item in result_row.get("problem_results", [])
+                if item.get("error")
+            )
+        return jsonify({"ok": ok, "rows": result_rows, "errors": errors, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -7735,16 +9537,19 @@ def api_confirm_contest_transfer():
 def api_create_contest():
     payload = request.get_json(force=True)
     target = payload["target"]
-    key = payload.get("key", "").strip()
+    key = normalize_contest_key_for_target(payload.get("key", "").strip(), target)
     name = payload.get("name", "").strip()
     problems = [code.strip() for code in payload.get("problems", []) if code.strip()]
     if not key or not name or not problems:
         return jsonify({"error": "Cần nhập mã contest, tên contest và danh sách mã bài."}), 400
     try:
+        validate_contest_key_for_target(key, target)
         account = payload["account"]
         dst = login_upload_target(target, TARGETS[target], account)
         refs = []
         for idx, code in enumerate(problems):
+            code = normalize_problem_code_for_target(code, target)
+            validate_problem_code_for_target(code, target)
             pid = admin_problem_id(dst, TARGETS[target]["base_url"], code)
             if not pid:
                 raise RuntimeError(f"Không tìm thấy bài {code} ở {TARGETS[target]['label']}")
@@ -7786,9 +9591,13 @@ def api_prepare_transfer():
         root.mkdir(parents=True, exist_ok=True)
         source_account = payload["source_account"]
         src = login_problem_source(source, source_account, codes[0])
+        dst = login_target_account(dest, payload.get("dest_account", {}))
         rows = []
         state_items = {}
-        log_lines = [f"Đọc dữ liệu nguồn: {TARGETS[source]['label']} → {TARGETS[dest]['label']}"]
+        log_lines = [
+            f"Đọc dữ liệu nguồn: {TARGETS[source]['label']} → {TARGETS[dest]['label']}",
+            "Chỉ đọc nguồn để sao chép; tool không sửa hoặc xóa dữ liệu ở nguồn.",
+        ]
         progress_update(progress_id, phase="prepare-transfer", done=0, total=len(codes), rows=rows, message="Bắt đầu đọc dữ liệu nguồn")
         for index, code in enumerate(codes, 1):
             try:
@@ -7796,26 +9605,31 @@ def api_prepare_transfer():
                 state_items[code] = {"info": info, "zip_path": zip_path, "cases": cases, "zip_url": zip_url}
                 source_code = info.code or code
                 dest_code = normalize_problem_code_for_target(source_code, dest)
+                validate_problem_code_for_target(dest_code, dest)
+                dest_exists = problem_exists_for_target(dst, dest, TARGETS[dest]["base_url"], dest_code)
+                source_memory_mb = memory_limit_to_mb(info.memory_limit, info.memory_unit or "KB")
                 rows.append(
                     {
                         "original_code": code,
                         "code": dest_code,
                         "name": info.name,
                         "time_limit": info.time_limit or payload.get("settings", {}).get("time_limit") or "1.0",
-                        "memory_limit": info.memory_limit or payload.get("settings", {}).get("memory_limit") or "1048576",
+                        "memory_limit": source_memory_mb or payload.get("settings", {}).get("memory_limit") or "1024",
                         "source_time_limit": info.time_limit or "1.0",
-                        "source_memory_limit": info.memory_limit or "1048576",
+                        "source_memory_limit": source_memory_mb or "1024",
                         "statement_file": info.pdf_path.name if info.pdf_path else "Markdown",
                         "test_file": zip_path.name,
                         "test_link": test_data_url(TARGETS[source]["base_url"], code),
                         "test_count": len(cases),
-                        "status": "Đã đọc",
+                        "dest_exists": dest_exists,
+                        "overwrite": False,
+                        "status": "Đã có ở đích - chọn Ghi đè nếu muốn" if dest_exists else "✓ Sẵn sàng",
                     }
                 )
                 statement_kind = "PDF + Markdown" if info.pdf_path and info.description else ("PDF" if info.pdf_path else "Markdown")
                 log_lines.append(
                     f"- {code}: {info.name}, đề {statement_kind}, {len(cases)} test, "
-                    f"bộ test {test_data_url(TARGETS[source]['base_url'], code)}"
+                    f"bộ test {test_data_url(TARGETS[source]['base_url'], code)}; {rows[-1]['status']}"
                 )
             except Exception as exc:
                 rows.append(
@@ -7824,9 +9638,9 @@ def api_prepare_transfer():
                         "code": code,
                         "name": "",
                         "time_limit": payload.get("settings", {}).get("time_limit") or "1.0",
-                        "memory_limit": payload.get("settings", {}).get("memory_limit") or "1048576",
+                        "memory_limit": payload.get("settings", {}).get("memory_limit") or "1024",
                         "source_time_limit": "1.0",
-                        "source_memory_limit": "1048576",
+                        "source_memory_limit": "1024",
                         "statement_file": "Lỗi khi đọc nguồn",
                         "test_file": "Lỗi khi đọc nguồn",
                         "test_link": test_data_url(TARGETS[source]["base_url"], code),
@@ -7867,6 +9681,7 @@ def api_confirm_transfer():
 
     try:
         dest_account = payload["dest_account"]
+        source_account = payload.get("source_account", {})
         prepare_id = payload.get("prepare_id")
         if not prepare_id or prepare_id not in prepared_transfers:
             return jsonify(
@@ -7877,6 +9692,7 @@ def api_confirm_transfer():
             ), 400
         state = prepared_transfers[prepare_id]
         dst = login_hncode(TARGETS[dest]["base_url"], dest_account["username"], dest_account["password"])
+        src = login_target_account(source, source_account)
         out_dir = state["root"]
         language_ids = language_ids_for_target(dest, settings.get("languages", []))
 
@@ -7904,10 +9720,30 @@ def api_confirm_transfer():
                     log_lines.append(f"{raw_dest_code}: mã đích {TARGETS[dest]['label']} được đổi thành {dest_code}")
                 if row.get("name"):
                     info.name = row["name"]
-                info.time_limit = row.get("time_limit") or settings.get("time_limit") or info.time_limit or "1.0"
-                info.memory_limit = row.get("memory_limit") or settings.get("memory_limit") or info.memory_limit or "1048576"
-                upload_transfer_to_dmoj(dst, dest, dest_code, info, zip_path, cases, row, language_ids, log_lines)
-                row["status"] = "✓ Thành công"
+                info.description = migrate_structure_content(
+                    src,
+                    dst,
+                    source,
+                    dest,
+                    info.description,
+                    log_lines,
+                )
+                apply_transfer_resource_limits(info, row, settings)
+                exists = problem_exists_for_target(dst, dest, TARGETS[dest]["base_url"], dest_code)
+                if exists and not row.get("overwrite"):
+                    row["status"] = "Đã có ở đích - không ghi đè"
+                    row["link"] = problem_url(TARGETS[dest]["base_url"], dest_code)
+                    log_lines.append(f"- {dest_code}: đã có ở đích, dùng bản hiện có và không thay đổi.")
+                    result_rows.append(row)
+                    done += 1
+                    progress_update(progress_id, phase="confirm-transfer", done=done, total=total, rows=result_rows, message=f"{row.get('code')}: {row.get('status')}")
+                    continue
+                if exists:
+                    overwrite_transfer_problem(dst, dest, dest_code, info, zip_path, cases, row, out_dir, log_lines)
+                    row["status"] = "✓ Đã ghi đè"
+                else:
+                    upload_transfer_to_dmoj(dst, dest, dest_code, info, zip_path, cases, row, language_ids, log_lines)
+                    row["status"] = "✓ Thành công"
                 row["link"] = problem_url(TARGETS[dest]["base_url"], dest_code)
             except ProblemAlreadyExists as exc:
                 row["status"] = "✗ Bài đã tồn tại"
@@ -7918,7 +9754,12 @@ def api_confirm_transfer():
             result_rows.append(row)
             done += 1
             progress_update(progress_id, phase="confirm-transfer", done=done, total=total, rows=result_rows, message=f"{row.get('code')}: {row.get('status')}")
-        ok = all((not row.get("selected")) or row["status"].startswith("✓") for row in result_rows)
+        ok = all(
+            (not row.get("selected"))
+            or row["status"].startswith("✓")
+            or row["status"].startswith("Đã có ở đích")
+            for row in result_rows
+        )
         progress_finish(progress_id, ok, "Đã hoàn tất chuyển bài")
         return jsonify({"ok": ok, "rows": result_rows, "log": "\n".join(log_lines)})
     except Exception as exc:
@@ -7964,6 +9805,52 @@ def upload_transfer_to_dmoj(session, dest: str, dest_code: str, info: ProblemInf
         log_lines.append(f"{dest_code}: đã upload test.")
     else:
         log_lines.append(f"{dest_code}: không upload test.")
+
+
+def overwrite_transfer_problem(
+    session,
+    dest: str,
+    dest_code: str,
+    info: ProblemInfo,
+    zip_path: Path,
+    cases,
+    row: dict,
+    out_dir: Path,
+    log_lines: list[str],
+) -> None:
+    base_url = TARGETS[dest]["base_url"]
+    dest_info = problem_info_for_target(info, dest)
+    statement_path = out_dir / f"overwrite_{dest_code}.md"
+    statement_path.write_text(dest_info.description or "", encoding="utf-8")
+    bundle = ProblemBundle(0, dest_code, dest_info.name, statement_path, None, zip_path, None, None, dest_info.pdf_path)
+    if row.get("upload_statement"):
+        update_existing_problem_statement(
+            session,
+            dest,
+            base_url,
+            bundle,
+            {"skip_statement_title": False},
+        )
+        update_hncode_problem_metadata(
+            session,
+            base_url,
+            dest_code,
+            target_label=TARGETS[dest]["label"],
+            name=dest_info.name,
+            points=dest_info.points or "100",
+            partial=bool(dest_info.partial),
+            time_limit=dest_info.time_limit or "1.0",
+            memory_limit=dest_info.memory_limit or "1048576",
+            type_ids=[TARGETS[dest]["type_id"]] if TARGETS[dest]["type_id"] else [],
+            group_id=TARGETS[dest]["group_id"],
+            default_type_id=TARGETS[dest]["type_id"],
+        )
+        if dest_info.pdf_path:
+            problem_pdf_service.upload_problem_pdf(session, dest, base_url, dest_code, dest_info.pdf_path)
+        log_lines.append(f"{dest_code}: đã ghi đè đề bài và metadata.")
+    if row.get("upload_tests"):
+        upload_existing_problem_tests(session, dest, dest_code, zip_path, cases)
+        log_lines.append(f"{dest_code}: đã xóa/thay bộ test bằng dữ liệu nguồn.")
 
 
 def upload_transfer_to_tinhoctre(session, dest: str, dest_code: str, info: ProblemInfo, zip_path: Path, cases, row: dict, out_dir: Path, language_ids: list[str], log_lines: list[str]) -> None:
