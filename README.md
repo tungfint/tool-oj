@@ -326,6 +326,20 @@ Nhập:
 
 Sau khi tạo xong, người dùng có thể vào admin của web đích để chỉnh setup chi tiết hơn.
 
+## Tab Tạo Lesson
+
+Chức năng này chỉ làm việc với HNCode. Nhập URL của một Lesson đã có và danh sách mã bài hoặc link bài HNCode, mỗi bài một dòng. Tool giữ đúng thứ tự nhập, tự bỏ qua bài đã nằm trong Lesson và báo riêng mã bài không tồn tại.
+
+Luồng sử dụng:
+
+1. Nhập link dạng `https://hncode.edu.vn/course/<course>/lesson/<id>`.
+2. Nhập danh sách mã bài, link `/problem/<ma_bai>` hoặc link `/contest/<contest>/problems/<ma_bai>`.
+3. Nhập điểm mặc định rồi bấm `Chuẩn bị dữ liệu`.
+4. Kiểm tra bảng STT, mã bài, tên bài, điểm và trạng thái; có thể sửa điểm từng bài hoặc áp dụng một điểm cho tất cả.
+5. Bấm `Thêm bài vào Lesson`. Tool chỉ thêm các dòng được chọn và không thay đổi những bài đã có.
+
+Trạng thái chuẩn bị được lưu trong `.runtime`, vì vậy bước xác nhận vẫn dùng được khi hai request đi vào hai Gunicorn worker khác nhau.
+
 ## Tab Contest → Lesson
 
 Tab này sao chép danh sách bài từ một contest HNCode/HNOJ/LQDOJ vào một lesson HNCode/LQDOJ.

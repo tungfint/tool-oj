@@ -296,6 +296,7 @@ prepared_transfers: dict[str, dict] = {}
 prepared_contest_transfers: dict[str, dict] = {}
 prepared_quizzes: dict[str, dict] = {}
 prepared_lesson_copies: dict[str, dict] = {}
+prepared_lesson_updates: dict[str, dict] = {}
 prepared_lesson_transfers: dict[str, dict] = {}
 prepared_course_clones: dict[str, dict] = {}
 prepared_hncode_grading: dict[str, dict] = {}
@@ -1579,6 +1580,7 @@ PAGE = r"""
         <span class="nav-label">Contest / Course</span>
         <button type="button" data-panel="contest-transfer">Chuyển contest</button>
         <button type="button" data-panel="contest-create">Tạo contest</button>
+        <button type="button" data-panel="lesson-create">Tạo Lesson</button>
         <button type="button" data-panel="contest-lesson-copy">Contest → Lesson</button>
         <button type="button" data-panel="lesson-transfer">Chuyển Lesson</button>
         <button type="button" data-panel="course-clone">Chuyển Course</button>
@@ -1890,6 +1892,33 @@ PAGE = r"""
         </div>
       </div>
 
+      <div class="panel" id="panel-lesson-create">
+        <h2>Tạo Lesson</h2>
+        <p>Thêm danh sách bài vào một Lesson HNCode đã có theo đúng thứ tự nhập. Bài đã nằm trong Lesson được giữ nguyên và tự động bỏ qua.</p>
+        <div class="grid-2">
+          <div>
+            <label>Link Lesson HNCode</label>
+            <input id="lessonCreateUrl" type="text" placeholder="https://hncode.edu.vn/course/&lt;course&gt;/lesson/&lt;id&gt;">
+          </div>
+          <div>
+            <label>Tài khoản HNCode</label>
+            <input id="lessonCreateUserMirror" type="text" value="MrTee" readonly>
+            <span id="lessonCreateLogin" class="login-badge">Chưa kiểm tra</span>
+          </div>
+        </div>
+        <label>Danh sách mã bài hoặc link bài HNCode</label>
+        <textarea id="lessonCreateProblems" style="min-height:170px" placeholder="tonghaiso&#10;https://hncode.edu.vn/problem/dayden&#10;https://hncode.edu.vn/contest/demo/problems/muahang"></textarea>
+        <div class="row" style="margin-top:12px">
+          <div style="max-width:180px"><label>Điểm mặc định</label><input id="lessonCreateDefaultScore" type="text" value="100"></div>
+          <button class="action" type="button" id="fillLessonCreateScores">Áp dụng điểm cho tất cả bài</button>
+        </div>
+        <div class="actions">
+          <button class="action primary" type="button" id="prepareLessonCreate">Chuẩn bị dữ liệu</button>
+          <button class="action primary" type="button" id="confirmLessonCreate" disabled>Thêm bài vào Lesson</button>
+        </div>
+        <div id="lessonCreateTable"></div>
+      </div>
+
       <div class="panel" id="panel-contest-lesson-copy">
         <h2>Sao chép bài từ Contest → Lesson</h2>
         <p>Lấy danh sách bài theo đúng thứ tự trong contest, dùng lại bài đã có ở đích, chỉ chuyển bài còn thiếu rồi thêm vào Lesson. Dữ liệu nguồn không bị thay đổi.</p>
@@ -2105,6 +2134,7 @@ let preparedTransfer = null;
 let preparedContestTransfer = null;
 let preparedQuiz = null;
 let preparedContestLessonCopy = null;
+let preparedLessonUpdate = null;
 let preparedLessonTransfer = null;
 let preparedCourseClone = null;
 let preparedGrading = null;
@@ -2407,6 +2437,7 @@ document.getElementById("contestSource").addEventListener("change", checkContest
 document.getElementById("contestDest").addEventListener("change", checkContestLogins);
 document.getElementById("contestCodes").addEventListener("blur", checkContestLogins);
 document.getElementById("createContestTarget").addEventListener("change", checkCreateContestLogin);
+document.getElementById("lessonCreateUrl").addEventListener("blur", checkLessonCreateLogin);
 document.getElementById("lessonCopySource").addEventListener("change", checkLessonCopyLogin);
 document.getElementById("lessonCopyDest").addEventListener("change", checkLessonCopyLogin);
 document.getElementById("lessonTransferSource").addEventListener("change", checkLessonTransferLogin);
@@ -2451,7 +2482,7 @@ document.getElementById("courseCloneDestUrl").addEventListener("blur", () => syn
 renderLanguages();
 renderSingleLanguages();
 renderTransferLanguages();
-setTimeout(() => { checkUploadLogin(); checkSingleUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); checkLessonCopyLogin(); checkLessonTransferLogin(); checkCourseCloneLogin(); }, 300);
+setTimeout(() => { checkUploadLogin(); checkSingleUploadLogin(); checkTransferLogins(); checkContestLogins(); checkCreateContestLogin(); checkQuizLogin(); checkLessonCreateLogin(); checkLessonCopyLogin(); checkLessonTransferLogin(); checkCourseCloneLogin(); }, 300);
 
 function selectedLanguages() {
   return [...document.querySelectorAll("#languages input:checked")].map(item => item.value);
@@ -2539,6 +2570,10 @@ function checkCreateContestLogin() {
 function checkQuizLogin() {
   updateQuizTargetUi();
   checkLogin(document.getElementById("quizTarget").value, "quizLogin");
+}
+function checkLessonCreateLogin() {
+  document.getElementById("lessonCreateUserMirror").value = accountFields.hncode_user.value || "MrTee";
+  checkLogin("hncode", "lessonCreateLogin");
 }
 function checkLessonCopyLogin() {
   const source = document.getElementById("lessonCopySource").value;
@@ -3025,6 +3060,104 @@ document.getElementById("createContestButton").onclick = async () => {
     status("failed", "err");
   }
 };
+
+document.getElementById("prepareLessonCreate").onclick = async () => {
+  try {
+    status("running");
+    log("Đang kiểm tra Lesson và danh sách bài HNCode...");
+    saveAccounts();
+    checkLessonCreateLogin();
+    const data = await postJson("/api/prepare-lesson-from-list", {
+      account: accountPayload("hncode"),
+      lesson_url: document.getElementById("lessonCreateUrl").value.trim(),
+      problems: document.getElementById("lessonCreateProblems").value,
+      default_score: document.getElementById("lessonCreateDefaultScore").value.trim() || "100",
+    });
+    preparedLessonUpdate = data.prepare_id;
+    renderLessonCreateTable(data.rows || []);
+    document.getElementById("confirmLessonCreate").disabled = !data.can_add;
+    log(data.log || data.message || "Đã chuẩn bị dữ liệu Lesson.");
+    status(data.can_add ? "ready" : "done", data.can_add ? "ok" : "warn");
+  } catch (err) {
+    preparedLessonUpdate = null;
+    document.getElementById("confirmLessonCreate").disabled = true;
+    document.getElementById("lessonCreateTable").innerHTML = "";
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+document.getElementById("confirmLessonCreate").onclick = async () => {
+  try {
+    if (!preparedLessonUpdate) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi thêm bài vào Lesson.");
+    status("running");
+    log("Đang thêm danh sách bài vào Lesson HNCode...");
+    markRowsProcessing("#lessonCreateTable", "Đang thêm...");
+    saveAccounts();
+    const res = await fetch("/api/confirm-lesson-from-list", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        prepare_id: preparedLessonUpdate,
+        account: accountPayload("hncode"),
+        rows: collectLessonCreateRows(),
+      }),
+    });
+    const data = await parseJsonResponse(res);
+    applyLessonCreateStatuses(data.rows || []);
+    if (!res.ok) throw new Error(data.error || "Không cập nhật được Lesson.");
+    log(data.log || data.message || "Đã cập nhật Lesson.");
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  }
+};
+
+document.getElementById("fillLessonCreateScores").onclick = () => {
+  const value = document.getElementById("lessonCreateDefaultScore").value.trim();
+  if (!value) {
+    log("Hãy nhập điểm mặc định trước khi áp dụng.");
+    status("failed", "err");
+    return;
+  }
+  document.querySelectorAll("#lessonCreateTable .row-score").forEach(input => { input.value = value; });
+  append(`Đã áp dụng điểm ${value} cho tất cả bài trong bảng Lesson.`);
+};
+
+function renderLessonCreateTable(rows) {
+  document.getElementById("lessonCreateTable").innerHTML = `<div class="table-tools">
+    <button class="action" type="button" onclick="setRowSelection('#lessonCreateTable', true)">Chọn tất cả</button>
+    <button class="action" type="button" onclick="setRowSelection('#lessonCreateTable', false)">Bỏ chọn tất cả</button>
+  </div><table>
+    <thead><tr><th>STT</th><th>Chọn</th><th>Mã bài</th><th>Tên bài</th><th>Điểm Lesson</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map((row, index) => `<tr data-code="${escapeHtml(row.code)}">
+      <td class="row-index">${index + 1}</td>
+      <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.selected ? "" : "disabled"}></td>
+      <td><a class="problem-link" href="https://hncode.edu.vn/problem/${escapeHtml(row.code)}" target="_blank" rel="noopener">${escapeHtml(row.code)}</a></td>
+      <td>${escapeHtml(row.title || "")}</td>
+      <td><input type="text" class="row-score" value="${escapeHtml(row.score || "100")}"></td>
+      <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "")}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function collectLessonCreateRows() {
+  return [...document.querySelectorAll("#lessonCreateTable tbody tr")].map(tr => ({
+    code: tr.dataset.code,
+    selected: tr.querySelector(".row-selected").checked,
+    score: tr.querySelector(".row-score").value.trim(),
+  }));
+}
+
+function applyLessonCreateStatuses(rows) {
+  const byCode = new Map(rows.map(row => [row.code, row]));
+  for (const tr of document.querySelectorAll("#lessonCreateTable tbody tr")) {
+    const row = byCode.get(tr.dataset.code);
+    if (!row) continue;
+    const detail = row.error ? "\n" + row.error : "";
+    setStatusCell(tr.querySelector(".row-status"), (row.status || "") + detail, row.link || "");
+  }
+}
 
 document.getElementById("prepareContestLessonCopy").onclick = async () => {
   try {
@@ -4854,6 +4987,176 @@ def api_confirm_course_clone():
         )
     except Exception as exc:
         return jsonify({"ok": False, "rows": result_rows, "error": str(exc)}), 400
+
+
+@app.post("/api/prepare-lesson-from-list")
+def api_prepare_lesson_from_list():
+    payload = request.get_json(force=True)
+    account = payload.get("account", {})
+    try:
+        lesson_value = payload.get("lesson_url", "")
+        validate_structure_target_url(lesson_value, "hncode", "Lesson đích")
+        course_slug, lesson_id = extract_hncode_lesson_ref(lesson_value)
+        codes = parse_hncode_problem_inputs(payload.get("problems", ""))
+        if not codes:
+            raise RuntimeError("Không đọc được mã bài nào. Hãy nhập mỗi mã hoặc link bài HNCode trên một dòng.")
+        default_score = str(payload.get("default_score") or "100").strip() or "100"
+        session = login_target_account("hncode", account)
+        edit_url = hncode_lesson_edit_url(course_slug, lesson_id)
+        lesson_page = session.get(edit_url, timeout=30)
+        if not lesson_page.ok:
+            raise RuntimeError(f"Không mở được Lesson đích trên HNCode: HTTP {lesson_page.status_code}")
+        current_rows = lesson_problem_rows_from_page(lesson_page.text, lesson_id)
+        existing_ids = {str(row["problem"]) for row in current_rows if row.get("problem")}
+
+        def resolve_problem(code: str) -> tuple[str, str]:
+            problem_id = admin_problem_id(session, TARGETS["hncode"]["base_url"], code) or ""
+            if not problem_id:
+                return "", code
+            saved_code, title = admin_problem_code_name_by_id(
+                session, TARGETS["hncode"]["base_url"], problem_id
+            )
+            return problem_id, title or saved_code or code
+
+        rows = build_lesson_problem_list_rows(
+            codes,
+            default_score=default_score,
+            existing_problem_ids=existing_ids,
+            resolve_problem=resolve_problem,
+        )
+        lesson_link = hncode_lesson_url(course_slug, lesson_id)
+        log_lines = [
+            "Chuẩn bị Tạo Lesson trên HNCode",
+            f"Lesson: {lesson_link}",
+            f"Đã đọc {len(codes)} mã bài theo đúng thứ tự nhập.",
+        ]
+        for row in rows:
+            log_lines.append(f"{row['index']}. {row['code']} - {row['title']} - {row['status']}")
+        prepare_id = uuid.uuid4().hex
+        state = {
+            "created_at": time.time(),
+            "course_slug": course_slug,
+            "lesson_id": lesson_id,
+            "rows": rows,
+        }
+        prepared_lesson_updates[prepare_id] = state
+        save_prepared_lesson_update(prepare_id, state)
+        return jsonify(
+            {
+                "ok": True,
+                "message": "Đã chuẩn bị danh sách bài cho Lesson",
+                "rows": rows,
+                "log": "\n".join(log_lines),
+                "errors": [],
+                "meta": {"course_slug": course_slug, "lesson_id": lesson_id},
+                "prepare_id": prepare_id,
+                "can_add": any(row.get("selected") for row in rows),
+                "lesson_link": lesson_link,
+            }
+        )
+    except Exception as exc:
+        return jsonify(
+            {
+                "ok": False,
+                "message": str(exc),
+                "rows": [],
+                "log": "",
+                "errors": [str(exc)],
+                "meta": {},
+                "error": str(exc),
+            }
+        ), 400
+
+
+@app.post("/api/confirm-lesson-from-list")
+def api_confirm_lesson_from_list():
+    payload = request.get_json(force=True)
+    state = load_prepared_lesson_update(payload.get("prepare_id", ""))
+    if not state:
+        message = "Dữ liệu chuẩn bị Lesson đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."
+        return jsonify(
+            {"ok": False, "message": message, "rows": [], "log": "", "errors": [message], "meta": {}, "error": message}
+        ), 400
+    requested_by_code = {
+        str(row.get("code") or ""): row for row in payload.get("rows", []) if row.get("code")
+    }
+    lesson_link = hncode_lesson_url(state["course_slug"], state["lesson_id"])
+    log_lines = ["Tạo Lesson trên HNCode", f"Lesson: {lesson_link}"]
+    result_rows: list[dict] = []
+    selected_refs: list[dict] = []
+    invalid_selected: list[dict] = []
+    for saved in state.get("rows", []):
+        row = dict(saved)
+        requested = requested_by_code.get(str(row.get("code") or ""), {})
+        row["selected"] = bool(requested.get("selected", False))
+        row["score"] = str(requested.get("score") or row.get("score") or "100")
+        if not row["selected"]:
+            if "Đã có" not in str(row.get("status", "")):
+                row["status"] = "Bỏ qua"
+        elif "Đã có" in str(saved.get("status", "")):
+            row["selected"] = False
+            row["status"] = "Đã có trong Lesson"
+        elif not row.get("problem_id"):
+            row["status"] = "✗ Không tìm thấy bài trong admin HNCode"
+            row["error"] = "Không thể thêm mã bài chưa tồn tại trên HNCode."
+            invalid_selected.append(row)
+        else:
+            row["status"] = "Đang thêm..."
+            selected_refs.append(row)
+        result_rows.append(row)
+    try:
+        if selected_refs:
+            session = login_target_account("hncode", payload.get("account", {}))
+            lesson_link = copy_hncode_contest_to_lesson(
+                session, state["course_slug"], state["lesson_id"], selected_refs
+            )
+            selected_ids = {str(row.get("problem_id")) for row in selected_refs}
+            for row in result_rows:
+                if row.get("selected") and str(row.get("problem_id")) in selected_ids:
+                    row["status"] = "✓ Đã thêm"
+                    row["link"] = lesson_link
+                    log_lines.append(f"✓ {row.get('code')}: đã thêm vào Lesson.")
+        for row in invalid_selected:
+            log_lines.append(f"✗ {row.get('code')}: {row.get('error')}")
+        for row in result_rows:
+            if row.get("status") == "Bỏ qua":
+                log_lines.append(f"- {row.get('code')}: bỏ qua.")
+            elif row.get("status") == "Đã có trong Lesson":
+                log_lines.append(f"- {row.get('code')}: đã có trong Lesson.")
+        if not selected_refs and not invalid_selected:
+            log_lines.append("Không có bài mới được chọn để thêm.")
+        ok = not invalid_selected and all(
+            not row.get("selected") or str(row.get("status", "")).startswith("✓")
+            for row in result_rows
+        )
+        errors = [str(row.get("error")) for row in result_rows if row.get("error")]
+        return jsonify(
+            {
+                "ok": ok,
+                "message": "Đã thêm bài vào Lesson" if ok else "Thêm bài vào Lesson có lỗi",
+                "rows": result_rows,
+                "log": "\n".join(log_lines),
+                "errors": errors,
+                "meta": {"lesson_link": lesson_link},
+                "link": lesson_link,
+            }
+        )
+    except Exception as exc:
+        for row in result_rows:
+            if row.get("selected") and not str(row.get("status", "")).startswith("✓"):
+                row["status"] = "✗ Lỗi"
+                row["error"] = str(exc)
+        return jsonify(
+            {
+                "ok": False,
+                "message": str(exc),
+                "rows": result_rows,
+                "log": "\n".join(log_lines),
+                "errors": [str(exc)],
+                "meta": {"lesson_link": lesson_link},
+                "error": str(exc),
+            }
+        ), 400
 
 
 @app.post("/api/prepare-contest-to-lesson")
@@ -8577,6 +8880,85 @@ def extract_hncode_lesson_ref(value: str) -> tuple[str, str]:
     if not match:
         raise RuntimeError("Không đọc được lesson. Hãy nhập URL dạng https://oj.hncode.edu.vn/course/<course>/lesson/<id>.")
     return html.unescape(match.group(1)), match.group(2)
+
+
+def parse_hncode_problem_inputs(value: str) -> list[str]:
+    """Read ordered HNCode problem codes from plain codes or public problem links."""
+    codes: list[str] = []
+    for line in str(value or "").splitlines():
+        line = re.sub(r"^\s*\d+[.)\]:-]\s*", "", line.strip())
+        for token in re.split(r"[\s,;]+", line):
+            token = html.unescape(token).strip(" \t\r\n<>()[]{}\"'`.,;:")
+            if not token:
+                continue
+            match = re.search(r"/contest/[^/?#\s]+/problems/([A-Za-z0-9_]+)", token, re.I)
+            if not match:
+                match = re.search(r"/problem/([A-Za-z0-9_]+)", token, re.I)
+            code = match.group(1) if match else token
+            code = code.strip().lower()
+            if not re.fullmatch(r"[a-z0-9_]+", code):
+                continue
+            if code not in codes:
+                codes.append(code)
+    return codes
+
+
+def build_lesson_problem_list_rows(
+    codes: list[str],
+    *,
+    default_score: str,
+    existing_problem_ids: set[str],
+    resolve_problem,
+) -> list[dict]:
+    rows: list[dict] = []
+    for index, code in enumerate(codes, 1):
+        problem_id, title = resolve_problem(code)
+        problem_id = str(problem_id or "")
+        if not problem_id:
+            status_text = "✗ Không tìm thấy bài trong admin HNCode"
+            selected = False
+        elif problem_id in existing_problem_ids:
+            status_text = "Đã có trong Lesson"
+            selected = False
+        else:
+            status_text = "✓ Sẵn sàng"
+            selected = True
+        rows.append(
+            {
+                "index": index,
+                "source_code": code,
+                "code": code,
+                "title": title or code,
+                "score": str(default_score or "100"),
+                "problem_id": problem_id,
+                "selected": selected,
+                "status": status_text,
+            }
+        )
+    return rows
+
+
+def save_prepared_lesson_update(prepare_id: str, state: dict) -> None:
+    root = RUNTIME / f"lesson_update_{prepare_id}"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def load_prepared_lesson_update(prepare_id: str) -> dict | None:
+    state = prepared_lesson_updates.get(prepare_id)
+    if state:
+        return state
+    state_file = RUNTIME / f"lesson_update_{prepare_id}" / "state.json"
+    if not state_file.exists():
+        return None
+    try:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    prepared_lesson_updates[prepare_id] = state
+    return state
 
 
 def hncode_lesson_url(course_slug: str, lesson_id: str, target: str = "hncode") -> str:
