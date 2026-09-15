@@ -189,27 +189,31 @@ def submit_if_requested(session, base_url: str, bundle: ProblemBundle, settings:
         log_lines.append(f"{bundle.code}: không nộp bài chấm thử theo lựa chọn.")
         return
     if settings.get("submit_cpp"):
-        if bundle.solution_cpp:
-            try:
-                submission = submit_solution_file(session, base_url, bundle.code, bundle.solution_cpp, ["C++17", "GNU C++17", "C++20", "GNU C++20", "C++"], compact_form_red_errors)
-                log_lines.append(f"{bundle.code}: đã nộp thử C++ {submission}.")
-            except Exception as exc:
-                log_lines.append(f"{bundle.code}: không nộp thử C++ được: {exc}")
+        cpp_solutions = bundle.all_cpp_solutions()
+        if cpp_solutions:
+            for source_path in cpp_solutions:
+                try:
+                    submission = submit_solution_file(session, base_url, bundle.code, source_path, ["C++17", "GNU C++17", "C++20", "GNU C++20", "C++"], compact_form_red_errors)
+                    log_lines.append(f"{bundle.code}: đã nộp thử C++ {source_path.name}: {submission}.")
+                except Exception as exc:
+                    log_lines.append(f"{bundle.code}: không nộp thử C++ {source_path.name} được: {exc}")
         else:
-            log_lines.append(f"{bundle.code}: không có sol C++, bỏ qua nộp thử C++.")
+            log_lines.append(f"{bundle.code}: không có file sol_*.cpp/solution_*.cpp, bỏ qua nộp thử C++.")
     if settings.get("submit_python"):
-        if bundle.solution:
-            try:
-                submission = submit_solution_file(session, base_url, bundle.code, bundle.solution, ["PyPy 3", "Pypy 3", "Python 3", "Python3", "Python"], compact_form_red_errors)
-                log_lines.append(f"{bundle.code}: đã nộp thử Python {submission}.")
-            except Exception as first_exc:
-                if fallback_submit_solution is None:
-                    log_lines.append(f"{bundle.code}: không nộp thử Python được: {first_exc}")
-                else:
-                    try:
-                        submission = fallback_submit_solution(session, base_url, bundle, language_id="17", poll_seconds=0)
-                        log_lines.append(f"{bundle.code}: đã nộp thử Python {submission}.")
-                    except Exception as exc:
-                        log_lines.append(f"{bundle.code}: không nộp thử Python được: {first_exc}; fallback cũng lỗi: {exc}")
+        python_solutions = bundle.all_python_solutions()
+        if python_solutions:
+            for source_path in python_solutions:
+                try:
+                    submission = submit_solution_file(session, base_url, bundle.code, source_path, ["PyPy 3", "Pypy 3", "Python 3", "Python3", "Python"], compact_form_red_errors)
+                    log_lines.append(f"{bundle.code}: đã nộp thử Python {source_path.name}: {submission}.")
+                except Exception as first_exc:
+                    if fallback_submit_solution is None or len(python_solutions) > 1:
+                        log_lines.append(f"{bundle.code}: không nộp thử Python {source_path.name} được: {first_exc}")
+                    else:
+                        try:
+                            submission = fallback_submit_solution(session, base_url, bundle, language_id="17", poll_seconds=0)
+                            log_lines.append(f"{bundle.code}: đã nộp thử Python {source_path.name}: {submission}.")
+                        except Exception as exc:
+                            log_lines.append(f"{bundle.code}: không nộp thử Python {source_path.name} được: {first_exc}; fallback cũng lỗi: {exc}")
         else:
-            log_lines.append(f"{bundle.code}: không có sol Python, bỏ qua nộp thử Python.")
+            log_lines.append(f"{bundle.code}: không có file sol_*.py/solution_*.py, bỏ qua nộp thử Python.")

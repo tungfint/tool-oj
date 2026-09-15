@@ -63,6 +63,15 @@ class ProblemBundle:
     solution: Path | None
     solution_cpp: Path | None = None
     pdf_statement: Path | None = None
+    python_solutions: tuple[Path, ...] = ()
+    cpp_solutions: tuple[Path, ...] = ()
+    test_directory: Path | None = None
+
+    def all_python_solutions(self) -> tuple[Path, ...]:
+        return unique_paths((*self.python_solutions, self.solution) if self.solution else self.python_solutions)
+
+    def all_cpp_solutions(self) -> tuple[Path, ...]:
+        return unique_paths((*self.cpp_solutions, self.solution_cpp) if self.solution_cpp else self.cpp_solutions)
 
 
 @dataclass(frozen=True)
@@ -153,7 +162,10 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
         (
             path
             for path in source_dir.rglob("*")
-            if path.is_file() and path.suffix.lower() == ".md" and not path.stem.lower().startswith("sol_")
+            if path.is_file()
+            and path.suffix.lower() in {".md", ".txt"}
+            and path.stem.lower() not in {"readme", "summary"}
+            and not path.stem.lower().startswith(("sol_", "solution_"))
         ),
         key=lambda path: path.relative_to(source_dir).as_posix().lower(),
     )
@@ -170,6 +182,11 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
     used_pdfs: set[Path] = set()
     statement_sources: list[tuple[Path | None, Path | None]] = [(path, None) for path in markdowns]
     statement_sources.extend((None, path) for path in pdfs)
+    single_problem_package = len(statement_sources) == 1
+    if len(markdowns) == 1 and len(pdfs) == 1:
+        markdown_key = parse_statement_filename(markdowns[0])
+        pdf_key = parse_statement_filename(pdfs[0])
+        single_problem_package = bool(markdown_key and pdf_key and markdown_key[1].lower() == pdf_key[1].lower())
 
     for markdown, candidate_pdf in statement_sources:
         statement_source = markdown or candidate_pdf
@@ -193,14 +210,26 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
         if pdf_statement:
             used_pdfs.add(pdf_statement.resolve())
         generator = find_named_file(search_dirs, ["gentest"], index, code, ".py")
-        solution = find_named_file(search_dirs, ["sol"], index, code, ".py")
-        solution_cpp = find_named_file(search_dirs, ["sol"], index, code, ".cpp")
+        allow_generic_solutions = single_problem_package or statement_source.parent != source_dir
+        python_solutions = find_solution_files(
+            search_dirs, index, code, ".py", allow_generic=allow_generic_solutions
+        )
+        cpp_solutions = find_solution_files(
+            search_dirs, index, code, ".cpp", allow_generic=allow_generic_solutions
+        )
+        solution = python_solutions[0] if python_solutions else None
+        solution_cpp = cpp_solutions[0] if cpp_solutions else None
         test_zip = find_existing_test_zip(search_dirs, index, code)
-        if generator is None and test_zip is None and title_code is None and pdf_statement is None:
+        test_directory = find_existing_test_directory(
+            search_dirs,
+            code,
+            allow_generic=single_problem_package or statement_source.parent != source_dir,
+        )
+        if generator is None and test_zip is None and test_directory is None and title_code is None and pdf_statement is None:
             continue
         require(
-            generator is not None or test_zip is not None,
-            f"Missing test source for {code}: expected gentest_{code}.py or an existing .zip test archive",
+            generator is not None or test_zip is not None or test_directory is not None,
+            f"Missing test source for {code}: expected gentest_{code}.py, a .zip test archive, or a directory of .inp/.out pairs",
         )
         if markdown is None:
             placeholder_dir = source_dir / ".tool_statements"
@@ -220,6 +249,9 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
                 solution,
                 solution_cpp,
                 pdf_statement,
+                python_solutions,
+                cpp_solutions,
+                test_directory,
             )
         )
     if not bundles:
@@ -229,8 +261,9 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
             if path.is_file()
         ][:20]
         hint = (
-            "Không tìm thấy file đề bài .md hoặc .pdf hợp lệ trong zip. "
-            "Mỗi bài cần có <ma_bai>.md, <ma_bai>.pdf hoặc cả hai; có thể thêm tiền tố <stt>_."
+            "Không tìm thấy file đề bài .md, .txt hoặc .pdf hợp lệ trong zip. "
+            "Mỗi bài cần có <ma_bai>.md, <ma_bai>.txt, <ma_bai>.pdf hoặc một tổ hợp các file này; "
+            "có thể thêm tiền tố <stt>_."
         )
         if sample_files:
             hint += " Một số file đã giải nén: " + ", ".join(sample_files)
@@ -239,10 +272,10 @@ def discover_bundles(source_dir: Path) -> list[ProblemBundle]:
 
 
 def parse_statement_filename(statement: Path) -> tuple[int, str] | None:
-    match = re.fullmatch(r"(\d+)_(.+)\.(?:md|pdf)", statement.name, flags=re.I)
+    match = re.fullmatch(r"(\d+)_(.+)\.(?:md|txt|pdf)", statement.name, flags=re.I)
     if match:
         return int(match.group(1)), match.group(2)
-    match = re.fullmatch(r"(.+)\.(?:md|pdf)", statement.name, flags=re.I)
+    match = re.fullmatch(r"(.+)\.(?:md|txt|pdf)", statement.name, flags=re.I)
     if match:
         return 0, match.group(1)
     return None
@@ -301,6 +334,49 @@ def find_named_file(source_dir: Path | list[Path], prefixes: list[str], index: i
     return None
 
 
+def unique_paths(paths: Iterable[Path | None]) -> tuple[Path, ...]:
+    result: list[Path] = []
+    seen: set[str] = set()
+    for path in paths:
+        if path is None:
+            continue
+        key = str(path.resolve()).lower()
+        if key not in seen:
+            seen.add(key)
+            result.append(path)
+    return tuple(result)
+
+
+def find_solution_files(
+    source_dir: Path | list[Path],
+    index: int,
+    code: str,
+    suffix: str,
+    *,
+    allow_generic: bool = False,
+) -> tuple[Path, ...]:
+    """Find every submission source belonging to one problem, in stable name order."""
+    search_dirs = source_dir if isinstance(source_dir, list) else [source_dir]
+    files: list[Path] = []
+    for directory_index, directory in enumerate(search_dirs):
+        iterator = directory.rglob("*") if directory_index == len(search_dirs) - 1 else directory.glob("*")
+        for path in iterator:
+            if not path.is_file() or path.suffix.lower() != suffix.lower():
+                continue
+            stem = path.stem.lower()
+            if not stem.startswith(("sol_", "solution_")):
+                continue
+            if code.lower() in stem or allow_generic and path.parent == search_dirs[0]:
+                files.append(path)
+
+    def sort_key(path: Path) -> tuple[int, str]:
+        stem = path.stem.lower()
+        exact_names = {f"sol_{code.lower()}", f"solution_{code.lower()}"}
+        return (0 if stem in exact_names else 1, path.name.lower())
+
+    return unique_paths(sorted(files, key=sort_key))
+
+
 def extract_problem_name(generator: Path | None, statement: Path, index: int, code: str) -> str:
     if generator is None:
         return extract_name_from_statement(statement) or problem_name_from_code(code)
@@ -351,6 +427,55 @@ def find_existing_test_zip(source_dir: Path | list[Path], index: int, code: str)
     return sorted(matching, key=lambda path: (len(path.name), path.name.lower()))[0] if matching else None
 
 
+def test_pairs_in_directory(directory: Path, *, recursive: bool = True) -> list[tuple[Path, Path]]:
+    iterator = directory.rglob("*") if recursive else directory.glob("*")
+    files = [path for path in iterator if path.is_file()]
+    by_relative_name = {path.relative_to(directory).as_posix().lower(): path for path in files}
+    pairs: list[tuple[Path, Path]] = []
+    for input_path in sorted(
+        (path for path in files if path.suffix.lower() == ".inp"),
+        key=lambda path: path.relative_to(directory).as_posix().lower(),
+    ):
+        relative_input = input_path.relative_to(directory).as_posix()
+        expected_output = re.sub(r"\.inp$", ".out", relative_input, flags=re.I).lower()
+        output_path = by_relative_name.get(expected_output)
+        if output_path is None:
+            return []
+        pairs.append((input_path, output_path))
+    return pairs
+
+
+def find_existing_test_directory(
+    source_dir: Path | list[Path],
+    code: str,
+    *,
+    allow_generic: bool = True,
+) -> Path | None:
+    search_dirs = source_dir if isinstance(source_dir, list) else [source_dir]
+    candidates: list[Path] = []
+    generic_names = {"test", "tests", "testdata", "test_data", "data"}
+    for position, directory in enumerate(search_dirs):
+        allowed_names = {code.lower()}
+        if allow_generic and position == 0:
+            allowed_names.update(generic_names)
+        candidates.extend(
+            path
+            for path in directory.iterdir()
+            if path.is_dir() and path.name.lower() in allowed_names
+        )
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate.resolve()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if test_pairs_in_directory(candidate):
+            return candidate
+    if allow_generic and search_dirs and test_pairs_in_directory(search_dirs[0], recursive=False):
+        return search_dirs[0]
+    return None
+
+
 def clean_statement(markdown: str) -> str:
     # Some generated files contain an actual tab before "imes" where LaTeX
     # intended "\times".
@@ -371,38 +496,93 @@ def statement_body_text(markdown: str, *, skip_title_line: bool = True) -> str:
 def generate_tests(bundle: ProblemBundle, build_root: Path) -> GeneratedTests:
     build_dir = build_root / bundle.code
     build_dir.mkdir(parents=True, exist_ok=True)
-    if bundle.generator is None:
-        require(bundle.test_zip is not None, f"No generator or test zip for {bundle.code}")
+    if bundle.test_zip is not None:
         zip_path = build_dir / bundle.test_zip.name
         shutil.copy2(bundle.test_zip, zip_path)
         input_files, output_files = zip_case_files(zip_path)
         require(input_files, f"No .inp files in existing zip for {bundle.code}")
         require(len(input_files) == len(output_files), f"Input/output count mismatch for {bundle.code}")
         return GeneratedTests(zip_path, input_files, output_files)
+    if bundle.test_directory is not None:
+        zip_path = zip_existing_test_directory(bundle.test_directory, build_dir, bundle.code)
+        input_files, output_files = zip_case_files(zip_path)
+        return GeneratedTests(zip_path, input_files, output_files)
 
-    shutil.copy2(bundle.generator, build_dir / bundle.generator.name)
+    require(bundle.generator is not None, f"No generator, test zip, or test directory for {bundle.code}")
+
+    copy_generator_support_files(bundle.generator, build_dir)
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
-    result = subprocess.run(
-        [sys.executable, bundle.generator.name],
-        cwd=build_dir,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        env=env,
-        timeout=120,
-    )
+    env.setdefault("PYTHONUTF8", "1")
+    try:
+        configured_timeout = int(os.getenv("TOOL_OJ_GENERATOR_TIMEOUT", "300"))
+    except (TypeError, ValueError):
+        configured_timeout = 300
+    timeout_seconds = max(30, min(configured_timeout, 1800))
+    try:
+        result = subprocess.run(
+            [sys.executable, "-X", "utf8", bundle.generator.name],
+            cwd=build_dir,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            env=env,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise UploadError(
+            f"Generator timed out for {bundle.code} after {timeout_seconds} seconds. "
+            "Set TOOL_OJ_GENERATOR_TIMEOUT to increase the limit."
+        ) from exc
     require(
         result.returncode == 0,
         f"Generator failed for {bundle.code}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}",
     )
     expected_zip = find_generated_zip(build_dir, bundle)
-    require(expected_zip is not None, f"Generator did not create a recognizable test zip for {bundle.code}")
+    if expected_zip is None:
+        expected_zip = zip_generated_test_directory(build_dir, bundle.code)
+    require(
+        expected_zip is not None,
+        f"Generator did not create a recognizable test zip or any .inp/.out pairs for {bundle.code}",
+    )
     input_files, output_files = zip_case_files(expected_zip)
     require(input_files, f"No .inp files in generated zip for {bundle.code}")
     require(len(input_files) == len(output_files), f"Input/output count mismatch for {bundle.code}")
     return GeneratedTests(expected_zip, input_files, output_files)
+
+
+def copy_generator_support_files(generator: Path, build_dir: Path) -> None:
+    """Recreate the generator's local file context without copying old test archives."""
+    excluded_directories = {"test", "tests", "__pycache__", ".git"}
+    excluded_suffixes = {".zip", ".pdf", ".exe", ".inp", ".out"}
+    resolved_build_dir = build_dir.resolve()
+    for source_path in generator.parent.rglob("*"):
+        resolved_source = source_path.resolve()
+        if resolved_source == resolved_build_dir or resolved_build_dir in resolved_source.parents:
+            continue
+        relative_path = source_path.relative_to(generator.parent)
+        if any(part.lower() in excluded_directories for part in relative_path.parts[:-1]):
+            continue
+        if not source_path.is_file() or source_path.suffix.lower() in excluded_suffixes:
+            continue
+        destination = build_dir / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, destination)
+
+
+def zip_existing_test_directory(test_directory: Path, build_dir: Path, code: str) -> Path:
+    pairs = test_pairs_in_directory(test_directory)
+    require(pairs, f"No complete .inp/.out pairs in test directory for {code}")
+    zip_path = build_dir / f"{code}.zip"
+    prefix = test_directory.name if test_directory.name.lower() in {"test", "tests", "testdata", "test_data"} else ""
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for input_path, output_path in pairs:
+            for path in (input_path, output_path):
+                relative = path.relative_to(test_directory).as_posix()
+                archive_name = f"{prefix}/{relative}" if prefix else relative
+                archive.write(path, archive_name)
+    return zip_path
 
 
 def find_generated_zip(build_dir: Path, bundle: ProblemBundle) -> Path | None:
@@ -417,6 +597,18 @@ def find_generated_zip(build_dir: Path, bundle: ProblemBundle) -> Path | None:
             return candidate
     zips = sorted(build_dir.glob("*.zip"), key=lambda path: path.stat().st_mtime, reverse=True)
     return zips[0] if zips else None
+
+
+def zip_generated_test_directory(build_dir: Path, code: str) -> Path | None:
+    pairs = test_pairs_in_directory(build_dir)
+    if not pairs:
+        return None
+    zip_path = build_dir / f"{code}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for input_path, output_path in pairs:
+            archive.write(input_path, input_path.relative_to(build_dir).as_posix())
+            archive.write(output_path, output_path.relative_to(build_dir).as_posix())
+    return zip_path
 
 
 def zip_case_files(zip_path: Path) -> tuple[list[str], list[str]]:

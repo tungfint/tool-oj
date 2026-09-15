@@ -79,8 +79,8 @@ Có các nút:
 Hướng dẫn prompt yêu cầu mỗi bài có đủ:
 
 - `gentest_<ma_bai>.py`
-- `sol_<ma_bai>.py`
-- `sol_<ma_bai>.cpp`
+- Một hoặc nhiều file `sol_*.py` / `solution_*.py`
+- Một hoặc nhiều file `sol_*.cpp` / `solution_*.cpp`
 - `<ma_bai>.md`
 
 Dòng đầu file Markdown nên có dạng:
@@ -95,7 +95,7 @@ Luồng sử dụng:
 
 1. Chọn web đích: `HNOJ`, `HNCode`, `TinHocTre` hoặc `LQDOJ`.
 2. Chọn file zip bộ bài hoặc file Markdown tổng hợp bằng cách dán đường dẫn hoặc bấm `Chọn file`.
-   - File zip dùng cấu trúc: mỗi bài có đề Markdown, đề PDF hoặc cả hai; test zip hoặc `gentest`; lời giải Markdown nếu có.
+   - File zip dùng cấu trúc: mỗi bài có đề `.md`, `.txt`, đề PDF hoặc tổ hợp các định dạng này; test zip hoặc `gentest`; lời giải Markdown nếu có.
    - File Markdown tổng hợp dùng để up đề bài, mỗi bài bắt đầu bằng dòng `# Bài 1. Tên bài | ma_bai`.
 3. Kiểm tra `Giới hạn thời gian`, `Giới hạn bộ nhớ`, `Ngôn ngữ cho phép`.
 4. Bấm `Mở rộng thông tin khác` nếu cần xem/sửa nhóm thông tin phụ:
@@ -108,8 +108,8 @@ Mặc định khi không có `Problem types` hoặc `Problem group`, hoặc tag 
 - HNCode: `problemtype = 591`, `problemgroup = 105`.
 - TinHocTre: `problemtype = 13`, `problemgroup = 13`.
 5. Chọn nhu cầu nộp thử:
-   - `Nộp bài chấm thử C++`: dùng `sol_<ma_bai>.cpp`.
-   - `Nộp bài chấm thử Python`: dùng `sol_<ma_bai>.py`.
+   - `Nộp bài chấm thử C++`: nộp lần lượt tất cả file `sol_*.cpp` và `solution_*.cpp` thuộc bài.
+   - `Nộp bài chấm thử Python`: nộp lần lượt tất cả file `sol_*.py` và `solution_*.py` thuộc bài.
    - `Không nộp bài chấm thử`: bỏ qua toàn bộ bước nộp thử.
 6. Tích `Bỏ dòng đầu tiên trong file đề bài` nếu file Markdown có dòng đầu dạng `Tên bài | Mã bài | Điểm | Các Tags` và không muốn đưa dòng này vào đề bài.
 7. Nếu mã bài đã có trên web đích và muốn cập nhật lại, tích:
@@ -189,10 +189,11 @@ Nếu admin form của một hệ thống không hỗ trợ trực tiếp field 
 
 ## Bộ test
 
-Tool dùng một trong hai cách:
+Tool dùng nguồn test theo thứ tự ưu tiên:
 
-- Có `gentest_<ma_bai>.py`: chạy file này để sinh zip test.
-- Không có gentest nhưng có sẵn zip test: dùng trực tiếp zip tìm được.
+- Có sẵn `<ma_bai>.zip`: dùng trực tiếp zip tìm được.
+- Có thư mục `test/`, `tests/`, `test_data/`, `data/` hoặc thư mục mang mã bài chứa đủ cặp `.inp/.out`: tool tự nén, không chạy lại generator.
+- Chỉ có `gentest_<ma_bai>.py`: chạy generator để tạo zip hoặc thư mục test rồi tự nén.
 
 Cấu trúc zip bộ bài nên dùng:
 
@@ -213,10 +214,12 @@ Trong đó:
 
 - `<ma_bai>.md`: file đề bài, dòng đầu nên là `Tên bài | Mã bài | Điểm | Các Tags`.
 - `<ma_bai>.pdf`: file đề bài PDF. Có thể dùng cùng file Markdown hoặc dùng riêng; khi chỉ có PDF, tên/mã lấy từ tên file và các metadata thiếu dùng giá trị mặc định.
-- `gentest_<ma_bai>.py`: file sinh test. Nếu có file này, tool ưu tiên chạy để tạo `<ma_bai>.zip`.
-- `<ma_bai>.zip`: bộ test có sẵn, dùng khi không có file `gentest`.
+- `gentest_<ma_bai>.py`: file sinh test. Generator có thể tự tạo zip hoặc chỉ tạo thư mục chứa các cặp `.inp/.out`; trường hợp thứ hai tool tự nén thành `<ma_bai>.zip`. Tool chạy Python ở chế độ UTF-8, sao chép các file nguồn/header phụ cạnh generator và cho phép tối đa 300 giây mặc định.
+- `<ma_bai>.zip` hoặc thư mục test có sẵn: được ưu tiên để tránh sinh lại dữ liệu không cần thiết.
 - `sol_<ma_bai>.md`: lời giải/hướng dẫn Markdown để up vào trang lời giải nếu bật trong bảng.
-- `sol_<ma_bai>.cpp`, `sol_<ma_bai>.py`: lời giải để nộp thử nếu bật tùy chọn nộp thử.
+- `sol_*.cpp`, `solution_*.cpp`, `sol_*.py`, `solution_*.py`: một hoặc nhiều lời giải để nộp thử. Tool nộp hết theo từng ngôn ngữ đã chọn và ghi riêng link/kết quả của từng file.
+
+Với `Up 1 bài`, có thể bấm `Chọn code chấm thử` và chọn đồng thời nhiều file `.cpp`/`.py`. Bảng chuẩn bị sẽ liệt kê các file trước khi xác nhận.
 
 File mẫu 1 bài đơn giản nằm ở:
 

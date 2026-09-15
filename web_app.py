@@ -160,6 +160,7 @@ PROMPT_GUIDE = """Với mỗi bài trong danh sách dưới đây, hãy tạo đ
 3. File lời giải C++:
    - Tên file: sol_<ma_bai>.cpp
    - Ví dụ: sol_tht26_tongbi.cpp
+   - Nếu có nhiều lời giải/subtask, có thể thêm các file sol_*.cpp, solution_*.cpp, sol_*.py hoặc solution_*.py; tool sẽ nộp tất cả file theo ngôn ngữ được chọn.
 
 4. File đề bài Markdown:
    - Tên file: <ma_bai>.md
@@ -1663,9 +1664,9 @@ PAGE = r"""
         </div>
         <div class="note" style="margin-top:12px">
           <b>Cấu trúc file zip bộ bài:</b><br>
-          Mỗi bài có thể dùng <code>&lt;ma_bai&gt;.md</code>, <code>&lt;ma_bai&gt;.pdf</code> hoặc cả hai; kèm <code>gentest_&lt;ma_bai&gt;.py</code> hoặc <code>&lt;ma_bai&gt;.zip</code>, <code>sol_&lt;ma_bai&gt;.md</code> và nếu cần nộp thử thì có <code>sol_&lt;ma_bai&gt;.cpp</code>, <code>sol_&lt;ma_bai&gt;.py</code>.<br>
-          File Markdown nên có dòng đầu <code>Tên bài | Mã bài | Điểm | Các Tags</code>. Nếu chỉ có PDF, tên và mã bài lấy từ tên file; các thông tin thiếu dùng mặc định. File sinh test sẽ tạo thư mục test và nén thành <code>&lt;ma_bai&gt;.zip</code>; nếu zip test có sẵn thì tool dùng trực tiếp.
-          <br><b>Ràng buộc gentest:</b> nên là Python, tên <code>gentest_&lt;ma_bai&gt;.py</code>, tự tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất có đủ cặp <code>.inp/.out</code>; không cần input tương tác; chạy trong 120 giây; nếu dùng C++ trong gentest thì máy/VPS cần có <code>g++</code>.
+          Mỗi bài có thể dùng <code>&lt;ma_bai&gt;.md</code>, <code>&lt;ma_bai&gt;.txt</code>, <code>&lt;ma_bai&gt;.pdf</code> hoặc một tổ hợp các file này; kèm <code>gentest_&lt;ma_bai&gt;.py</code> hoặc <code>&lt;ma_bai&gt;.zip</code>, <code>sol_&lt;ma_bai&gt;.md</code>. Nếu cần nộp thử, có thể đặt một hoặc nhiều file <code>sol_*.cpp</code>, <code>solution_*.cpp</code>, <code>sol_*.py</code>, <code>solution_*.py</code>; tool sẽ nộp tất cả file thuộc bài theo ngôn ngữ đã tích.<br>
+          File Markdown nên có dòng đầu <code>Tên bài | Mã bài | Điểm | Các Tags</code>. Nếu chỉ có PDF, tên và mã bài lấy từ tên file; các thông tin thiếu dùng mặc định. Nếu có zip hoặc thư mục test chứa đủ cặp <code>.inp/.out</code>, tool dùng trực tiếp; nếu không mới chạy file sinh test.
+          <br><b>Ràng buộc gentest:</b> nên là Python, tên <code>gentest_&lt;ma_bai&gt;.py</code>, tạo zip test hoặc tạo thư mục có đủ cặp <code>.inp/.out</code> để tool tự nén; không cần input tương tác; chạy tối đa 300 giây mặc định; nếu dùng C++ trong gentest thì máy/VPS cần có <code>g++</code>.
           <br><a class="problem-link" href="/samples/bo_mau_1_bai_tonghaiso.zip" target="_blank" rel="noopener">Tải mẫu bo_mau_1_bai_tonghaiso.zip</a>
         </div>
         <div class="grid-2">
@@ -1770,8 +1771,8 @@ PAGE = r"""
           <div id="singleGeneratorBox">
             <input id="singleGeneratorName" type="text" placeholder="Chưa chọn file sinh test" readonly>
             <input id="singleTestZipName" type="text" placeholder="Chưa chọn zip test có sẵn" readonly>
-            <textarea id="singleGenerator" placeholder="Dán code gentest Python vào đây. Gentest cần tự sinh zip test, không chờ nhập bàn phím, chạy trong 120 giây; nếu gọi g++ thì máy/VPS phải có g++."></textarea>
-            <div class="note"><b>Ràng buộc gentest:</b> nên đặt tên <code>gentest_&lt;ma_bai&gt;.py</code>; tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất; trong zip có đủ cặp <code>.inp/.out</code>. Nếu chọn zip test có sẵn thì tool ưu tiên zip đó.</div>
+            <textarea id="singleGenerator" placeholder="Dán code gentest Python vào đây. Gentest cần sinh zip hoặc thư mục .inp/.out, không chờ nhập bàn phím, chạy tối đa 300 giây mặc định; nếu gọi g++ thì máy/VPS phải có g++."></textarea>
+            <div class="note"><b>Ràng buộc gentest:</b> nên đặt tên <code>gentest_&lt;ma_bai&gt;.py</code>; tạo zip <code>&lt;ma_bai&gt;.zip</code> hoặc một zip duy nhất; trong zip có đủ cặp <code>.inp/.out</code>. Nếu chọn zip test có sẵn thì tool ưu tiên zip đó và tự nhận thêm các file <code>sol_*.cpp/.py</code>, <code>solution_*.cpp/.py</code> nằm trong zip.</div>
           </div>
         </div>
 
@@ -1780,10 +1781,17 @@ PAGE = r"""
           <div class="actions">
             <button class="action" type="button" id="toggleSingleSolution">Thu gọn lời giải</button>
             <button class="action" type="button" id="chooseSingleSolution">Chọn file .md</button>
+            <button class="action" type="button" id="chooseSingleSubmissionSources">Chọn code chấm thử</button>
             <input id="singleSolutionFile" class="hidden" type="file" accept=".md,text/markdown,text/plain">
+            <input id="singleSubmissionSources" class="hidden" type="file" accept=".cpp,.py,text/plain" multiple>
           </div>
           <div id="singleSolutionBox">
             <textarea id="singleSolution" placeholder="Dán lời giải/hướng dẫn Markdown nếu muốn up kèm."></textarea>
+            <input id="singleSubmissionSourceNames" type="text" placeholder="Chưa chọn code chấm thử" readonly>
+            <div class="grid-2" style="margin-top:8px">
+              <label class="check"><input type="checkbox" id="singleSubmitCpp"> Nộp tất cả code C++ đã chọn</label>
+              <label class="check"><input type="checkbox" id="singleSubmitPython"> Nộp tất cả code Python đã chọn</label>
+            </div>
           </div>
         </div>
 
@@ -2141,6 +2149,7 @@ let preparedGrading = null;
 let selectedZipFile = null;
 let selectedSingleTestZipFile = null;
 let selectedSingleStatementPdfFile = null;
+let selectedSingleSubmissionSources = [];
 let selectedGradingZipFile = null;
 let selectedGradingCsvFile = null;
 const QUIZ_FORMAT_GUIDE = {{ quiz_format_guide_json | safe }};
@@ -2363,6 +2372,7 @@ document.getElementById("chooseSingleStatement").onclick = () => document.getEle
 document.getElementById("chooseSingleGenerator").onclick = () => document.getElementById("singleGeneratorFile").click();
 document.getElementById("chooseSingleTestZip").onclick = () => document.getElementById("singleTestZipFile").click();
 document.getElementById("chooseSingleSolution").onclick = () => document.getElementById("singleSolutionFile").click();
+document.getElementById("chooseSingleSubmissionSources").onclick = () => document.getElementById("singleSubmissionSources").click();
 document.getElementById("useSingleSample").onclick = async () => {
   const data = await postJson("/api/sample/tonghaiso", {});
   document.getElementById("singleCode").value = data.code;
@@ -2468,6 +2478,12 @@ document.getElementById("lessonCopyContestUrl").addEventListener("blur", () => {
   if (value.includes("hncode.edu.vn") || value.includes("oj.hncode.edu.vn")) document.getElementById("lessonCopySource").value = "hncode";
   if (value.includes("lqdoj.edu.vn")) document.getElementById("lessonCopySource").value = "lqdoj";
   checkLessonCopyLogin();
+});
+document.getElementById("singleSubmissionSources").addEventListener("change", event => {
+  selectedSingleSubmissionSources = [...(event.target.files || [])];
+  document.getElementById("singleSubmissionSourceNames").value = selectedSingleSubmissionSources.map(file => file.name).join(", ");
+  document.getElementById("singleSubmitCpp").checked = selectedSingleSubmissionSources.some(file => file.name.toLowerCase().endsWith(".cpp"));
+  document.getElementById("singleSubmitPython").checked = selectedSingleSubmissionSources.some(file => file.name.toLowerCase().endsWith(".py"));
 });
 document.getElementById("lessonCopyLessonUrl").addEventListener("blur", () => {
   const value = document.getElementById("lessonCopyLessonUrl").value.toLowerCase();
@@ -2631,7 +2647,9 @@ function singleUploadSettings() {
     generator_filename: document.getElementById("singleGeneratorName").value,
     solution_text: document.getElementById("singleSolution").value,
     upload_solution: Boolean(document.getElementById("singleSolution").value.trim()),
-    no_submit: true,
+    submit_cpp: document.getElementById("singleSubmitCpp").checked,
+    submit_python: document.getElementById("singleSubmitPython").checked,
+    no_submit: !document.getElementById("singleSubmitCpp").checked && !document.getElementById("singleSubmitPython").checked,
     ...accountPayload(target),
   };
 }
@@ -2674,6 +2692,7 @@ async function prepareSingleUploadRequest(settings) {
   const form = new FormData();
   if (selectedSingleStatementPdfFile) form.append("statement_pdf", selectedSingleStatementPdfFile);
   if (selectedSingleTestZipFile) form.append("test_zip", selectedSingleTestZipFile);
+  selectedSingleSubmissionSources.forEach(file => form.append("submission_sources", file));
   form.append("payload", JSON.stringify(settings));
   const res = await fetch("/api/prepare-single-upload", {method:"POST", body:form});
   const data = await parseJsonResponse(res);
@@ -2768,7 +2787,7 @@ function renderUploadTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#uploadTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#uploadTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Ghi đè</th><th>Up đề</th><th>File đề</th><th>Up test</th><th>Up lời giải</th><th>File test</th><th>Số test</th><th>Trạng thái</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Ghi đè</th><th>Up đề</th><th>File đề</th><th>Up test</th><th>Up lời giải</th><th>File test</th><th>Số test</th><th>Code chấm thử</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}" data-source-time="${escapeHtml(row.source_time_limit || row.time_limit || "1.0")}" data-source-memory="${escapeHtml(row.source_memory_limit || row.memory_limit || "1048576")}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
@@ -2785,6 +2804,7 @@ function renderUploadTable(rows) {
       <td><input type="checkbox" class="row-solution" ${row.upload_solution_default ? "checked" : ""}></td>
       <td><div class="test-meta">${escapeHtml(row.test_file)}</div></td>
       <td>${row.test_count}</td>
+      <td><div class="test-meta">${escapeHtml(row.submission_files || "Không có")}</div></td>
       <td class="row-status">Chưa up</td>
     </tr>`).join("")}</tbody></table>`;
 }
@@ -2849,7 +2869,7 @@ document.getElementById("prepareSingleUpload").onclick = async () => {
 
 function renderSingleUploadTable(rows) {
   document.getElementById("singleUploadTable").innerHTML = `<table>
-    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Up đề</th><th>File đề</th><th>Up test</th><th>Up lời giải</th><th>Test</th><th>Trạng thái</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Mã bài</th><th>Tên bài toán</th><th>Điểm</th><th>Dạng bài tập / Tags</th><th>Time</th><th>Memory</th><th>Điểm thành phần</th><th>Up đề</th><th>File đề</th><th>Up test</th><th>Up lời giải</th><th>Test</th><th>Code chấm thử</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_code)}">
       <td><input type="checkbox" class="row-selected" checked></td>
       <td><input type="text" class="row-code" value="${escapeHtml(row.code)}"></td>
@@ -2864,6 +2884,7 @@ function renderSingleUploadTable(rows) {
       <td><input type="checkbox" class="row-tests" ${row.upload_tests_default ? "checked" : ""}></td>
       <td><input type="checkbox" class="row-solution" ${row.upload_solution_default ? "checked" : ""}></td>
       <td><div class="test-meta">${escapeHtml(row.test_file || "Không có test")}<br>${escapeHtml(row.test_count || 0)} test</div></td>
+      <td><div class="test-meta">${escapeHtml(row.submission_files || "Không có")}</div></td>
       <td class="row-status ${statusClass(row.status)}">${escapeHtml(row.status || "Đã chuẩn bị")}</td>
     </tr>`).join("")}</tbody></table>`;
 }
@@ -6185,14 +6206,20 @@ def api_prepare_upload():
         for index, bundle in enumerate(bundles, 1):
             generated = tests.get(bundle.code)
             source = "Markdown tổng hợp"
-            if bundle.generator or bundle.test_zip:
+            if bundle.generator or bundle.test_zip or bundle.test_directory:
                 generated = generate_tests(bundle, build_root)
                 tests[bundle.code] = generated
-                source = "gentest" if bundle.generator else "zip có sẵn"
+                if bundle.test_zip:
+                    source = "zip có sẵn"
+                elif bundle.test_directory:
+                    source = "thư mục test có sẵn"
+                else:
+                    source = "gentest"
             meta = metadata_from_statement(bundle.statement, payload)
             metadata[bundle.code] = meta
             solution_md = find_named_file(source_dir, ["sol"], bundle.index, bundle.code, ".md") if source_path.suffix.lower() != ".md" else None
             solutions_md[bundle.code] = solution_md
+            submission_files = [path.name for path in (*bundle.all_cpp_solutions(), *bundle.all_python_solutions())]
             rows.append(
                 {
                     "original_code": bundle.code,
@@ -6213,11 +6240,13 @@ def api_prepare_upload():
                     "test_count": len(generated.input_files) if generated else 0,
                     "upload_tests_default": bool(generated),
                     "upload_solution_default": bool(solution_md),
+                    "submission_files": ", ".join(submission_files),
                 }
             )
             test_text = f"{len(generated.input_files)} test" if generated else "không có test"
             solution_text = ", có lời giải Markdown" if solution_md else ""
-            log_lines.append(f"- {bundle.code}: {bundle.name}, điểm {meta['points']}, tags {meta['tags'] or 'trống'}, {test_text}, nguồn {source}{solution_text}.")
+            submission_text = f", {len(submission_files)} code chấm thử ({', '.join(submission_files)})" if submission_files else ""
+            log_lines.append(f"- {bundle.code}: {bundle.name}, điểm {meta['points']}, tags {meta['tags'] or 'trống'}, {test_text}, nguồn {source}{solution_text}{submission_text}.")
             progress_update(progress_id, phase="prepare-upload", done=index, total=len(bundles), rows=rows, message=f"{bundle.code}: đã chuẩn bị {test_text}")
         prepared_uploads[prepare_id] = {"root": root, "bundles": {b.code: b for b in bundles}, "tests": tests, "solutions": solutions_md, "metadata": metadata}
         progress_finish(progress_id, True, f"Đã chuẩn bị {len(bundles)}/{len(bundles)} bài")
@@ -6323,6 +6352,48 @@ def api_prepare_single_upload():
             test_zip_path = source_dir / f"{code}.zip"
             uploaded_test_zip.save(test_zip_path)
 
+        cpp_solutions: list[Path] = []
+        python_solutions: list[Path] = []
+        for source_index, uploaded_source in enumerate(request.files.getlist("submission_sources"), 1):
+            if not uploaded_source or not uploaded_source.filename:
+                continue
+            original_name = Path(uploaded_source.filename).name
+            suffix = Path(original_name).suffix.lower()
+            if suffix not in {".cpp", ".py"}:
+                raise RuntimeError(f"Code chấm thử {original_name} phải là file .cpp hoặc .py.")
+            safe_name = safe_output_part(original_name)
+            destination = source_dir / safe_name
+            if destination.exists():
+                destination = source_dir / f"{source_index}_{safe_name}"
+            uploaded_source.save(destination)
+            (cpp_solutions if suffix == ".cpp" else python_solutions).append(destination)
+
+        if test_zip_path:
+            known_names = {path.name.lower() for path in (*cpp_solutions, *python_solutions)}
+            try:
+                with zipfile.ZipFile(test_zip_path) as archive:
+                    for member_index, member in enumerate(
+                        sorted(archive.infolist(), key=lambda item: item.filename.lower()), 1
+                    ):
+                        if member.is_dir():
+                            continue
+                        member_name = Path(member.filename).name
+                        suffix = Path(member_name).suffix.lower()
+                        stem = Path(member_name).stem.lower()
+                        if suffix not in {".cpp", ".py"} or not stem.startswith(("sol_", "solution_")):
+                            continue
+                        safe_name = safe_output_part(member_name)
+                        if safe_name.lower() in known_names:
+                            continue
+                        destination = source_dir / safe_name
+                        if destination.exists():
+                            destination = source_dir / f"zip_{member_index}_{safe_name}"
+                        destination.write_bytes(archive.read(member))
+                        known_names.add(safe_name.lower())
+                        (cpp_solutions if suffix == ".cpp" else python_solutions).append(destination)
+            except zipfile.BadZipFile as exc:
+                raise RuntimeError("File zip test đã chọn không hợp lệ.") from exc
+
         bundle = ProblemBundle(
             1,
             code,
@@ -6333,6 +6404,8 @@ def api_prepare_single_upload():
             None,
             None,
             pdf_statement_path,
+            tuple(python_solutions),
+            tuple(cpp_solutions),
         )
         tests: GeneratedTests | None = None
         test_source = "Không có test"
@@ -6359,6 +6432,9 @@ def api_prepare_single_upload():
             solution_path = source_dir / f"solution_{code}.md"
             solution_path.write_text(solution_text + "\n", encoding="utf-8")
             log_lines.append("- Có lời giải/hướng dẫn Markdown.")
+        if cpp_solutions or python_solutions:
+            source_names = [path.name for path in (*cpp_solutions, *python_solutions)]
+            log_lines.append(f"- Có {len(source_names)} code chấm thử: {', '.join(source_names)}.")
 
         rows = [
             {
@@ -6376,6 +6452,7 @@ def api_prepare_single_upload():
                 "upload_statement_default": bool(statement_text or pdf_statement_path),
                 "upload_tests_default": bool(tests),
                 "upload_solution_default": bool(solution_path),
+                "submission_files": ", ".join(path.name for path in (*cpp_solutions, *python_solutions)),
                 "status": "Đã chuẩn bị" if bool(statement_text) or bool(pdf_statement_path) or bool(tests) or bool(solution_path) else "Chưa có phần nào để up",
                 "note": prepare_note,
             }

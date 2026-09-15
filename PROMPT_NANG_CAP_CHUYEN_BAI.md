@@ -224,8 +224,9 @@ Không nộp bài chấm thử
 
 Yêu cầu:
 
-- `Nộp bài chấm thử C++` dùng file `sol_<ma_bai>.cpp`.
-- `Nộp bài chấm thử Python` dùng file `sol_<ma_bai>.py`.
+- `Nộp bài chấm thử C++` nộp lần lượt tất cả file `sol_*.cpp` và `solution_*.cpp` thuộc bài.
+- `Nộp bài chấm thử Python` nộp lần lượt tất cả file `sol_*.py` và `solution_*.py` thuộc bài.
+- Với Up 1 bài, có thể chọn đồng thời nhiều file code; nếu code nằm trong zip test thì tool tự nhận diện.
 - Nếu không có file lời giải tương ứng thì bỏ qua lượt nộp thử đó và ghi log.
 - Nếu tích `Không nộp bài chấm thử` thì bỏ qua toàn bộ bước nộp thử.
 
