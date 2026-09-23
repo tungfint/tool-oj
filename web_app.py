@@ -2173,7 +2173,11 @@ function colorizeLog(text) {
 function renderLog() { logEl.innerHTML = colorizeLog(logText); logEl.scrollTop = logEl.scrollHeight; }
 function log(text) { logText = String(text); renderLog(); }
 function append(text) { logText += "\n" + String(text); renderLog(); }
-function status(text, cls="") { statusEl.textContent = text; statusEl.className = "status " + cls; }
+function status(text, cls="") {
+  if (!statusEl) return;
+  statusEl.textContent = text;
+  statusEl.className = "status " + cls;
+}
 
 for (const button of document.querySelectorAll(".nav button")) {
   button.addEventListener("click", () => {
@@ -2711,6 +2715,7 @@ function statusClass(text) {
   return "";
 }
 function setStatusCell(cell, text, link="") {
+  if (!cell) return;
   cell.className = "row-status " + statusClass(text);
   const linkHtml = link ? ` <a class="problem-link" href="${escapeHtml(link)}" target="_blank" rel="noopener">Link</a>` : "";
   cell.innerHTML = `${escapeHtml(text || "")}${linkHtml}`;
@@ -3534,6 +3539,7 @@ function applyQuizStatuses(rows) {
     const row = byIndex.get(tr.dataset.quizIndex);
     if (!row) continue;
     const cell = tr.querySelector(".row-status");
+    if (!cell) continue;
     cell.className = "row-status " + statusClass(row.status);
     const linkHtml = row.link ? ` <a class="problem-link" href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : "";
     const errorHtml = row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : "";
@@ -3728,6 +3734,7 @@ function applyGradingStatuses(rows) {
     tr.querySelector(".row-percent").textContent = row.percent || "";
     tr.querySelector(".row-score").textContent = row.score || "";
     const cell = tr.querySelector(".row-status");
+    if (!cell) continue;
     cell.className = "row-status " + statusClass(row.status);
     const linkHtml = row.submission_url ? ` <a class="problem-link" href="${escapeHtml(row.submission_url)}" target="_blank" rel="noopener">Link</a>` : "";
     const msgHtml = row.message ? `<div class="test-meta">${escapeHtml(row.message)}</div>` : "";
