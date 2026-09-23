@@ -5245,9 +5245,11 @@ def api_prepare_contest_to_lesson():
                         src_session, TARGETS[source]["base_url"], contest_key
                     )
                     contest_name = contest_info.get("name") or contest_key
+                    contest_description = str(contest_info.get("description") or "").strip()
                     contest_rows = contest_info.get("problems") or []
                 except Exception as admin_exc:
                     contest_name = contest_key
+                    contest_description = ""
                     contest_rows = (
                         hnoj_contest_problem_rows(src_session, contest_key)
                         if source == "hnoj"
@@ -5297,6 +5299,7 @@ def api_prepare_contest_to_lesson():
                         "key": contest_key,
                         "name": contest_name,
                         "lesson_title": lesson_title,
+                        "lesson_content": contest_description,
                         "lesson_id": lesson_id,
                         "lesson_link": lesson_link,
                         "order": contest_index,
@@ -5475,6 +5478,27 @@ def api_confirm_contest_to_lesson():
             lesson_link = main_link
             try:
                 if destination_mode == "course":
+                    lesson_content = str(contest_meta.get("lesson_content") or "").strip()
+                    if not lesson_content:
+                        lesson_content = (
+                            f"Danh sách bài tập từ contest **{contest_meta.get('name') or contest_key}** "
+                            f"(`{contest_key}`)."
+                        )
+                    elif source != dest:
+                        if not src_session:
+                            src_session = login_target_account(source, source_account)
+                        lesson_content = migrate_structure_content(
+                            src_session,
+                            dst_session,
+                            source,
+                            dest,
+                            lesson_content,
+                            log_lines,
+                        )
+                    else:
+                        lesson_content = structure_content_for_target(
+                            source, dest, lesson_content
+                        )
                     lesson_id, lesson_link, created = ensure_contest_course_lesson(
                         dst_session,
                         dest,
@@ -5483,6 +5507,7 @@ def api_confirm_contest_to_lesson():
                         or contest_meta.get("name")
                         or contest_key,
                         str(contest_meta.get("order") or contest_order),
+                        lesson_content,
                     )
                     log_lines.append(
                         f"{'✓ Đã tạo' if created else 'Dùng lại'} Lesson "
@@ -8487,6 +8512,7 @@ def ensure_contest_course_lesson(
     course_slug: str,
     title: str,
     order: str,
+    content: str = "",
 ) -> tuple[str, str, bool]:
     """Return lesson id/link, creating a basic lesson when the title is absent."""
     title = (title or "").strip() or "Contest"
@@ -8511,7 +8537,8 @@ def ensure_contest_course_lesson(
         {
             "title": title,
             "points": "100",
-            "content": "",
+            "content": str(content or "").strip()
+            or f"Danh sách bài tập của **{title}**.",
             "order": str(order or ""),
         },
     )
@@ -8528,9 +8555,18 @@ def ensure_contest_course_lesson(
             f"Tạo Lesson {title!r} báo lỗi: "
             + "; ".join(errors or [f"HTTP {result.status_code}"])
         )
-    link = find_hncode_course_lesson_url(session, course_slug, title, target)
+    link = None
+    for attempt in range(3):
+        link = find_hncode_course_lesson_url(session, course_slug, title, target)
+        if link:
+            break
+        if attempt < 2:
+            time.sleep(0.5)
     if not link:
-        raise RuntimeError(f"Đã gửi form nhưng chưa tìm thấy Lesson mới {title!r} trong Course.")
+        raise RuntimeError(
+            f"HNCode chưa lưu hoặc chưa hiển thị Lesson mới {title!r} trong Course. "
+            "Hãy kiểm tra các trường bắt buộc của form tạo Lesson."
+        )
     match = re.search(r"/lesson/(\d+)", link)
     if not match:
         raise RuntimeError(f"Không đọc được ID Lesson mới từ {link}.")

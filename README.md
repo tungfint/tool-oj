@@ -364,7 +364,7 @@ Luồng sử dụng:
 
 Với đích là một Lesson, tool mở form sửa lesson `edit_lessons_new/<lesson_id>`, giữ nguyên nội dung lesson và quiz hiện có, chỉ thêm các problem còn thiếu vào cuối danh sách. Nếu cùng một bài xuất hiện ở nhiều contest hoặc đã có trong Lesson, dòng đó được bỏ qua để tránh trùng.
 
-Với đích là một Course, tool chuẩn bị riêng Lesson tương ứng cho từng contest. Khi xác nhận, Lesson chưa có được tạo theo thứ tự danh sách contest; Lesson trùng tên được dùng lại. Một contest hoặc một bài lỗi được ghi rõ ở đúng dòng và không làm dừng các mục còn lại.
+Với đích là một Course, tool chuẩn bị riêng Lesson tương ứng cho từng contest. Khi xác nhận, Lesson chưa có được tạo theo thứ tự danh sách contest; Lesson trùng tên được dùng lại. Nội dung/mô tả contest được dùng làm nội dung Lesson; nếu contest không có mô tả, tool tự điền một nội dung tối thiểu vì form HNCode bắt buộc trường này. Một contest hoặc một bài lỗi được ghi rõ ở đúng dòng và không làm dừng các mục còn lại.
 
 Dữ liệu của bước chuẩn bị được lưu trong `.runtime`, nên bước xác nhận vẫn hoạt động khi VPS dùng nhiều Gunicorn worker hoặc request tiếp theo đi vào worker khác.
 

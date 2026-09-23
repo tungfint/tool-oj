@@ -66,6 +66,56 @@ class StructureTransferTests(TestCase):
             ("course", "sample", ""),
         )
 
+    def test_course_lesson_creation_always_sends_required_content(self):
+        class LessonSession:
+            def __init__(self):
+                self.created = False
+                self.post_data = []
+
+            def get(self, url, **_kwargs):
+                if url.endswith("/lesson/create"):
+                    return FakeResponse(
+                        """
+                        <form method="post">
+                          <input name="csrfmiddlewaretoken" value="token">
+                          <input name="title" value="">
+                          <input name="points" value="">
+                          <textarea name="content" required></textarea>
+                          <input name="order" value="0">
+                        </form>
+                        """,
+                        url=url,
+                    )
+                lesson = (
+                    """
+                    <li class="sortable-item" data-id="321">
+                      <span class="item-order">1.</span>
+                      <a href="/course/destination/lesson/321">Contest sample</a>
+                      <span class="item-points">100p</span>
+                    </li>
+                    """
+                    if self.created
+                    else ""
+                )
+                return FakeResponse(lesson, url=url)
+
+            def post(self, url, data=None, **_kwargs):
+                self.post_data = list(data or [])
+                self.created = True
+                return FakeResponse("", status_code=302, url=url)
+
+        session = LessonSession()
+        lesson_id, link, created = web_app.ensure_contest_course_lesson(
+            session, "hncode", "destination", "Contest sample", "1"
+        )
+
+        self.assertTrue(created)
+        self.assertEqual(lesson_id, "321")
+        self.assertTrue(link.endswith("/lesson/321"))
+        posted = dict(session.post_data)
+        self.assertEqual(posted["title"], "Contest sample")
+        self.assertTrue(posted["content"].strip())
+
     @patch("web_app.admin_problem_id", side_effect=["11", "22"])
     @patch("web_app.find_hncode_course_lesson_url", return_value=None)
     @patch("web_app.hncode_course_admin_id", return_value="9")
