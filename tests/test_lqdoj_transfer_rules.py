@@ -51,6 +51,50 @@ class LqdojTransferRulesTests(TestCase):
         self.assertEqual(info.memory_limit, "1048576")
         self.assertEqual(info.memory_unit, "KB")
 
+    def test_contest_key_accepts_hnoj_url(self):
+        self.assertEqual(
+            web_app.extract_hncode_contest_key(
+                "https://hnoj.edu.vn/contest/hnoi2024v2/problems?view=all#top"
+            ),
+            "hnoi2024v2",
+        )
+
+    @patch("web_app.admin_problem_id", return_value=None)
+    @patch("web_app.admin_contest_change_url", return_value=None)
+    @patch("web_app.fetch_contest_info")
+    @patch("web_app.login_target_account", return_value=object())
+    def test_contest_prepare_normalizes_url_before_admin_lookup(
+        self, _login, fetch_contest, _contest_exists, _problem_exists
+    ):
+        fetch_contest.return_value = {
+            "key": "hnoi2024v2",
+            "name": "HNOI 2024 vòng 2",
+            "start_time": "",
+            "end_time": "",
+            "problems": [],
+        }
+
+        response = self.client.post(
+            "/api/prepare-contest-transfer",
+            json={
+                "source": "hnoj",
+                "dest": "hncode",
+                "codes": [
+                    "https://hnoj.edu.vn/contest/hnoi2024v2",
+                    "hnoi2024v2",
+                ],
+                "source_account": {},
+                "dest_account": {},
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = response.get_json()
+        self.assertEqual(len(data["rows"]), 1)
+        self.assertEqual(data["rows"][0]["original_key"], "hnoi2024v2")
+        self.assertEqual(data["rows"][0]["key"], "hnoi2024v2")
+        self.assertEqual(fetch_contest.call_args.args[2], "hnoi2024v2")
+
     @patch("web_app.admin_problem_id", return_value="42")
     @patch("web_app.admin_contest_change_url", return_value="https://lqdoj.edu.vn/admin/judge/contest/1/change/")
     @patch("web_app.fetch_contest_info")

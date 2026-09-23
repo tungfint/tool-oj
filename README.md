@@ -295,7 +295,7 @@ Tab này dùng cho contest trên `HNOJ`, `HNCode`, `TinHocTre` và `LQDOJ`.
 Luồng sử dụng:
 
 1. Chọn `Nguồn` và `Đích`.
-2. Nhập danh sách mã contest, mỗi mã một dòng hoặc cách nhau bằng dấu cách.
+2. Nhập danh sách mã hoặc URL contest, mỗi mục một dòng hoặc cách nhau bằng dấu cách. URL dạng `https://hnoj.edu.vn/contest/<ma_contest>` được tự động rút về mã contest; mục trùng được gộp lại.
 3. Bài đã có ở đích luôn được dùng lại nguyên trạng để tránh tạo trùng problem.
 4. Giữ `Tự chuyển bài/test còn thiếu trước khi tạo contest` nếu muốn tool tự kéo đề và test cho các bài chưa có ở đích.
 5. Bấm `Chuẩn bị dữ liệu` để xem tên contest, thời gian và danh sách bài.

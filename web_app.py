@@ -1861,8 +1861,8 @@ PAGE = r"""
             </select><span id="contestDestLogin" class="login-badge">Chưa kiểm tra</span>
           </div>
         </div>
-        <label>Danh sách mã contest cần chuyển</label>
-        <textarea id="contestCodes" placeholder="tht2026_hn_ck_a&#10;tht2026_hn_ck_b&#10;tht2026_hn_ck_c"></textarea>
+        <label>Danh sách mã hoặc link contest cần chuyển</label>
+        <textarea id="contestCodes" placeholder="tht2026_hn_ck_a&#10;https://hnoj.edu.vn/contest/hnoi2024v2"></textarea>
         <div class="grid-2">
           <div><label>Time mặc định cho bài thiếu thông tin</label><input id="contestProblemTime" type="text" value="1.0"></div>
           <div><label>Memory mặc định cho bài thiếu thông tin</label><input id="contestProblemMemory" type="text" value="1048576"></div>
@@ -5388,11 +5388,7 @@ def decode_text_smart(raw: bytes) -> str:
 
 
 def extract_hncode_contest_key_any(value: str) -> str:
-    value = str(value or "").strip()
-    if not value:
-        raise RuntimeError("Chưa nhập URL hoặc mã contest.")
-    match = re.search(r"/contest/([^/?#\s]+)", value)
-    return match.group(1) if match else value.strip().strip("/")
+    return hncode_service.contest_key(value)
 
 
 def hncode_student_session(username: str, password: str) -> requests.Session:
@@ -8927,15 +8923,7 @@ def create_course_contest_from_info(
 
 
 def extract_hncode_contest_key(value: str) -> str:
-    value = (value or "").strip()
-    if not value:
-        raise RuntimeError("Chưa nhập URL hoặc mã contest HNCode.")
-    match = re.search(r"/contest/([^/?#\s]+)", value)
-    if match:
-        return html.unescape(match.group(1)).strip("/")
-    if re.fullmatch(r"[A-Za-z0-9_-]+", value):
-        return value
-    raise RuntimeError("Không đọc được mã contest. Hãy nhập URL dạng https://oj.hncode.edu.vn/contest/<ma_contest>.")
+    return hncode_service.contest_key(value)
 
 
 def contest_lesson_source_from_url(source: str, contest_url_value: str) -> str:
@@ -9753,7 +9741,23 @@ def api_prepare_contest_transfer():
     progress_id = payload.get("progress_id")
     source = payload["source"]
     dest = payload["dest"]
-    codes = [code.strip() for code in payload.get("codes", []) if code.strip()]
+    try:
+        raw_codes = payload.get("codes", [])
+        if isinstance(raw_codes, str):
+            raw_codes = re.split(r"[\s,]+", raw_codes)
+        codes = []
+        seen_codes = set()
+        for raw_code in raw_codes:
+            if not str(raw_code or "").strip():
+                continue
+            code = hncode_service.contest_key(raw_code)
+            if code.lower() in seen_codes:
+                continue
+            seen_codes.add(code.lower())
+            codes.append(code)
+    except Exception as exc:
+        progress_finish(progress_id, False, str(exc))
+        return jsonify({"error": str(exc)}), 400
     if not codes:
         return jsonify({"error": "Chưa nhập mã contest cần chuyển."}), 400
     if source == dest:

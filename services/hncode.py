@@ -8,9 +8,24 @@ from __future__ import annotations
 
 import html
 import re
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin
 
 import requests
+
+
+def contest_key(value: str) -> str:
+    """Extract a contest key from a plain key or any DMOJ-style contest URL."""
+    raw = html.unescape(str(value or "")).strip()
+    if not raw:
+        raise RuntimeError("Chưa nhập URL hoặc mã contest.")
+    match = re.search(r"(?:^|/)contest/([^/?#\s]+)", raw, re.I)
+    candidate = unquote(match.group(1) if match else raw.strip().strip("/"))
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", candidate):
+        raise RuntimeError(
+            "Không đọc được mã contest. Hãy nhập mã hoặc URL dạng "
+            "https://<trang-oj>/contest/<ma_contest>."
+        )
+    return candidate
 
 
 def without_scripts(page: str) -> str:

@@ -586,7 +586,7 @@ Giao diện gồm:
 
 - Chọn nguồn.
 - Chọn đích.
-- Nhập danh sách mã contest cần chuyển.
+- Nhập danh sách mã hoặc URL contest cần chuyển; tool tự lấy mã từ URL `/contest/<ma_contest>` và loại mục trùng.
 - Time/memory mặc định cho các problem thiếu thông tin.
 - Ô tích `Nếu bài đã có ở đích thì dùng lại bài đó`.
 - Ô tích `Tự chuyển bài/test còn thiếu trước khi tạo contest`.
