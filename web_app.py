@@ -1929,14 +1929,14 @@ PAGE = r"""
 
       <div class="panel" id="panel-contest-lesson-copy">
         <h2>Sao chép bài từ Contest → Lesson</h2>
-        <p>Lấy danh sách bài theo đúng thứ tự trong contest, dùng lại bài đã có ở đích, chỉ chuyển bài còn thiếu rồi thêm vào Lesson. Dữ liệu nguồn không bị thay đổi.</p>
+        <p>Lấy bài từ một hoặc nhiều contest. Có thể gộp vào một Lesson, hoặc nhập link Course để tạo/dùng lại một Lesson tương ứng cho mỗi contest. Dữ liệu nguồn không bị thay đổi.</p>
         <div class="grid-2">
           <div><label>Nguồn contest</label><select id="lessonCopySource"><option value="hncode">HNCode</option><option value="hnoj">HNOJ</option><option value="lqdoj">LQDOJ</option></select><span id="lessonCopySourceLogin" class="login-badge">Chưa kiểm tra</span></div>
           <div><label>Web chứa Lesson đích</label><select id="lessonCopyDest"><option value="hncode">HNCode</option><option value="lqdoj">LQDOJ</option></select><span id="lessonCopyLogin" class="login-badge">Chưa kiểm tra</span></div>
         </div>
         <div class="grid-2">
-          <div><label>Contest nguồn</label><input id="lessonCopyContestUrl" type="text" value="https://hnoj.edu.vn/contest/ctp_4"></div>
-          <div><label>Lesson đích</label><input id="lessonCopyLessonUrl" type="text" value="https://hncode.edu.vn/course/26nc202/lesson/3073"></div>
+          <div><label>Danh sách Contest nguồn</label><textarea id="lessonCopyContestUrl" rows="4" placeholder="Mỗi dòng một mã hoặc link contest">https://hnoj.edu.vn/contest/ctp_4</textarea></div>
+          <div><label>Lesson hoặc Course đích</label><input id="lessonCopyLessonUrl" type="text" value="https://hncode.edu.vn/course/26nc202/lesson/3073" placeholder=".../lesson/3073 hoặc .../course/tm69_hsghn"></div>
         </div>
         <div class="actions">
           <button class="action primary" type="button" id="prepareContestLessonCopy">Chuẩn bị dữ liệu</button>
@@ -3256,9 +3256,11 @@ function renderContestLessonCopyTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#contestLessonCopyTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#contestLessonCopyTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm lesson</th><th>Trạng thái</th></tr></thead>
-    <tbody>${rows.map(row => `<tr data-code="${escapeHtml(row.code)}">
+    <thead><tr><th>Chọn</th><th>Contest</th><th>Lesson đích</th><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Điểm lesson</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map(row => `<tr data-row-id="${escapeHtml(row.row_id || row.code)}" data-code="${escapeHtml(row.code)}">
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""}></td>
+      <td><div class="test-meta"><b>${escapeHtml(row.contest_name || row.contest_key || "")}</b><br>${escapeHtml(row.contest_key || "")}</div></td>
+      <td>${row.lesson_link ? `<a class="problem-link" href="${escapeHtml(row.lesson_link)}" target="_blank" rel="noopener">${escapeHtml(row.lesson_title || "Lesson")}</a>` : escapeHtml(row.lesson_title || "")}</td>
       <td>${escapeHtml(row.index || "")}</td>
       <td><a class="problem-link" href="${escapeHtml(row.problem_link || "#")}" target="_blank" rel="noopener">${escapeHtml(row.code)}</a></td>
       <td>${escapeHtml(row.title || "")}</td>
@@ -3269,6 +3271,7 @@ function renderContestLessonCopyTable(rows) {
 
 function collectContestLessonCopyRows() {
   return [...document.querySelectorAll("#contestLessonCopyTable tbody tr")].map(tr => ({
+    row_id: tr.dataset.rowId,
     code: tr.dataset.code,
     selected: tr.querySelector(".row-selected").checked,
     score: tr.querySelector(".row-score").value.trim(),
@@ -3276,9 +3279,9 @@ function collectContestLessonCopyRows() {
 }
 
 function applyContestLessonCopyStatuses(rows) {
-  const byCode = new Map(rows.map(row => [row.code, row]));
+  const byId = new Map(rows.map(row => [row.row_id || row.code, row]));
   for (const tr of document.querySelectorAll("#contestLessonCopyTable tbody tr")) {
-    const row = byCode.get(tr.dataset.code);
+    const row = byId.get(tr.dataset.rowId || tr.dataset.code);
     if (!row) continue;
     const detail = row.error ? "\n" + row.error : "";
     setStatusCell(tr.querySelector(".row-status"), (row.status || "") + detail, row.link || "");
@@ -5196,78 +5199,211 @@ def api_prepare_contest_to_lesson():
     source_account = payload.get("source_account", {})
     account = payload.get("account", {})
     try:
-        validate_structure_target_url(contest_url_value, source, "Contest nguồn")
-        validate_structure_target_url(payload.get("lesson_url", ""), dest, "Lesson đích")
-        contest_key = extract_hncode_contest_key(contest_url_value)
-        course_slug, lesson_id = extract_hncode_lesson_ref(payload.get("lesson_url", ""))
+        raw_contests = [item for item in re.split(r"[\s,]+", str(contest_url_value or "")) if item]
+        for item in raw_contests:
+            validate_structure_target_url(item, source, "Contest nguồn")
+        contest_keys = parse_contest_key_list(raw_contests)
+        destination_value = payload.get("lesson_url", "")
+        validate_structure_target_url(destination_value, dest, "Lesson/Course đích")
+        destination_mode, course_slug, fixed_lesson_id = extract_lesson_or_course_destination(
+            destination_value
+        )
         dst_session = login_target_account(dest, account)
-        if source == "hnoj":
-            src_session = login_target_account("hnoj", source_account)
-            contest_rows = hnoj_contest_problem_rows(src_session, contest_key)
-            source_label = "HNOJ"
-        else:
-            src_session = dst_session if source == dest else login_target_account(source, source_account)
-            contest_rows = hncode_service.list_contest_problems(
-                src_session, TARGETS[source]["base_url"], contest_key, default_points="100"
+        src_session = dst_session if source == dest else login_target_account(source, source_account)
+        source_label = TARGETS[source]["label"]
+        fixed_lesson_link = ""
+        fixed_existing_ids: set[str] = set()
+        if destination_mode == "lesson":
+            fixed_lesson_link = hncode_lesson_url(course_slug, fixed_lesson_id, dest)
+            lesson_page = dst_session.get(
+                hncode_lesson_edit_url(course_slug, fixed_lesson_id, dest), timeout=30
             )
-            source_label = TARGETS[source]["label"]
-        lesson_page = dst_session.get(hncode_lesson_edit_url(course_slug, lesson_id, dest), timeout=30)
-        if not lesson_page.ok:
-            raise RuntimeError(f"Không mở được lesson đích: HTTP {lesson_page.status_code}")
-        existing_ids = {row["problem"] for row in lesson_problem_rows_from_page(lesson_page.text, lesson_id)}
-        rows = []
-        log_lines = [
-            f"Chuẩn bị sao chép bài {source_label} Contest → Lesson {TARGETS[dest]['label']}",
-            f"Contest: {contest_key}",
-            f"Lesson: {hncode_lesson_url(course_slug, lesson_id, dest)}",
-        ]
-        for item in contest_rows:
-            source_code = item["code"]
-            dest_code = normalize_problem_code_for_target(source_code, dest)
-            validate_problem_code_for_target(dest_code, dest)
-            problem_id = admin_problem_id(dst_session, TARGETS[dest]["base_url"], dest_code)
-            if not problem_id:
-                status_text = f"Thiếu trên {TARGETS[dest]['label']}, sẽ sao chép khi xác nhận"
-                selected = source != dest
-            elif problem_id in existing_ids:
-                status_text = "Đã có trong lesson"
-                selected = False
-            else:
-                status_text = "✓ Sẵn sàng"
-                selected = True
-            row = {
-                "index": item["order"],
-                "source_code": source_code,
-                "code": dest_code,
-                "title": item["title"],
-                "score": item["points"],
-                "problem_id": problem_id or "",
-                "problem_link": problem_url(TARGETS[dest]["base_url"], dest_code),
-                "selected": selected,
-                "status": status_text,
+            if not lesson_page.ok:
+                raise RuntimeError(f"Không mở được Lesson đích: HTTP {lesson_page.status_code}")
+            fixed_existing_ids = {
+                str(row["problem"])
+                for row in lesson_problem_rows_from_page(lesson_page.text, fixed_lesson_id)
             }
-            rows.append(row)
-            log_lines.append(f"{item['order']}. {source_code} → {dest_code} - {item['title']} - {status_text}")
+        else:
+            hncode_course_admin_id(dst_session, course_slug, dest)
+
+        rows = []
+        contests = []
+        batch_problem_codes: set[str] = set()
+        log_lines = [
+            f"Chuẩn bị sao chép {len(contest_keys)} Contest {source_label} → {TARGETS[dest]['label']}",
+            (
+                f"Lesson đích: {fixed_lesson_link}"
+                if destination_mode == "lesson"
+                else f"Course đích: {hncode_course_page_url(course_slug, target=dest)}; mỗi contest là một Lesson."
+            ),
+        ]
+        for contest_index, contest_key in enumerate(contest_keys, 1):
+            try:
+                try:
+                    contest_info = fetch_contest_info(
+                        src_session, TARGETS[source]["base_url"], contest_key
+                    )
+                    contest_name = contest_info.get("name") or contest_key
+                    contest_rows = contest_info.get("problems") or []
+                except Exception as admin_exc:
+                    contest_name = contest_key
+                    contest_rows = (
+                        hnoj_contest_problem_rows(src_session, contest_key)
+                        if source == "hnoj"
+                        else hncode_service.list_contest_problems(
+                            src_session,
+                            TARGETS[source]["base_url"],
+                            contest_key,
+                            default_points="100",
+                        )
+                    )
+                    log_lines.append(
+                        f"⚠ {contest_key}: không đọc được metadata admin ({admin_exc}); dùng danh sách bài public."
+                    )
+                if not contest_rows:
+                    raise RuntimeError(f"Không tìm thấy bài nào trong contest {contest_key}.")
+
+                lesson_title = contest_name
+                lesson_id = fixed_lesson_id
+                lesson_link = fixed_lesson_link
+                existing_ids = set(fixed_existing_ids)
+                if destination_mode == "course":
+                    lesson_link = (
+                        find_hncode_course_lesson_url(
+                            dst_session, course_slug, lesson_title, dest
+                        )
+                        or ""
+                    )
+                    lesson_id_match = re.search(r"/lesson/(\d+)", lesson_link)
+                    lesson_id = lesson_id_match.group(1) if lesson_id_match else ""
+                    existing_ids = set()
+                    if lesson_id:
+                        lesson_page = dst_session.get(
+                            hncode_lesson_edit_url(course_slug, lesson_id, dest), timeout=30
+                        )
+                        if not lesson_page.ok:
+                            raise RuntimeError(
+                                f"Không mở được Lesson hiện có {lesson_title!r}: HTTP {lesson_page.status_code}"
+                            )
+                        existing_ids = {
+                            str(row["problem"])
+                            for row in lesson_problem_rows_from_page(
+                                lesson_page.text, lesson_id
+                            )
+                        }
+                contests.append(
+                    {
+                        "key": contest_key,
+                        "name": contest_name,
+                        "lesson_title": lesson_title,
+                        "lesson_id": lesson_id,
+                        "lesson_link": lesson_link,
+                        "order": contest_index,
+                    }
+                )
+                log_lines.append(
+                    f"- Contest {contest_key}: {contest_name}, {len(contest_rows)} bài; "
+                    + (
+                        f"Lesson {lesson_link}"
+                        if lesson_link
+                        else f"sẽ tạo Lesson {lesson_title!r}"
+                    )
+                )
+                for problem_index, item in enumerate(contest_rows, 1):
+                    source_code = str(item.get("code") or "").strip()
+                    dest_code = normalize_problem_code_for_target(source_code, dest)
+                    validate_problem_code_for_target(dest_code, dest)
+                    problem_id = admin_problem_id(
+                        dst_session, TARGETS[dest]["base_url"], dest_code
+                    )
+                    duplicate_in_batch = (
+                        destination_mode == "lesson" and dest_code in batch_problem_codes
+                    )
+                    if duplicate_in_batch:
+                        status_text = "Trùng bài từ contest trước, bỏ qua"
+                        selected = False
+                    elif not problem_id:
+                        status_text = (
+                            f"Thiếu trên {TARGETS[dest]['label']}, sẽ sao chép khi xác nhận"
+                            if source != dest
+                            else f"✗ Không tìm thấy bài trên {TARGETS[dest]['label']}"
+                        )
+                        selected = source != dest
+                    elif str(problem_id) in existing_ids:
+                        status_text = "Đã có trong Lesson"
+                        selected = False
+                    else:
+                        status_text = "✓ Sẵn sàng"
+                        selected = True
+                    batch_problem_codes.add(dest_code)
+                    row = {
+                        "row_id": f"{contest_index}:{contest_key}:{problem_index}:{source_code}",
+                        "contest_key": contest_key,
+                        "contest_name": contest_name,
+                        "lesson_title": lesson_title,
+                        "lesson_id": lesson_id,
+                        "lesson_link": lesson_link,
+                        "index": item.get("order") or problem_index,
+                        "source_code": source_code,
+                        "code": dest_code,
+                        "title": item.get("title") or source_code,
+                        "score": item.get("points") or "100",
+                        "problem_id": str(problem_id or ""),
+                        "problem_link": problem_url(
+                            TARGETS[dest]["base_url"], dest_code
+                        ),
+                        "selected": selected,
+                        "status": status_text,
+                    }
+                    rows.append(row)
+                    log_lines.append(
+                        f"  {row['index']}. {source_code} → {dest_code} - {status_text}"
+                    )
+            except Exception as contest_exc:
+                error_row = {
+                    "row_id": f"{contest_index}:{contest_key}:error",
+                    "contest_key": contest_key,
+                    "contest_name": contest_key,
+                    "lesson_title": "",
+                    "lesson_link": "",
+                    "index": "",
+                    "source_code": "",
+                    "code": "",
+                    "title": "",
+                    "score": "100",
+                    "problem_id": "",
+                    "problem_link": "",
+                    "selected": False,
+                    "status": "✗ Lỗi đọc contest",
+                    "error": str(contest_exc),
+                }
+                rows.append(error_row)
+                log_lines.append(f"✗ Contest {contest_key}: {contest_exc}. Tiếp tục contest kế tiếp.")
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / ("contest_lesson_copy_" + prepare_id)
         root.mkdir(parents=True, exist_ok=True)
-        prepared_lesson_copies[prepare_id] = {
+        state = {
             "created_at": time.time(),
             "source": source,
             "dest": dest,
-            "contest_key": contest_key,
+            "contest_keys": contest_keys,
             "course_slug": course_slug,
-            "lesson_id": lesson_id,
+            "destination_mode": destination_mode,
+            "lesson_id": fixed_lesson_id,
+            "contests": contests,
             "rows": rows,
             "root": root,
         }
+        prepared_lesson_copies[prepare_id] = state
+        save_prepared_contest_lesson_copy(prepare_id, state)
         return jsonify(
             {
                 "ok": True,
                 "prepare_id": prepare_id,
                 "rows": rows,
                 "can_copy": any(row.get("selected") for row in rows),
-                "lesson_link": hncode_lesson_url(course_slug, lesson_id, dest),
+                "lesson_link": fixed_lesson_link or hncode_course_page_url(course_slug, target=dest),
                 "log": "\n".join(log_lines),
             }
         )
@@ -5281,102 +5417,170 @@ def api_confirm_contest_to_lesson():
     account = payload.get("account", {})
     source_account = payload.get("source_account", {})
     prepare_id = payload.get("prepare_id", "")
-    state = prepared_lesson_copies.get(prepare_id)
+    state = load_prepared_contest_lesson_copy(prepare_id)
     if not state:
         return jsonify({"ok": False, "error": "Dữ liệu chuẩn bị đã hết hạn. Hãy bấm Chuẩn bị dữ liệu lại."}), 400
     try:
-        rows_by_code = {row["code"]: row for row in state["rows"]}
-        requested_rows = payload.get("rows", [])
-        selected_refs = []
-        result_rows = []
+        requested_by_id = {
+            str(row.get("row_id") or row.get("code") or ""): row
+            for row in payload.get("rows", [])
+        }
         source = state.get("source", "hncode")
         dest = state.get("dest", payload.get("dest", "hncode"))
         source_label = TARGETS[source]["label"]
+        destination_mode = state.get("destination_mode", "lesson")
+        course_slug = state["course_slug"]
+        fixed_lesson_id = state.get("lesson_id", "")
+        result_rows = []
         log_lines = [
-            f"Sao chép bài từ Contest {source_label} → Lesson {TARGETS[dest]['label']}",
-            f"Contest: {state['contest_key']}",
-            f"Lesson: {hncode_lesson_url(state['course_slug'], state['lesson_id'], dest)}",
+            f"Sao chép bài từ {len(state.get('contest_keys', []))} Contest {source_label} → {TARGETS[dest]['label']}",
+            (
+                f"Lesson: {hncode_lesson_url(course_slug, fixed_lesson_id, dest)}"
+                if destination_mode == "lesson"
+                else f"Course: {hncode_course_page_url(course_slug, target=dest)}"
+            ),
             "Nguồn chỉ được đọc; mọi thay đổi chỉ thực hiện ở đích.",
         ]
-        dst_session = None
-        src_session = None
-        for requested in requested_rows:
-            code = requested.get("code", "")
-            base = dict(rows_by_code.get(code, requested))
-            base["selected"] = bool(requested.get("selected"))
+        for saved in state.get("rows", []):
+            base = dict(saved)
+            row_id = str(base.get("row_id") or base.get("code") or "")
+            requested = requested_by_id.get(row_id, {})
+            base["selected"] = bool(requested.get("selected", False))
             base["score"] = str(requested.get("score") or base.get("score") or "100")
-            if not base["selected"]:
-                base["status"] = "Bỏ qua"
-            elif "Đã có" in str(rows_by_code.get(code, {}).get("status", "")):
-                base["status"] = "Đã có trong lesson"
-            else:
-                if not dst_session:
-                    dst_session = login_target_account(dest, account)
-                if not base.get("problem_id") and source != dest:
-                    if not src_session:
-                        src_session = login_target_account(source, source_account)
-                    source_code = base.get("source_code") or code
-                    log_lines.append(f"Đang sao chép {source_code} sang {TARGETS[dest]['label']}...")
-                    try:
-                        info, zip_path, cases, _attachments = fetch_source_problem(src_session, TARGETS[source]["base_url"], source_code, state["root"])
-                        info.description = migrate_structure_content(
-                            src_session,
-                            dst_session,
-                            source,
-                            dest,
-                            info.description,
-                            log_lines,
-                        )
-                        upload_transfer_to_dmoj(
-                            dst_session,
-                            dest,
-                            code,
-                            info,
-                            zip_path,
-                            cases,
-                            {"upload_statement": True, "upload_tests": True},
-                            list(TARGETS[dest]["languages"].values()),
-                            log_lines,
-                        )
-                    except ProblemAlreadyExists:
-                        log_lines.append(f"{code}: bài đã có trên {TARGETS[dest]['label']}, dùng lại bài hiện có.")
-                    base["problem_id"] = admin_problem_id(dst_session, TARGETS[dest]["base_url"], code) or ""
-                if not base.get("problem_id"):
-                    base["status"] = f"✗ Không tìm thấy bài trong admin {TARGETS[dest]['label']}"
-                else:
-                    selected_refs.append(base)
-                    base["status"] = "Đang thêm..."
+            if not base["selected"] and not str(base.get("status", "")).startswith("✗"):
+                if "Đã có" not in str(base.get("status", "")) and "Trùng bài" not in str(base.get("status", "")):
+                    base["status"] = "Bỏ qua"
             result_rows.append(base)
-        link = hncode_lesson_url(state["course_slug"], state["lesson_id"], dest)
-        if selected_refs:
-            if not dst_session:
-                dst_session = login_target_account(dest, account)
-            added_ids: set[str] = set()
-            failed_by_id: dict[str, str] = {}
-            for ref in selected_refs:
-                problem_id = str(ref.get("problem_id") or ref.get("id") or "")
-                try:
-                    link = copy_hncode_contest_to_lesson(dst_session, state["course_slug"], state["lesson_id"], [ref], dest)
-                    added_ids.add(problem_id)
-                except Exception as item_exc:
-                    failed_by_id[problem_id] = str(item_exc)
-            for row in result_rows:
-                if str(row.get("problem_id")) in added_ids and row.get("selected"):
-                    row["status"] = "✓ Đã thêm"
-                    row["link"] = link
-                    log_lines.append(f"✓ {row['code']}: đã thêm vào lesson.")
-                elif str(row.get("problem_id")) in failed_by_id and row.get("selected"):
-                    row["status"] = "✗ Lỗi"
-                    row["error"] = failed_by_id[str(row.get("problem_id"))]
-                    log_lines.append(f"✗ {row.get('code')}: {row['error']}")
-                elif row["status"] == "Bỏ qua":
-                    log_lines.append(f"- {row.get('code')}: bỏ qua.")
-                elif row["status"] == "Đã có trong lesson":
-                    log_lines.append(f"- {row.get('code')}: đã có trong lesson.")
-        else:
-            log_lines.append("Không có bài mới được chọn để thêm.")
-        ok = all(not row.get("selected") or row.get("status", "").startswith("✓") or "Đã có" in row.get("status", "") for row in result_rows)
-        return jsonify({"ok": ok, "rows": result_rows, "link": link, "log": "\n".join(log_lines)})
+
+        dst_session = login_target_account(dest, account)
+        src_session = None
+        contests_by_key = {
+            str(item.get("key") or ""): item for item in state.get("contests", [])
+        }
+        main_link = (
+            hncode_lesson_url(course_slug, fixed_lesson_id, dest)
+            if destination_mode == "lesson"
+            else hncode_course_page_url(course_slug, target=dest)
+        )
+        for contest_order, contest_key in enumerate(state.get("contest_keys", []), 1):
+            contest_rows = [
+                row
+                for row in result_rows
+                if row.get("contest_key") == contest_key and row.get("selected")
+            ]
+            if not contest_rows:
+                continue
+            contest_meta = contests_by_key.get(contest_key, {})
+            lesson_id = fixed_lesson_id
+            lesson_link = main_link
+            try:
+                if destination_mode == "course":
+                    lesson_id, lesson_link, created = ensure_contest_course_lesson(
+                        dst_session,
+                        dest,
+                        course_slug,
+                        contest_meta.get("lesson_title")
+                        or contest_meta.get("name")
+                        or contest_key,
+                        str(contest_meta.get("order") or contest_order),
+                    )
+                    log_lines.append(
+                        f"{'✓ Đã tạo' if created else 'Dùng lại'} Lesson "
+                        f"{contest_meta.get('lesson_title') or contest_key}: {lesson_link}"
+                    )
+                for base in contest_rows:
+                    base["lesson_id"] = lesson_id
+                    base["lesson_link"] = lesson_link
+                    code = base.get("code", "")
+                    try:
+                        if "Đã có" in str(base.get("status", "")):
+                            base["selected"] = False
+                            base["status"] = "Đã có trong Lesson"
+                            continue
+                        if not base.get("problem_id") and source != dest:
+                            if not src_session:
+                                src_session = login_target_account(source, source_account)
+                            source_code = base.get("source_code") or code
+                            log_lines.append(
+                                f"Đang sao chép {source_code} sang {TARGETS[dest]['label']}..."
+                            )
+                            try:
+                                problem_root = state["root"] / safe_output_part(contest_key)
+                                problem_root.mkdir(parents=True, exist_ok=True)
+                                info, zip_path, cases, _attachments = fetch_source_problem(
+                                    src_session,
+                                    TARGETS[source]["base_url"],
+                                    source_code,
+                                    problem_root,
+                                )
+                                info.description = migrate_structure_content(
+                                    src_session,
+                                    dst_session,
+                                    source,
+                                    dest,
+                                    info.description,
+                                    log_lines,
+                                )
+                                upload_transfer_to_dmoj(
+                                    dst_session,
+                                    dest,
+                                    code,
+                                    info,
+                                    zip_path,
+                                    cases,
+                                    {"upload_statement": True, "upload_tests": True},
+                                    list(TARGETS[dest]["languages"].values()),
+                                    log_lines,
+                                )
+                            except ProblemAlreadyExists:
+                                log_lines.append(
+                                    f"{code}: bài đã có trên {TARGETS[dest]['label']}, dùng lại bài hiện có."
+                                )
+                            base["problem_id"] = (
+                                admin_problem_id(
+                                    dst_session, TARGETS[dest]["base_url"], code
+                                )
+                                or ""
+                            )
+                        if not base.get("problem_id"):
+                            raise RuntimeError(
+                                f"Không tìm thấy bài {code} trong admin {TARGETS[dest]['label']}"
+                            )
+                        link = copy_hncode_contest_to_lesson(
+                            dst_session, course_slug, lesson_id, [base], dest
+                        )
+                        base["status"] = "✓ Đã thêm"
+                        base["link"] = link
+                        log_lines.append(
+                            f"✓ {contest_key} / {base.get('code')}: đã thêm vào Lesson."
+                        )
+                    except Exception as item_exc:
+                        base["status"] = "✗ Lỗi"
+                        base["error"] = str(item_exc)
+                        log_lines.append(
+                            f"✗ {contest_key} / {code}: {item_exc}. Tiếp tục bài kế tiếp."
+                        )
+            except Exception as contest_exc:
+                for base in contest_rows:
+                    if not str(base.get("status", "")).startswith("✓"):
+                        base["status"] = "✗ Lỗi"
+                        base["error"] = str(contest_exc)
+                log_lines.append(
+                    f"✗ Contest {contest_key}: {contest_exc}. Tiếp tục contest kế tiếp."
+                )
+        for row in result_rows:
+            if row.get("status") == "Bỏ qua":
+                log_lines.append(f"- {row.get('contest_key')} / {row.get('code')}: bỏ qua.")
+        ok = not any(str(row.get("status", "")).startswith("✗") for row in result_rows)
+        return jsonify(
+            {
+                "ok": ok,
+                "rows": result_rows,
+                "link": main_link,
+                "log": "\n".join(log_lines),
+                "errors": [str(row.get("error")) for row in result_rows if row.get("error")],
+            }
+        )
     except Exception as exc:
         rows = payload.get("rows", [])
         for row in rows:
@@ -8277,6 +8481,62 @@ def find_hncode_course_lesson_url(session: requests.Session, course_slug: str, t
     return hncode_course_page_url(course_slug, f"/lesson/{chosen['key']}", target)
 
 
+def ensure_contest_course_lesson(
+    session: requests.Session,
+    target: str,
+    course_slug: str,
+    title: str,
+    order: str,
+) -> tuple[str, str, bool]:
+    """Return lesson id/link, creating a basic lesson when the title is absent."""
+    title = (title or "").strip() or "Contest"
+    existing_link = find_hncode_course_lesson_url(session, course_slug, title, target)
+    if existing_link:
+        match = re.search(r"/lesson/(\d+)", existing_link)
+        if not match:
+            raise RuntimeError(f"Không đọc được ID lesson đích từ {existing_link}.")
+        return match.group(1), existing_link, False
+
+    create_url = hncode_course_page_url(course_slug, "/lesson/create", target)
+    page = session.get(create_url, timeout=30)
+    if not page.ok:
+        raise RuntimeError(
+            f"Không mở được form tạo Lesson trong Course {course_slug}: HTTP {page.status_code}"
+        )
+    form_data = collect_form_with_field(page.text, "title")
+    if not form_data:
+        raise RuntimeError(f"Không tìm thấy form tạo Lesson trong Course {course_slug}.")
+    data = replace_form_fields(
+        form_data,
+        {
+            "title": title,
+            "points": "100",
+            "content": "",
+            "order": str(order or ""),
+        },
+    )
+    result = session.post(
+        create_url,
+        data=data,
+        headers={"Referer": create_url},
+        allow_redirects=True,
+        timeout=60,
+    )
+    errors = form_errors(result.text) + compact_form_red_errors(result.text)
+    if not result.ok or errors:
+        raise RuntimeError(
+            f"Tạo Lesson {title!r} báo lỗi: "
+            + "; ".join(errors or [f"HTTP {result.status_code}"])
+        )
+    link = find_hncode_course_lesson_url(session, course_slug, title, target)
+    if not link:
+        raise RuntimeError(f"Đã gửi form nhưng chưa tìm thấy Lesson mới {title!r} trong Course.")
+    match = re.search(r"/lesson/(\d+)", link)
+    if not match:
+        raise RuntimeError(f"Không đọc được ID Lesson mới từ {link}.")
+    return match.group(1), link, True
+
+
 def find_hncode_course_contest_url(session: requests.Session, course_slug: str, contest_key: str, target: str = "hncode") -> str | None:
     contest_key = (contest_key or "").strip()
     if not contest_key:
@@ -8933,6 +9193,23 @@ def extract_hncode_contest_key(value: str) -> str:
     return hncode_service.contest_key(value)
 
 
+def parse_contest_key_list(value) -> list[str]:
+    raw_items = value if isinstance(value, (list, tuple)) else re.split(r"[\s,]+", str(value or ""))
+    keys: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        if not str(raw or "").strip():
+            continue
+        key = hncode_service.contest_key(raw)
+        if key.casefold() in seen:
+            continue
+        seen.add(key.casefold())
+        keys.append(key)
+    if not keys:
+        raise RuntimeError("Chưa nhập mã hoặc link contest nguồn.")
+    return keys
+
+
 def contest_lesson_source_from_url(source: str, contest_url_value: str) -> str:
     text = (contest_url_value or "").strip().lower()
     if "hnoj.edu.vn" in text:
@@ -8952,6 +9229,16 @@ def extract_hncode_lesson_ref(value: str) -> tuple[str, str]:
     if not match:
         raise RuntimeError("Không đọc được lesson. Hãy nhập URL dạng https://oj.hncode.edu.vn/course/<course>/lesson/<id>.")
     return html.unescape(match.group(1)), match.group(2)
+
+
+def extract_lesson_or_course_destination(value: str) -> tuple[str, str, str]:
+    text = str(value or "").strip()
+    if not text:
+        raise RuntimeError("Chưa nhập link Lesson hoặc Course đích.")
+    if re.search(r"/lesson/\d+|/edit_lessons_new/\d+", text):
+        course_slug, lesson_id = extract_hncode_lesson_ref(text)
+        return "lesson", course_slug, lesson_id
+    return "course", extract_hncode_course_slug(text), ""
 
 
 def parse_hncode_problem_inputs(value: str) -> list[str]:
@@ -9030,6 +9317,35 @@ def load_prepared_lesson_update(prepare_id: str) -> dict | None:
     except (OSError, ValueError, TypeError):
         return None
     prepared_lesson_updates[prepare_id] = state
+    return state
+
+
+def save_prepared_contest_lesson_copy(prepare_id: str, state: dict) -> None:
+    root = Path(state["root"])
+    root.mkdir(parents=True, exist_ok=True)
+    disk_state = dict(state)
+    disk_state["root"] = str(root)
+    (root / "state.json").write_text(
+        json.dumps(disk_state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def load_prepared_contest_lesson_copy(prepare_id: str) -> dict | None:
+    if not re.fullmatch(r"[0-9a-f]{32}", str(prepare_id or "")):
+        return None
+    state = prepared_lesson_copies.get(prepare_id)
+    if state:
+        return state
+    root = RUNTIME / ("contest_lesson_copy_" + prepare_id)
+    state_file = root / "state.json"
+    if not state_file.exists():
+        return None
+    try:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    state["root"] = Path(state.get("root") or root)
+    prepared_lesson_copies[prepare_id] = state
     return state
 
 

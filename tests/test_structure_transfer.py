@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
@@ -44,6 +45,224 @@ class FakeSession:
 
 
 class StructureTransferTests(TestCase):
+    def test_contest_list_parser_accepts_urls_and_removes_duplicates(self):
+        keys = web_app.parse_contest_key_list(
+            "https://hncode.edu.vn/contest/first\nsecond first"
+        )
+
+        self.assertEqual(keys, ["first", "second"])
+
+    def test_contest_lesson_destination_accepts_lesson_or_course(self):
+        self.assertEqual(
+            web_app.extract_lesson_or_course_destination(
+                "https://hncode.edu.vn/course/sample/lesson/123"
+            ),
+            ("lesson", "sample", "123"),
+        )
+        self.assertEqual(
+            web_app.extract_lesson_or_course_destination(
+                "https://hncode.edu.vn/course/sample"
+            ),
+            ("course", "sample", ""),
+        )
+
+    @patch("web_app.admin_problem_id", side_effect=["11", "22"])
+    @patch("web_app.find_hncode_course_lesson_url", return_value=None)
+    @patch("web_app.hncode_course_admin_id", return_value="9")
+    @patch("web_app.fetch_contest_info")
+    @patch("web_app.login_target_account", return_value=object())
+    def test_prepare_multiple_contests_for_course_builds_one_lesson_per_contest(
+        self,
+        _login,
+        fetch_contest,
+        _course_id,
+        _find_lesson,
+        _problem_id,
+    ):
+        fetch_contest.side_effect = [
+            {
+                "name": "Contest thứ nhất",
+                "problems": [
+                    {"code": "first_problem", "title": "Bài một", "points": "40", "order": "1"}
+                ],
+            },
+            {
+                "name": "Contest thứ hai",
+                "problems": [
+                    {"code": "second_problem", "title": "Bài hai", "points": "60", "order": "1"}
+                ],
+            },
+        ]
+
+        response = web_app.app.test_client().post(
+            "/api/prepare-contest-to-lesson",
+            json={
+                "source": "hncode",
+                "dest": "hncode",
+                "source_account": {},
+                "account": {},
+                "contest_url": "https://hncode.edu.vn/contest/first\nsecond",
+                "lesson_url": "https://hncode.edu.vn/course/destination",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["can_copy"])
+        self.assertEqual([row["contest_key"] for row in data["rows"]], ["first", "second"])
+        self.assertEqual(
+            [row["lesson_title"] for row in data["rows"]],
+            ["Contest thứ nhất", "Contest thứ hai"],
+        )
+        self.assertNotEqual(data["rows"][0]["row_id"], data["rows"][1]["row_id"])
+        prepare_id = data["prepare_id"]
+        web_app.prepared_lesson_copies.pop(prepare_id, None)
+        try:
+            restored = web_app.load_prepared_contest_lesson_copy(prepare_id)
+            self.assertEqual(restored["contest_keys"], ["first", "second"])
+            self.assertIsInstance(restored["root"], Path)
+        finally:
+            web_app.prepared_lesson_copies.pop(prepare_id, None)
+            shutil.rmtree(
+                web_app.RUNTIME / ("contest_lesson_copy_" + prepare_id),
+                ignore_errors=True,
+            )
+
+    @patch("web_app.copy_hncode_contest_to_lesson")
+    @patch("web_app.ensure_contest_course_lesson")
+    @patch("web_app.login_target_account", return_value=object())
+    def test_confirm_course_target_creates_matching_lessons(
+        self, _login, ensure_lesson, copy_to_lesson
+    ):
+        prepare_id = "c" * 32
+        rows = [
+            {
+                "row_id": "1:first:1:a",
+                "contest_key": "first",
+                "code": "a",
+                "source_code": "a",
+                "problem_id": "11",
+                "score": "40",
+                "selected": True,
+                "status": "✓ Sẵn sàng",
+            },
+            {
+                "row_id": "2:second:1:b",
+                "contest_key": "second",
+                "code": "b",
+                "source_code": "b",
+                "problem_id": "22",
+                "score": "60",
+                "selected": True,
+                "status": "✓ Sẵn sàng",
+            },
+        ]
+        web_app.prepared_lesson_copies[prepare_id] = {
+            "source": "hncode",
+            "dest": "hncode",
+            "contest_keys": ["first", "second"],
+            "course_slug": "destination",
+            "destination_mode": "course",
+            "lesson_id": "",
+            "contests": [
+                {"key": "first", "lesson_title": "First", "order": 1},
+                {"key": "second", "lesson_title": "Second", "order": 2},
+            ],
+            "rows": rows,
+            "root": Path("runtime"),
+        }
+        ensure_lesson.side_effect = [
+            ("101", "https://hncode.edu.vn/course/destination/lesson/101", True),
+            ("102", "https://hncode.edu.vn/course/destination/lesson/102", True),
+        ]
+        copy_to_lesson.side_effect = [
+            "https://hncode.edu.vn/course/destination/lesson/101",
+            "https://hncode.edu.vn/course/destination/lesson/102",
+        ]
+        try:
+            response = web_app.app.test_client().post(
+                "/api/confirm-contest-to-lesson",
+                json={
+                    "prepare_id": prepare_id,
+                    "account": {},
+                    "source_account": {},
+                    "rows": [
+                        {"row_id": row["row_id"], "selected": True, "score": row["score"]}
+                        for row in rows
+                    ],
+                },
+            )
+        finally:
+            web_app.prepared_lesson_copies.pop(prepare_id, None)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["ok"])
+        self.assertEqual([row["lesson_id"] for row in data["rows"]], ["101", "102"])
+        self.assertEqual(ensure_lesson.call_count, 2)
+        self.assertEqual(
+            [call.args[2] for call in copy_to_lesson.call_args_list], ["101", "102"]
+        )
+
+    @patch("web_app.copy_hncode_contest_to_lesson")
+    @patch("web_app.ensure_contest_course_lesson", return_value=("101", "https://hncode.edu.vn/course/destination/lesson/101", False))
+    @patch("web_app.login_target_account", return_value=object())
+    def test_confirm_contest_lesson_continues_after_one_problem_failure(
+        self, _login, _ensure_lesson, copy_to_lesson
+    ):
+        prepare_id = "d" * 32
+        rows = [
+            {
+                "row_id": f"1:first:{index}:{code}",
+                "contest_key": "first",
+                "code": code,
+                "source_code": code,
+                "problem_id": str(index),
+                "score": "100",
+                "selected": True,
+                "status": "✓ Sẵn sàng",
+            }
+            for index, code in enumerate(("bad", "good"), 1)
+        ]
+        web_app.prepared_lesson_copies[prepare_id] = {
+            "source": "hncode",
+            "dest": "hncode",
+            "contest_keys": ["first"],
+            "course_slug": "destination",
+            "destination_mode": "course",
+            "lesson_id": "",
+            "contests": [{"key": "first", "lesson_title": "First", "order": 1}],
+            "rows": rows,
+            "root": Path("runtime"),
+        }
+        copy_to_lesson.side_effect = [
+            RuntimeError("cannot add bad problem"),
+            "https://hncode.edu.vn/course/destination/lesson/101",
+        ]
+        try:
+            response = web_app.app.test_client().post(
+                "/api/confirm-contest-to-lesson",
+                json={
+                    "prepare_id": prepare_id,
+                    "account": {},
+                    "source_account": {},
+                    "rows": [
+                        {"row_id": row["row_id"], "selected": True, "score": "100"}
+                        for row in rows
+                    ],
+                },
+            )
+        finally:
+            web_app.prepared_lesson_copies.pop(prepare_id, None)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertFalse(data["ok"])
+        self.assertEqual(data["rows"][0]["status"], "✗ Lỗi")
+        self.assertEqual(data["rows"][1]["status"], "✓ Đã thêm")
+        self.assertEqual(copy_to_lesson.call_count, 2)
+
     def test_structure_content_uploads_source_image_and_uses_relative_links(self):
         class DestinationSession:
             cookies = {"csrftoken": "token"}

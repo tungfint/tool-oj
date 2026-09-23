@@ -345,21 +345,28 @@ Trạng thái chuẩn bị được lưu trong `.runtime`, vì vậy bước xá
 
 ## Tab Contest → Lesson
 
-Tab này sao chép danh sách bài từ một contest HNCode/HNOJ/LQDOJ vào một lesson HNCode/LQDOJ.
+Tab này sao chép danh sách bài từ một hoặc nhiều contest HNCode/HNOJ/LQDOJ vào Lesson HNCode/LQDOJ. Có hai kiểu đích:
+
+- Nhập link một Lesson: gộp bài của tất cả contest vào Lesson đó theo thứ tự contest và thứ tự bài đã nhập.
+- Nhập link một Course: mỗi contest tương ứng với một Lesson. Tool dùng tên contest làm tên Lesson, dùng lại Lesson trùng tên hoặc tự tạo Lesson mới trong Course.
 
 HNCode hiện dùng domain chính `https://hncode.edu.vn`. Tool vẫn nhận link cũ `https://oj.hncode.edu.vn` ở một số ô nhập cũ, nhưng sẽ ưu tiên chuẩn hóa sang `https://hncode.edu.vn` khi xử lý bài/contest/lesson.
 
 Luồng sử dụng:
 
 1. Chọn nguồn contest `HNCode`, `HNOJ` hoặc `LQDOJ`, rồi chọn web chứa Lesson đích.
-2. Nhập URL contest nguồn, ví dụ `https://hncode.edu.vn/contest/nt26exam01`.
-3. Nhập URL lesson đích, ví dụ `https://hncode.edu.vn/course/nt26_tuyen3/lesson/3123`.
+2. Nhập một hoặc nhiều mã/link contest nguồn, mỗi contest một dòng, ví dụ `https://hncode.edu.vn/contest/nt26exam01`.
+3. Nhập URL Lesson đích, ví dụ `https://hncode.edu.vn/course/nt26_tuyen3/lesson/3123`; hoặc URL Course đích, ví dụ `https://hncode.edu.vn/course/tm69_hsghn`.
 4. Bấm `Chuẩn bị dữ liệu`.
 5. Bảng sẽ hiển thị từng bài theo đúng thứ tự trong contest, gồm STT, mã bài, tên bài, điểm lesson và trạng thái.
 6. Chọn/bỏ chọn từng bài, chỉnh điểm lesson nếu cần. Có thể nhập `Điểm chung` rồi bấm `Áp dụng điểm cho tất cả bài`.
 7. Bấm `Sao chép bài`.
 
-Tool mở form sửa lesson `edit_lessons_new/<lesson_id>`, giữ nguyên nội dung lesson và quiz hiện có, chỉ thêm các problem còn thiếu vào cuối danh sách. Nếu bài đã có trong lesson, dòng đó báo `Đã có trong lesson` và bị bỏ qua để tránh trùng.
+Với đích là một Lesson, tool mở form sửa lesson `edit_lessons_new/<lesson_id>`, giữ nguyên nội dung lesson và quiz hiện có, chỉ thêm các problem còn thiếu vào cuối danh sách. Nếu cùng một bài xuất hiện ở nhiều contest hoặc đã có trong Lesson, dòng đó được bỏ qua để tránh trùng.
+
+Với đích là một Course, tool chuẩn bị riêng Lesson tương ứng cho từng contest. Khi xác nhận, Lesson chưa có được tạo theo thứ tự danh sách contest; Lesson trùng tên được dùng lại. Một contest hoặc một bài lỗi được ghi rõ ở đúng dòng và không làm dừng các mục còn lại.
+
+Dữ liệu của bước chuẩn bị được lưu trong `.runtime`, nên bước xác nhận vẫn hoạt động khi VPS dùng nhiều Gunicorn worker hoặc request tiếp theo đi vào worker khác.
 
 Nếu problem đã có trên web đích nhưng chưa nằm trong Lesson, tool dùng ID problem đích hiện có. Tool chỉ sao chép problem từ nguồn khi mã đó còn thiếu ở đích.
 
@@ -414,8 +421,8 @@ Ví dụ payload `prepare`:
   "source": "hncode",
   "account": {"username": "hncode", "password": "..."},
   "source_account": {"username": "hncode", "password": "..."},
-  "contest_url": "https://hncode.edu.vn/contest/nt26exam01",
-  "lesson_url": "https://hncode.edu.vn/course/nt26_tuyen3/lesson/3123"
+  "contest_url": "https://hncode.edu.vn/contest/nt26exam01\nhttps://hncode.edu.vn/contest/nt26exam02",
+  "lesson_url": "https://hncode.edu.vn/course/tm69_hsghn"
 }
 ```
 
