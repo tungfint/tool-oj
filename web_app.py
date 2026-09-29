@@ -37,6 +37,7 @@ from services import problem_bundle as bundle_service
 from services import problem_export as export_service
 from services import problem_pdf as problem_pdf_service
 from services import problem_upload as upload_service
+from services import quiz_export as quiz_export_service
 
 from transfer_tinhoctre_to_hncode import (
     ProblemInfo,
@@ -2056,6 +2057,27 @@ PAGE = r"""
         </div>
 
         <div class="tool-card">
+          <h3 class="tool-title">Xuất đề Quiz</h3>
+          <p class="tool-subtitle">Đọc toàn bộ câu hỏi trong một Quiz theo đúng thứ tự. Markdown dùng đúng format của mục Up Quiz để có thể nạp lại; PDF giữ nội dung và ảnh để đọc hoặc in.</p>
+          <div class="grid-2">
+            <div><label>Web nguồn</label><select id="quizExportSite"><option value="hncode">HNCode</option><option value="tinhoctre" selected>TinHocTre</option></select><span id="quizExportLogin" class="login-badge">Chưa kiểm tra</span></div>
+            <div><label>Định dạng kết quả</label><select id="quizExportFormat"><option value="markdown">Markdown chuẩn Up Quiz</option><option value="pdf">PDF</option></select></div>
+          </div>
+          <label>Link hoặc mã Quiz</label>
+          <input id="quizExportSource" type="text" value="https://tinhoctre.vn/quiz/tht26_tq_m2" placeholder="Ví dụ: https://tinhoctre.vn/quiz/tht26_tq_m2">
+          <label class="check" id="quizExportAnswersWrap"><input type="checkbox" id="quizExportAnswers" checked> Kèm đáp án và giải thích trong PDF</label>
+          <div class="grid-2">
+            <div><label>File kết quả</label><input id="quizExportFilename" type="text" readonly placeholder="Tên file sẽ hiện sau khi xử lý"></div>
+            <div></div>
+          </div>
+          <div class="actions">
+            <button class="action primary" type="button" id="runQuizExport">Xuất đề Quiz</button>
+            <a class="action primary hidden" id="downloadQuizExport" href="#">Tải file kết quả</a>
+          </div>
+          <div id="quizExportSummary"></div>
+        </div>
+
+        <div class="tool-card">
           <h3 class="tool-title">Lấy last submissions</h3>
           <p class="tool-subtitle">Tool tự nhận ZIP mã nguồn dạng <code>&lt;submission_id&gt;_&lt;tài khoản&gt;.&lt;ngôn ngữ&gt;</code> hoặc gói export có <code>submissions.json</code>, <code>submissions.csv</code> và thư mục <code>sources</code>. Kết quả giữ submission cuối cùng của từng tài khoản trong từng bài; dữ liệu thư mục <code>.sb3</code> cũ vẫn được hỗ trợ.</p>
           <label>Web nguồn</label>
@@ -3649,6 +3671,57 @@ document.getElementById("runStatementExport").onclick = async () => {
 };
 syncStatementExportUi();
 
+function syncQuizExportUi() {
+  const site = document.getElementById("quizExportSite").value;
+  const format = document.getElementById("quizExportFormat").value;
+  document.getElementById("quizExportAnswersWrap").classList.toggle("hidden", format !== "pdf");
+  checkLogin(site, "quizExportLogin");
+}
+document.getElementById("quizExportSite").addEventListener("change", syncQuizExportUi);
+document.getElementById("quizExportFormat").addEventListener("change", syncQuizExportUi);
+document.getElementById("runQuizExport").onclick = async () => {
+  const button = document.getElementById("runQuizExport");
+  const download = document.getElementById("downloadQuizExport");
+  try {
+    const site = document.getElementById("quizExportSite").value;
+    const source = document.getElementById("quizExportSource").value.trim();
+    if (!source) throw new Error("Hãy nhập link hoặc mã Quiz.");
+    saveAccounts();
+    button.disabled = true;
+    button.textContent = "Đang xuất Quiz...";
+    download.classList.add("hidden");
+    status("running");
+    log("Đang đọc Quiz và các câu hỏi từ " + (TARGETS[site]?.label || site) + "...");
+    const data = await postJson("/api/misc/export-quiz", {
+      site,
+      source,
+      format: document.getElementById("quizExportFormat").value,
+      include_answers: document.getElementById("quizExportAnswers").checked,
+      account: accountPayload(site),
+    });
+    const rows = data.rows || [];
+    document.getElementById("quizExportFilename").value = data.filename || "";
+    document.getElementById("quizExportSummary").innerHTML = `<div class="note">${escapeHtml(data.message || `Đã xuất ${rows.length} câu hỏi.`)}</div>
+      <table><thead><tr><th>STT</th><th>ID</th><th>Tiêu đề</th><th>Loại</th><th>Điểm</th><th>Trạng thái</th></tr></thead>
+      <tbody>${rows.map(row => `<tr><td>${row.index || ""}</td><td>${row.question_id || ""}</td><td>${escapeHtml(row.title || "")}</td><td>${escapeHtml(row.type || "")}</td><td>${escapeHtml(row.points || "")}</td><td class="${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.link ? ` <a class="problem-link" href="${escapeHtml(row.link)}" target="_blank" rel="noopener">Link</a>` : ""}${row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : ""}</td></tr>`).join("")}</tbody></table>`;
+    if (data.download_url) {
+      download.href = data.download_url;
+      download.download = data.filename || "";
+      download.classList.remove("hidden");
+      download.click();
+    }
+    log(data.log || data.message || "Đã xuất đề Quiz.");
+    status(data.ok ? "done" : "failed", data.ok ? "ok" : "err");
+  } catch (err) {
+    log(String(err));
+    status("failed", "err");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Xuất đề Quiz";
+  }
+};
+syncQuizExportUi();
+
 document.getElementById("chooseLastSubZip").onclick = () => document.getElementById("lastSubZipFile").click();
 document.getElementById("lastSubZipFile").addEventListener("change", event => {
   const file = event.target.files && event.target.files[0];
@@ -4259,6 +4332,127 @@ def api_misc_download_problem_statements(export_id: str):
             ".pdf": "application/pdf",
             ".md": "text/markdown",
         }.get(path.suffix.lower(), "application/octet-stream")
+        return send_file(path, as_attachment=True, download_name=path.name, mimetype=mimetype)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+
+
+@app.post("/api/misc/export-quiz")
+def api_misc_export_quiz():
+    payload = request.get_json(force=True)
+    site = str(payload.get("site") or "tinhoctre").strip()
+    source = str(payload.get("source") or "").strip()
+    output_format = str(payload.get("format") or "markdown").strip()
+    include_answers = bool(payload.get("include_answers", True))
+    account = payload.get("account") or {}
+    try:
+        if site not in {"hncode", "tinhoctre"}:
+            raise ValueError("Web nguồn Quiz không hợp lệ.")
+        if not source:
+            raise ValueError("Chưa nhập link hoặc mã Quiz.")
+        if output_format not in {"markdown", "pdf"}:
+            raise ValueError("Định dạng kết quả phải là Markdown hoặc PDF.")
+
+        base_url = TARGETS[site]["base_url"]
+        try:
+            session = login_target_account(site, account)
+        except Exception as login_error:
+            cookie = str(account.get("cookie") or "").strip()
+            if site == "tinhoctre":
+                cookie = cookie or load_tinhoctre_cookie()
+            if not cookie:
+                raise login_error
+            session = session_from_cookie(cookie)
+            probe = session.get(
+                urljoin(base_url, "/admin/judge/quiz/"),
+                timeout=30,
+                allow_redirects=True,
+            )
+            if not probe.ok or "/login" in probe.url:
+                raise RuntimeError(
+                    "Cookie/session không mở được trang quản trị Quiz. Hãy đăng nhập lại."
+                )
+
+        quiz, rows = quiz_export_service.fetch_quiz(session, base_url, source)
+        export_id = uuid.uuid4().hex
+        output_dir = RUNTIME / "misc" / "quiz_exports" / export_id
+        output_path = quiz_export_service.write_quiz_export(
+            output_dir,
+            quiz,
+            output_format,
+            session,
+            include_answers=include_answers,
+        )
+        error_rows = [row for row in rows if row.get("error")]
+        manifest = {
+            "filename": output_path.name,
+            "path": str(output_path),
+            "site": site,
+            "quiz_code": quiz["code"],
+            "question_count": len(quiz["questions"]),
+            "format": output_format,
+        }
+        (output_dir / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        message = (
+            f"Đã xuất Quiz {quiz['code']}: {len(quiz['questions'])}/{len(rows)} câu hỏi "
+            f"ra {output_path.suffix.upper().lstrip('.')}"
+            + (f"; {len(error_rows)} câu lỗi đã được ghi trong bảng." if error_rows else ".")
+        )
+        log_lines = [
+            f"Nguồn: {TARGETS[site]['label']} Quiz {quiz['code']}",
+            f"Tiêu đề: {quiz['title']}",
+            message,
+            *(
+                f"{'✗' if row.get('error') else '✓'} Câu {row['index']} - {row['title']}"
+                + (f": {row['error']}" if row.get("error") else "")
+                for row in rows
+            ),
+        ]
+        return jsonify(
+            {
+                "ok": True,
+                "message": message,
+                "rows": rows,
+                "log": "\n".join(log_lines),
+                "errors": [
+                    {"question_id": row["question_id"], "message": row["error"]}
+                    for row in error_rows
+                ],
+                "meta": manifest,
+                "filename": output_path.name,
+                "download_url": f"/api/misc/download-quiz/{export_id}",
+            }
+        )
+    except Exception as exc:
+        return jsonify(
+            {
+                "ok": False,
+                "message": str(exc),
+                "rows": [],
+                "log": str(exc),
+                "errors": [{"message": str(exc)}],
+                "meta": {},
+                "error": str(exc),
+            }
+        ), 400
+
+
+@app.get("/api/misc/download-quiz/<export_id>")
+def api_misc_download_quiz(export_id: str):
+    if not re.fullmatch(r"[0-9a-f]{32}", export_id or ""):
+        return jsonify({"ok": False, "error": "Mã file kết quả không hợp lệ."}), 400
+    output_dir = RUNTIME / "misc" / "quiz_exports" / export_id
+    manifest_path = output_dir / "manifest.json"
+    if not manifest_path.exists():
+        return jsonify({"ok": False, "error": "File kết quả không còn tồn tại."}), 404
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        path = Path(str(manifest.get("path") or "")).resolve()
+        if output_dir.resolve() not in path.parents or not path.is_file():
+            raise RuntimeError("Đường dẫn file kết quả không hợp lệ.")
+        mimetype = "application/pdf" if path.suffix.lower() == ".pdf" else "text/markdown"
         return send_file(path, as_attachment=True, download_name=path.name, mimetype=mimetype)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404

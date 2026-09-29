@@ -500,6 +500,36 @@ Payload mẫu:
 
 `input_type` nhận `auto`, `contest`, `lesson`, `codes`; `mode` nhận `separate` hoặc `combined`.
 
+## Tool lẻ: Xuất đề Quiz
+
+Tool đọc một Quiz trên `HNCode` hoặc `TinHocTre` từ link `/quiz/<ma_quiz>` hay mã Quiz. Tài khoản đang lưu ở tab `Tài khoản & Hướng dẫn` phải có quyền xem form quản trị Quiz và câu hỏi.
+
+Hai định dạng kết quả:
+
+- `Markdown chuẩn Up Quiz`: xuất các câu đúng thứ tự với các trường `Loại`, `Tiêu đề`, `Nội dung`, `Lựa chọn`, `Đáp án`, `Giải thích`, ngăn cách bằng `---`. File có thể đưa lại vào tab `Up Quiz`.
+- `PDF`: trình bày tiêu đề Quiz, mô tả, nội dung, ảnh, lựa chọn và điểm từng câu. Có thể chọn kèm hoặc không kèm phần đáp án và giải thích ở cuối file.
+
+Ảnh và liên kết tương đối trong nội dung câu hỏi được đổi sang URL tuyệt đối. Công thức dùng `~...~` được chuẩn hóa về `$...$` khi xuất Markdown. Khi một câu lỗi, tool ghi rõ lỗi ở bảng và tiếp tục xuất các câu còn lại.
+
+API nội bộ:
+
+```http
+POST /api/misc/export-quiz
+GET  /api/misc/download-quiz/<export_id>
+```
+
+Payload mẫu:
+
+```json
+{
+  "site": "tinhoctre",
+  "source": "https://tinhoctre.vn/quiz/tht26_tq_m2",
+  "format": "markdown",
+  "include_answers": true,
+  "account": {"username": "...", "password": "..."}
+}
+```
+
 ## Tool lẻ: Lấy last submissions
 
 Tool hỗ trợ ba nguồn `HNOJ`, `HNCode`, `TinHocTre` và tự nhận hai cấu trúc ZIP:

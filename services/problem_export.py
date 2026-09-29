@@ -537,7 +537,11 @@ def render_problem_pdf(
     )
     story = [
         Paragraph(html.escape(str(problem.get("name") or problem.get("code") or "Đề bài")), title_style),
-        Paragraph(f"Mã bài: <b>{html.escape(str(problem.get('code') or ''))}</b>", body),
+        Paragraph(
+            f"{html.escape(str(problem.get('code_label') or 'Mã bài'))}: "
+            f"<b>{html.escape(str(problem.get('code') or ''))}</b>",
+            body,
+        ),
         Spacer(1, 6),
     ]
     marked, images = _image_markers(str(problem.get("statement") or ""))
