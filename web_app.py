@@ -2036,8 +2036,8 @@ PAGE = r"""
         </div>
 
         <div class="tool-card">
-          <h3 class="tool-title">Xuất đề bài ra Markdown</h3>
-          <p class="tool-subtitle">Lấy đề từ Contest, Lesson hoặc danh sách mã bài trên HNOJ, HNCode và TinHocTre. Ảnh trong đề được giữ bằng liên kết tuyệt đối.</p>
+          <h3 class="tool-title">Xuất đề bài</h3>
+          <p class="tool-subtitle">Lấy đề từ Contest, Lesson hoặc danh sách mã bài trên HNOJ, HNCode và TinHocTre. Đề PDF, đề dạng ảnh hoặc có link ảnh được xuất thành PDF; đề chỉ có văn bản được giữ ở Markdown.</p>
           <div class="grid-2">
             <div><label>Web nguồn</label><select id="statementExportSite"><option value="hnoj">HNOJ</option><option value="hncode" selected>HNCode</option><option value="tinhoctre">TinHocTre</option></select><span id="statementExportLogin" class="login-badge">Chưa kiểm tra</span></div>
             <div><label>Loại dữ liệu nhập</label><select id="statementExportInputType"><option value="auto">Tự động nhận</option><option value="contest">Contest</option><option value="lesson">Lesson</option><option value="codes">Danh sách mã bài</option></select></div>
@@ -2045,7 +2045,7 @@ PAGE = r"""
           <label>Link Contest / Link Lesson / Mã contest / Danh sách mã bài</label>
           <textarea id="statementExportInput" rows="6" placeholder="Ví dụ:\nhttps://hncode.edu.vn/contest/nt26exam01\nhoặc mỗi dòng một mã bài"></textarea>
           <div class="grid-2">
-            <div><label>Cách đóng gói</label><select id="statementExportMode"><option value="separate">Mỗi bài một file đề (.zip)</option><option value="combined">Tất cả trong một file đề (.md)</option></select></div>
+            <div><label>Cách đóng gói</label><select id="statementExportMode"><option value="separate">Mỗi bài một file đề</option><option value="combined">Tất cả trong một file đề</option></select></div>
             <div><label>File kết quả</label><input id="statementExportFilename" type="text" readonly placeholder="Tên file sẽ hiện sau khi xử lý"></div>
           </div>
           <div class="actions">
@@ -3629,8 +3629,8 @@ document.getElementById("runStatementExport").onclick = async () => {
     const rows = data.rows || [];
     document.getElementById("statementExportFilename").value = data.filename || "";
     document.getElementById("statementExportSummary").innerHTML = `<div class="note">${escapeHtml(data.message || `Đã xuất ${rows.length} bài.`)}</div>
-      <table><thead><tr><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Trạng thái</th></tr></thead>
-      <tbody>${rows.map(row => `<tr><td>${row.index || ""}</td><td><code>${escapeHtml(row.code || "")}</code></td><td>${escapeHtml(row.name || "")}</td><td class="${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : ""}</td></tr>`).join("")}</tbody></table>`;
+      <table><thead><tr><th>STT</th><th>Mã bài</th><th>Tên bài</th><th>Định dạng</th><th>Trạng thái</th></tr></thead>
+      <tbody>${rows.map(row => `<tr><td>${row.index || ""}</td><td><code>${escapeHtml(row.code || "")}</code></td><td>${escapeHtml(row.name || "")}</td><td>${escapeHtml(row.format || "")}</td><td class="${statusClass(row.status)}">${escapeHtml(row.status || "")}${row.error ? `<div class="test-meta">${escapeHtml(row.error)}</div>` : ""}</td></tr>`).join("")}</tbody></table>`;
     if (data.download_url) {
       download.href = data.download_url;
       download.download = data.filename || "";
@@ -4158,7 +4158,11 @@ def api_misc_export_problem_statements():
         else:
             raise ValueError("Không nhận diện được loại dữ liệu nhập.")
 
-        exported: list[dict[str, str]] = []
+        export_id = uuid.uuid4().hex
+        output_dir = RUNTIME / "misc" / "problem_exports" / export_id
+        source_dir = output_dir / "sources"
+        source_dir.mkdir(parents=True, exist_ok=True)
+        exported: list[dict] = []
         rows: list[dict] = []
         errors: list[dict] = []
         for index, source_row in enumerate(source_rows, 1):
@@ -4171,8 +4175,11 @@ def api_misc_export_problem_statements():
                 "link": urljoin(base_url, f"/problem/{code}"),
             }
             try:
-                problem = export_service.fetch_statement(session, base_url, code)
+                problem = export_service.fetch_statement(
+                    session, base_url, code, output_dir=source_dir
+                )
                 row["name"] = problem["name"]
+                row["format"] = "PDF" if export_service.requires_pdf(problem) else "Markdown"
                 row["status"] = "✓ Đã lấy đề"
                 exported.append(problem)
             except Exception as item_exc:
@@ -4184,10 +4191,8 @@ def api_misc_export_problem_statements():
         if not exported:
             raise RuntimeError("Không lấy được đề bài nào. " + "; ".join(item["message"] for item in errors[:3]))
 
-        export_id = uuid.uuid4().hex
-        output_dir = RUNTIME / "misc" / "problem_exports" / export_id
         output_path = export_service.write_export(
-            output_dir, exported, mode, site, source_label
+            output_dir, exported, mode, site, source_label, session
         )
         manifest = {
             "filename": output_path.name,
@@ -4199,7 +4204,11 @@ def api_misc_export_problem_statements():
         (output_dir / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        message = f"Đã xuất {len(exported)}/{len(source_rows)} đề bài."
+        pdf_count = sum(1 for item in exported if export_service.requires_pdf(item))
+        message = (
+            f"Đã xuất {len(exported)}/{len(source_rows)} đề bài; "
+            f"{pdf_count} đề PDF/ảnh và {len(exported) - pdf_count} đề Markdown."
+        )
         log_lines = [
             f"Nguồn: {source_label}",
             message,
@@ -4245,7 +4254,11 @@ def api_misc_download_problem_statements(export_id: str):
         path = Path(str(manifest.get("path") or "")).resolve()
         if output_dir.resolve() not in path.parents or not path.is_file():
             raise RuntimeError("Đường dẫn file kết quả không hợp lệ.")
-        mimetype = "application/zip" if path.suffix.lower() == ".zip" else "text/markdown"
+        mimetype = {
+            ".zip": "application/zip",
+            ".pdf": "application/pdf",
+            ".md": "text/markdown",
+        }.get(path.suffix.lower(), "application/octet-stream")
         return send_file(path, as_attachment=True, download_name=path.name, mimetype=mimetype)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404

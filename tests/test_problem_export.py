@@ -1,14 +1,33 @@
 from __future__ import annotations
 
+import io
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 
+from PIL import Image
+from pypdf import PdfReader
+from reportlab.pdfgen import canvas
+
 from services import problem_export
 
 
 class ProblemExportTest(unittest.TestCase):
+    def test_pdf_detection_for_source_pdf_and_image_links(self) -> None:
+        self.assertTrue(problem_export.requires_pdf({"pdf_path": "source.pdf"}))
+        self.assertTrue(
+            problem_export.requires_pdf(
+                {"statement": "![Sơ đồ](https://example.test/diagram.png)"}
+            )
+        )
+        self.assertTrue(
+            problem_export.requires_pdf(
+                {"statement": "[Xem ảnh](https://example.test/diagram.jpg)"}
+            )
+        )
+        self.assertFalse(problem_export.requires_pdf({"statement": "Đề chỉ có văn bản."}))
+
     def test_parse_problem_codes_from_codes_and_links(self) -> None:
         value = """
         bai_mot
@@ -71,6 +90,98 @@ class ProblemExportTest(unittest.TestCase):
             content = md_path.read_text(encoding="utf-8-sig")
             self.assertIn("## 1. Bài A (`a`)", content)
             self.assertIn("## 2. Bài B (`b`)", content)
+
+    def test_separate_export_uses_pdf_for_pdf_problem_and_markdown_for_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source_pdf = root / "source.pdf"
+            pdf = canvas.Canvas(str(source_pdf))
+            pdf.drawString(72, 760, "Original PDF")
+            pdf.save()
+            problems = [
+                {
+                    "code": "pdf_problem",
+                    "name": "Đề PDF",
+                    "statement": "",
+                    "pdf_path": str(source_pdf),
+                },
+                {
+                    "code": "text_problem",
+                    "name": "Đề chữ",
+                    "statement": "Nội dung chữ",
+                },
+            ]
+
+            output = problem_export.write_export(
+                root / "out", problems, "separate", "hncode", "HNCode"
+            )
+
+            with zipfile.ZipFile(output) as archive:
+                self.assertEqual(
+                    archive.namelist(), ["pdf_problem.pdf", "text_problem.md"]
+                )
+                self.assertTrue(archive.read("pdf_problem.pdf").startswith(b"%PDF"))
+
+    def test_combined_export_becomes_one_pdf_when_any_problem_requires_pdf(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source_pdf = root / "source.pdf"
+            pdf = canvas.Canvas(str(source_pdf))
+            pdf.drawString(72, 760, "Original PDF")
+            pdf.save()
+            problems = [
+                {
+                    "code": "pdf_problem",
+                    "name": "Đề PDF",
+                    "statement": "",
+                    "pdf_path": str(source_pdf),
+                },
+                {
+                    "code": "text_problem",
+                    "name": "Đề chữ",
+                    "statement": "Nội dung chữ tiếng Việt",
+                },
+            ]
+
+            output = problem_export.write_export(
+                root / "out", problems, "combined", "hncode", "HNCode"
+            )
+
+            self.assertEqual(output.suffix, ".pdf")
+            self.assertGreaterEqual(len(PdfReader(str(output)).pages), 2)
+
+    def test_image_statement_is_rendered_to_pdf(self) -> None:
+        image_buffer = io.BytesIO()
+        Image.new("RGB", (120, 80), "white").save(image_buffer, format="PNG")
+
+        class ImageResponse:
+            ok = True
+            status_code = 200
+            content = image_buffer.getvalue()
+
+        class ImageSession:
+            def get(self, _url, **_kwargs):
+                return ImageResponse()
+
+        problems = [
+            {
+                "code": "image_problem",
+                "name": "Đề có ảnh",
+                "statement": "Quan sát hình:\n\n![Hình](https://example.test/a.png)",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            output = problem_export.write_export(
+                Path(temp),
+                problems,
+                "separate",
+                "hncode",
+                "HNCode",
+                ImageSession(),
+            )
+            with zipfile.ZipFile(output) as archive:
+                self.assertEqual(archive.namelist(), ["image_problem.pdf"])
+                self.assertTrue(archive.read("image_problem.pdf").startswith(b"%PDF"))
 
 
 if __name__ == "__main__":

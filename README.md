@@ -462,7 +462,7 @@ Payload mẫu:
 
 Với HNCode Lesson, đổi `source_type` thành `lesson`.
 
-## Tool lẻ: Xuất đề bài ra Markdown
+## Tool lẻ: Xuất đề bài
 
 Tool lấy đề bài từ `HNOJ`, `HNCode` hoặc `TinHocTre`. Dữ liệu nhập hỗ trợ:
 
@@ -472,10 +472,10 @@ Tool lấy đề bài từ `HNOJ`, `HNCode` hoặc `TinHocTre`. Dữ liệu nh�
 
 Chọn một trong hai kiểu kết quả:
 
-- `Mỗi bài một file đề`: tải ZIP chứa các file `<ma_bai>.md`. Dòng đầu mỗi file là `Tên bài | Mã bài`.
-- `Tất cả trong một file đề`: tải một file `tong_hop_de_bai_<web>.md`, các bài giữ đúng thứ tự nguồn.
+- `Mỗi bài một file đề`: tải ZIP chứa từng đề theo đúng định dạng phù hợp. Đề chỉ có văn bản là `<ma_bai>.md`; đề có PDF, ảnh hoặc link ảnh là `<ma_bai>.pdf`.
+- `Tất cả trong một file đề`: các bài giữ đúng thứ tự nguồn. Nếu tất cả đề chỉ có văn bản, kết quả là `tong_hop_de_bai_<web>.md`. Nếu có ít nhất một đề PDF/ảnh/link ảnh, toàn bộ được gộp thành `tong_hop_de_bai_<web>.pdf`.
 
-Tool ưu tiên đọc Markdown gốc từ trang sửa bài bằng tài khoản admin. Liên kết ảnh tương đối được chuyển thành URL tuyệt đối; nếu một bài lỗi, các bài còn lại vẫn được xuất và bảng kết quả hiển thị lỗi riêng.
+Tool ưu tiên tải file PDF gốc khi bài dùng PDF. Với đề Markdown có ảnh, tool tải ảnh bằng phiên đăng nhập hiện tại và nhúng ảnh vào PDF; liên kết ảnh tương đối được đổi sang URL tuyệt đối trước khi xử lý. Nếu một bài lỗi, các bài còn lại vẫn được xuất và bảng kết quả hiển thị lỗi riêng.
 
 API nội bộ:
 
