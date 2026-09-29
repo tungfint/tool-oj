@@ -168,6 +168,86 @@ def requires_pdf(problem: dict[str, Any]) -> bool:
     return bool(problem.get("pdf_path") or problem.get("pdf_url") or statement_image_urls(str(problem.get("statement") or "")))
 
 
+def _looks_like_math(value: str) -> bool:
+    content = value.strip()
+    if not content:
+        return False
+    if re.search(r"\\[A-Za-z]+|[0-9=<>_^{}+*/%]|(?:^|\s)-\s*\d", content):
+        return True
+    return bool(re.fullmatch(r"[A-Za-z](?:_[A-Za-z0-9{}]+)?", content))
+
+
+def _normalize_tilde_math_block(block: str, aggressive: bool) -> str:
+    protected: list[str] = []
+
+    def protect(value: str) -> str:
+        protected.append(value)
+        return f"@@TOOLOJ_PROTECTED_{len(protected) - 1}@@"
+
+    text = re.sub(
+        r"(`+)(.*?)(\1)",
+        lambda match: protect(match.group(0)),
+        block,
+        flags=re.S,
+    )
+    text = re.sub(
+        r"(?<!\\)\$\$(.+?)(?<!\\)\$\$",
+        lambda match: protect(match.group(0)),
+        text,
+        flags=re.S,
+    )
+    text = re.sub(
+        r"(?<![\\$])\$(?!\$)([^$\r\n]+?)(?<!\\)\$(?!\$)",
+        lambda match: protect(match.group(0)),
+        text,
+    )
+    text = re.sub(r"https?://[^\s<>'\")]+", lambda match: protect(match.group(0)), text)
+    text = re.sub(r"\\~", lambda match: protect(match.group(0)), text)
+
+    def replace_double(match: re.Match[str]) -> str:
+        content = match.group(1)
+        return f"$${content}$$" if aggressive or _looks_like_math(content) else match.group(0)
+
+    def replace_single(match: re.Match[str]) -> str:
+        content = match.group(1)
+        return f"${content}$" if aggressive or _looks_like_math(content) else match.group(0)
+
+    text = re.sub(r"(?<!~)~~(?!~)(.+?)(?<!~)~~(?!~)", replace_double, text, flags=re.S)
+    text = re.sub(r"(?<!~)~(?!~)([^~\r\n]+?)(?<!~)~(?!~)", replace_single, text)
+    for index, value in reversed(list(enumerate(protected))):
+        text = text.replace(f"@@TOOLOJ_PROTECTED_{index}@@", value)
+    return text
+
+
+def canonical_markdown_math(statement: str, *, aggressive: bool = False) -> str:
+    """Convert HNOJ tilde math to canonical dollar math without touching code/URLs."""
+    lines = (statement or "").splitlines(keepends=True)
+    output: list[str] = []
+    normal_block: list[str] = []
+    fence_char = ""
+
+    def flush_normal() -> None:
+        if normal_block:
+            output.append(_normalize_tilde_math_block("".join(normal_block), aggressive))
+            normal_block.clear()
+
+    for line in lines:
+        fence = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if fence_char:
+            output.append(line)
+            if fence and fence.group(1).startswith(fence_char):
+                fence_char = ""
+            continue
+        if fence:
+            flush_normal()
+            fence_char = fence.group(1)[0]
+            output.append(line)
+            continue
+        normal_block.append(line)
+    flush_normal()
+    return "".join(output)
+
+
 def _download_pdf(
     session: requests.Session,
     pdf_url: str,
@@ -231,13 +311,17 @@ def fetch_statement(
     return result
 
 
-def one_problem_markdown(problem: dict[str, Any]) -> str:
+def one_problem_markdown(problem: dict[str, Any], site: str = "") -> str:
     title = (problem.get("name") or problem["code"]).strip()
-    statement = (problem.get("statement") or "").strip()
+    statement = canonical_markdown_math(
+        str(problem.get("statement") or ""), aggressive=site == "hnoj"
+    ).strip()
     return f"{title} | {problem['code']}\n\n{statement}\n"
 
 
-def combined_markdown(problems: Iterable[dict[str, Any]], source_label: str) -> str:
+def combined_markdown(
+    problems: Iterable[dict[str, Any]], source_label: str, site: str = ""
+) -> str:
     rows = list(problems)
     lines = ["# Tổng hợp đề bài", "", f"Nguồn: **{source_label}**", ""]
     for index, problem in enumerate(rows, 1):
@@ -246,7 +330,9 @@ def combined_markdown(problems: Iterable[dict[str, Any]], source_label: str) -> 
             [
                 f"## {index}. {title} (`{problem['code']}`)",
                 "",
-                (problem.get("statement") or "").strip(),
+                canonical_markdown_math(
+                    str(problem.get("statement") or ""), aggressive=site == "hnoj"
+                ).strip(),
                 "",
             ]
         )
@@ -557,7 +643,9 @@ def write_export(
                 session,
             )
         path = output_dir / f"tong_hop_de_bai_{site}.md"
-        path.write_text(combined_markdown(problems, source_label), encoding="utf-8-sig")
+        path.write_text(
+            combined_markdown(problems, source_label, site), encoding="utf-8-sig"
+        )
         return path
 
     path = output_dir / f"de_bai_{site}.zip"
@@ -569,7 +657,7 @@ def write_export(
             else:
                 archive.writestr(
                     f"{problem['code']}.md",
-                    one_problem_markdown(problem).encode("utf-8-sig"),
+                    one_problem_markdown(problem, site).encode("utf-8-sig"),
                 )
     return path
 

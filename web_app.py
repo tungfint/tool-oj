@@ -2037,7 +2037,7 @@ PAGE = r"""
 
         <div class="tool-card">
           <h3 class="tool-title">Xuất đề bài</h3>
-          <p class="tool-subtitle">Lấy đề từ Contest, Lesson hoặc danh sách mã bài trên HNOJ, HNCode và TinHocTre. Đề PDF, đề dạng ảnh hoặc có link ảnh được xuất thành PDF; đề chỉ có văn bản được giữ ở Markdown.</p>
+          <p class="tool-subtitle">Lấy đề từ Contest, Lesson hoặc danh sách mã bài trên HNOJ, HNCode và TinHocTre. Đề PDF, đề dạng ảnh hoặc có link ảnh được xuất thành PDF; đề chỉ có văn bản được giữ ở Markdown và chuẩn hóa công thức về <code>$...$</code>.</p>
           <div class="grid-2">
             <div><label>Web nguồn</label><select id="statementExportSite"><option value="hnoj">HNOJ</option><option value="hncode" selected>HNCode</option><option value="tinhoctre">TinHocTre</option></select><span id="statementExportLogin" class="login-badge">Chưa kiểm tra</span></div>
             <div><label>Loại dữ liệu nhập</label><select id="statementExportInputType"><option value="auto">Tự động nhận</option><option value="contest">Contest</option><option value="lesson">Lesson</option><option value="codes">Danh sách mã bài</option></select></div>

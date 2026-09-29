@@ -477,6 +477,8 @@ Chọn một trong hai kiểu kết quả:
 
 Tool ưu tiên tải file PDF gốc khi bài dùng PDF. Với đề Markdown có ảnh, tool tải ảnh bằng phiên đăng nhập hiện tại và nhúng ảnh vào PDF; liên kết ảnh tương đối được đổi sang URL tuyệt đối trước khi xử lý. Nếu một bài lỗi, các bài còn lại vẫn được xuất và bảng kết quả hiển thị lỗi riêng.
 
+Các file Markdown xuất ra dùng cú pháp công thức chuẩn `$...$` và `$$...$$`. Khi nguồn HNOJ dùng `~...~` hoặc `~~...~~`, tool chuyển đúng cặp dấu sang `$`; dấu `\~`, URL, inline code và code fence được giữ nguyên.
+
 API nội bộ:
 
 ```http

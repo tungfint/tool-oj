@@ -14,6 +14,38 @@ from services import problem_export
 
 
 class ProblemExportTest(unittest.TestCase):
+    def test_canonical_markdown_math_preserves_code_urls_and_escaped_tilde(self) -> None:
+        source = (
+            "Công thức ~N~ và ~~F = N + 1~~; giữ $M$ và $a~b$.\n"
+            r"Dấu \~ thường, URL https://example.test/~user~/a và `~code~`." + "\n"
+            "```cpp\ncout << \"~not_math~\";\n```\n"
+        )
+
+        result = problem_export.canonical_markdown_math(source)
+
+        self.assertIn("$N$", result)
+        self.assertIn("$$F = N + 1$$", result)
+        self.assertIn("$M$", result)
+        self.assertIn("$a~b$", result)
+        self.assertIn(r"\~ thường", result)
+        self.assertIn("https://example.test/~user~/a", result)
+        self.assertIn("`~code~`", result)
+        self.assertIn('cout << "~not_math~";', result)
+
+    def test_hnoj_markdown_export_normalizes_all_paired_tildes(self) -> None:
+        content = problem_export.one_problem_markdown(
+            {
+                "code": "sample",
+                "name": "Bài mẫu",
+                "statement": "Giá trị ~answer~ và ~x~.",
+            },
+            "hnoj",
+        )
+
+        self.assertIn("$answer$", content)
+        self.assertIn("$x$", content)
+        self.assertNotIn("~answer~", content)
+
     def test_pdf_detection_for_source_pdf_and_image_links(self) -> None:
         self.assertTrue(problem_export.requires_pdf({"pdf_path": "source.pdf"}))
         self.assertTrue(
