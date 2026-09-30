@@ -381,9 +381,14 @@ Nhập URL Lesson nguồn và URL Course đích, chọn HNCode/LQDOJ ở hai ph�
 - Một problem lỗi được ghi vào báo cáo; các problem sau vẫn tiếp tục. Ảnh trong nội dung Lesson được upload sang website đích và dùng URL tương đối; link bài được đổi sang mã bài tương ứng ở đích.
 - Quiz trong Lesson được giữ đầy đủ khi sao chép trong cùng một website. Khi chuyển chéo website, tool báo và bỏ qua quiz vì ID câu hỏi/quiz không dùng chung; không tự gắn nhầm quiz theo ID.
 
-## Tab Chuyển Course
+## Tab Course
 
-Sao chép toàn bộ Lesson và Contest đã chọn giữa HNCode và LQDOJ. Nếu Course đích chưa tồn tại, tool tự tạo Course bằng slug đã nhập rồi sao chép tên, mô tả, trạng thái công khai/mở và organization tương thích từ nguồn. Nếu Course đích đã tồn tại, slug, vai trò và thành viên hiện có được giữ nguyên; organization chỉ được đồng bộ khi tìm thấy organization cùng tên ở đích.
+Tab này có hai chế độ:
+
+- Sao chép toàn bộ Lesson và Contest đã chọn giữa HNCode và LQDOJ.
+- Nhập nhiều URL Lesson nguồn, mỗi dòng một link, để chỉ thêm các Lesson đó vào Course đích. Các Lesson được xử lý theo thứ tự nhập; có thể lấy Lesson từ nhiều Course nguồn. Ở chế độ này tên, mô tả và setup hiện tại của Course đích được giữ nguyên.
+
+Nếu Course đích chưa tồn tại, tool tự tạo Course bằng slug đã nhập rồi sao chép metadata cơ bản từ Course nguồn đầu tiên. Nếu Course đích đã tồn tại, slug, vai trò và thành viên hiện có được giữ nguyên; organization chỉ được đồng bộ khi sao chép toàn bộ Course và tìm thấy organization cùng tên ở đích.
 
 Lesson cùng tên và Contest đã nằm trong Course đích được dùng lại để cập nhật metadata/setup và bổ sung bài còn thiếu. Tool giữ điểm/thứ tự Lesson, điểm/thứ tự Contest trong Course, mô tả và cấu hình Contest, thứ tự/điểm từng bài; problem trùng được dùng lại theo ID ở website đích. Ảnh được chuyển sang storage của đích; link nội bộ được lưu tương đối, không giữ domain HNCode/LQDOJ nguồn. Nếu một Lesson, Contest hoặc problem lỗi, dòng đó được ghi báo cáo và tiến trình tiếp tục với các mục còn lại.
 

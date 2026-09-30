@@ -1585,7 +1585,7 @@ PAGE = r"""
         <button type="button" data-panel="lesson-create">Tạo Lesson</button>
         <button type="button" data-panel="contest-lesson-copy">Contest → Lesson</button>
         <button type="button" data-panel="lesson-transfer">Chuyển Lesson</button>
-        <button type="button" data-panel="course-clone">Chuyển Course</button>
+        <button type="button" data-panel="course-clone">Course</button>
       </div>
       <div class="nav-group">
         <span class="nav-label">Khác</span>
@@ -1969,15 +1969,17 @@ PAGE = r"""
       </div>
 
       <div class="panel" id="panel-course-clone">
-        <h2>Chuyển Course</h2>
-        <p>Sao chép Lesson và Contest giữa HNCode/LQDOJ. Nội dung đã có trong Course đích được dùng lại để cập nhật và bổ sung; dữ liệu nguồn không bị thay đổi. Website được tự nhận diện theo URL.</p>
+        <h2>Course</h2>
+        <p>Sao chép toàn bộ Course hoặc thêm một danh sách Lesson vào Course đích. Lesson/bài đã có ở đích được dùng lại; dữ liệu nguồn không bị thay đổi. Website được tự nhận diện theo URL.</p>
         <div class="grid-2">
           <div><label>Web nguồn</label><select id="courseCloneSource"><option value="hncode">HNCode</option><option value="lqdoj">LQDOJ</option></select><span id="courseCloneSourceLogin" class="login-badge">Chưa kiểm tra</span></div>
           <div><label>Web đích</label><select id="courseCloneDest"><option value="hncode">HNCode</option><option value="lqdoj">LQDOJ</option></select><span id="courseCloneLogin" class="login-badge">Chưa kiểm tra</span></div>
         </div>
         <div><label>Hậu tố mã contest đích</label><input id="courseCloneContestSuffix" type="text" placeholder="Khác web: mặc định giữ mã; cùng web: mặc định thêm mã course đích"></div>
         <label>Course nguồn</label>
-        <input id="courseCloneSourceUrl" type="text" value="https://hncode.edu.vn/course/sach_cppcoban_share">
+        <input id="courseCloneSourceUrl" type="text" value="https://hncode.edu.vn/course/sach_cppcoban_share" placeholder="Có thể để trống khi nhập danh sách Lesson nguồn">
+        <label>Danh sách Lesson nguồn <span class="test-meta">(không bắt buộc; mỗi dòng một link, nếu có thì chỉ sao chép các Lesson này)</span></label>
+        <textarea id="courseCloneLessonUrls" style="min-height:130px" placeholder="https://hncode.edu.vn/course/tm69_nc2/lesson/3428&#10;https://hncode.edu.vn/course/tm69_nc2/lesson/3429"></textarea>
         <label>Course đích</label>
         <input id="courseCloneDestUrl" type="text" value="https://hncode.edu.vn/course/ngs_cpp_cb_01">
         <div class="grid-2" style="margin-top:12px">
@@ -1986,7 +1988,7 @@ PAGE = r"""
         </div>
         <div class="actions">
           <button class="action primary" type="button" id="prepareCourseClone">Chuẩn bị dữ liệu</button>
-          <button class="action primary" type="button" id="confirmCourseClone" disabled>Xác nhận Clone Course</button>
+          <button class="action primary" type="button" id="confirmCourseClone" disabled>Xác nhận thực hiện</button>
         </div>
         <div id="courseCloneTable"></div>
       </div>
@@ -2520,6 +2522,12 @@ document.getElementById("lessonCopyLessonUrl").addEventListener("blur", () => {
 document.getElementById("lessonTransferSourceUrl").addEventListener("blur", () => syncStructureTarget("lessonTransferSource", "lessonTransferSourceUrl", checkLessonTransferLogin));
 document.getElementById("lessonTransferDestUrl").addEventListener("blur", () => syncStructureTarget("lessonTransferDest", "lessonTransferDestUrl", checkLessonTransferLogin));
 document.getElementById("courseCloneSourceUrl").addEventListener("blur", () => syncStructureTarget("courseCloneSource", "courseCloneSourceUrl", checkCourseCloneLogin));
+document.getElementById("courseCloneLessonUrls").addEventListener("blur", () => {
+  const detected = structureTargetFromUrl(document.getElementById("courseCloneLessonUrls").value);
+  const select = document.getElementById("courseCloneSource");
+  if (detected && [...select.options].some(option => option.value === detected)) select.value = detected;
+  checkCourseCloneLogin();
+});
 document.getElementById("courseCloneDestUrl").addEventListener("blur", () => syncStructureTarget("courseCloneDest", "courseCloneDestUrl", checkCourseCloneLogin));
 renderLanguages();
 renderSingleLanguages();
@@ -3372,8 +3380,17 @@ function applyLessonTransferStatuses(rows) {
 document.getElementById("prepareCourseClone").onclick = async () => {
   try {
     status("running");
-    log("Đang đọc lesson và contest của course nguồn...");
-    const source = syncStructureTarget("courseCloneSource", "courseCloneSourceUrl", checkCourseCloneLogin);
+    log("Đang đọc dữ liệu Course/Lesson nguồn...");
+    const lessonUrls = document.getElementById("courseCloneLessonUrls").value.trim();
+    const sourceUrlInput = document.getElementById("courseCloneSourceUrl");
+    if (!sourceUrlInput.value.trim() && lessonUrls) {
+      sourceUrlInput.value = lessonUrls.split(/\r?\n/).map(value => value.trim()).find(Boolean) || "";
+    }
+    const detectedLessonSource = structureTargetFromUrl(lessonUrls);
+    if (detectedLessonSource) document.getElementById("courseCloneSource").value = detectedLessonSource;
+    const source = lessonUrls
+      ? document.getElementById("courseCloneSource").value
+      : syncStructureTarget("courseCloneSource", "courseCloneSourceUrl", checkCourseCloneLogin);
     const dest = syncStructureTarget("courseCloneDest", "courseCloneDestUrl", checkCourseCloneLogin);
     saveAccounts();
     const data = await postJson("/api/prepare-course-clone", {
@@ -3382,6 +3399,7 @@ document.getElementById("prepareCourseClone").onclick = async () => {
       source_account: accountPayload(source),
       dest_account: accountPayload(dest),
       source_url: document.getElementById("courseCloneSourceUrl").value.trim(),
+      lesson_urls: lessonUrls,
       dest_url: document.getElementById("courseCloneDestUrl").value.trim(),
       contest_suffix: document.getElementById("courseCloneContestSuffix").value.trim(),
       include_lessons: document.getElementById("courseCloneLessons").checked,
@@ -3403,10 +3421,10 @@ document.getElementById("prepareCourseClone").onclick = async () => {
 
 document.getElementById("confirmCourseClone").onclick = async () => {
   try {
-    if (!preparedCourseClone) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi Clone Course.");
+    if (!preparedCourseClone) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước khi thực hiện.");
     status("running");
-    log("Đang sao chép course...");
-    markRowsProcessing("#courseCloneTable", "Đang clone...");
+    log("Đang sao chép dữ liệu Course...");
+    markRowsProcessing("#courseCloneTable", "Đang sao chép...");
     saveAccounts();
     const source = document.getElementById("courseCloneSource").value;
     const dest = document.getElementById("courseCloneDest").value;
@@ -3434,11 +3452,12 @@ function renderCourseCloneTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Loại</th><th>Thứ tự</th><th>Mã/ID nguồn</th><th>Tên</th><th>Mã contest đích</th><th>Trạng thái</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Loại</th><th>Thứ tự</th><th>Course nguồn</th><th>Mã/ID nguồn</th><th>Tên</th><th>Mã contest đích</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-kind="${escapeHtml(row.kind)}" data-key="${escapeHtml(row.key)}">
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.can_clone ? "" : "disabled"}></td>
       <td>${row.kind === "contest" ? "Contest" : "Lesson"}</td>
-      <td>${escapeHtml(row.order || "")}</td>
+      <td>${escapeHtml(row.input_order || row.order || "")}</td>
+      <td>${escapeHtml(row.source_slug || "")}</td>
       <td>${escapeHtml(row.key || "")}</td>
       <td>${escapeHtml(row.title || "")}</td>
       <td>${row.kind === "contest" ? `<input type="text" class="row-new-key" value="${escapeHtml(row.new_key || "")}">` : ""}</td>
@@ -4893,18 +4912,29 @@ def api_prepare_course_clone():
     try:
         source_url = payload.get("source_url", "")
         dest_url = payload.get("dest_url", "")
-        validate_structure_target_url(source_url, source, "Course nguồn")
+        lesson_refs = parse_course_lesson_refs(payload.get("lesson_urls", ""))
+        selective_lessons = bool(lesson_refs)
+        if selective_lessons:
+            for ref in lesson_refs:
+                if ref.get("target") and ref["target"] != source:
+                    raise RuntimeError(
+                        f"Lesson {ref['url']} thuộc {TARGETS[ref['target']]['label']} nhưng Web nguồn "
+                        f"đang chọn {TARGETS[source]['label']}."
+                    )
+            source_slug = lesson_refs[0]["source_slug"]
+        else:
+            validate_structure_target_url(source_url, source, "Course nguồn")
+            source_slug = extract_hncode_course_slug(source_url)
         validate_structure_target_url(dest_url, dest, "Course đích")
-        source_slug = extract_hncode_course_slug(source_url)
         dest_slug = extract_hncode_course_slug(dest_url)
         if source == "lqdoj":
             lqdoj_service.validate_course_slug(source_slug)
         if dest == "lqdoj":
             lqdoj_service.validate_course_slug(dest_slug)
-        if source == dest and source_slug == dest_slug:
+        if not selective_lessons and source == dest and source_slug == dest_slug:
             raise RuntimeError("Course nguồn và course đích đang trùng nhau.")
-        include_lessons = bool(payload.get("include_lessons", True))
-        include_contests = bool(payload.get("include_contests", True))
+        include_lessons = True if selective_lessons else bool(payload.get("include_lessons", True))
+        include_contests = False if selective_lessons else bool(payload.get("include_contests", True))
         if not include_lessons and not include_contests:
             raise RuntimeError("Hãy chọn Clone lesson hoặc Clone contest.")
         src_session = login_target_account(source, source_account)
@@ -4924,8 +4954,12 @@ def api_prepare_course_clone():
             }
         course_metadata["source_slug"] = source_slug
         log_lines = [
-            "Chuẩn bị sao chép Course",
-            f"Nguồn: {TARGETS[source]['label']} / {source_slug}",
+            "Chuẩn bị thêm danh sách Lesson vào Course" if selective_lessons else "Chuẩn bị sao chép Course",
+            (
+                f"Nguồn: {TARGETS[source]['label']} / {len(lesson_refs)} Lesson đã chọn"
+                if selective_lessons
+                else f"Nguồn: {TARGETS[source]['label']} / {source_slug}"
+            ),
             f"Đích: {TARGETS[dest]['label']} / {dest_slug}",
             "Nguồn chỉ được đọc; bài trùng ở đích sẽ được dùng lại.",
         ]
@@ -4938,7 +4972,41 @@ def api_prepare_course_clone():
             course_metadata,
             log_lines,
         )
-        source_lessons = hncode_course_lessons(src_session, source_slug, source) if include_lessons else []
+        if selective_lessons:
+            source_lessons = []
+            lesson_cache: dict[str, list[dict]] = {}
+            for input_order, ref in enumerate(lesson_refs, 1):
+                ref_slug = ref["source_slug"]
+                if ref_slug not in lesson_cache:
+                    lesson_cache[ref_slug] = hncode_course_lessons(src_session, ref_slug, source)
+                item = next(
+                    (row for row in lesson_cache[ref_slug] if str(row.get("key")) == ref["lesson_id"]),
+                    None,
+                )
+                if item:
+                    source_lessons.append(
+                        {
+                            **item,
+                            "source_slug": ref_slug,
+                            "input_order": str(input_order),
+                        }
+                    )
+                else:
+                    source_lessons.append(
+                        {
+                            "kind": "lesson",
+                            "key": ref["lesson_id"],
+                            "title": f"Lesson {ref['lesson_id']}",
+                            "order": str(input_order),
+                            "points": "",
+                            "source_slug": ref_slug,
+                            "input_order": str(input_order),
+                            "prepare_error": f"Không tìm thấy Lesson {ref['lesson_id']} trong Course {ref_slug}.",
+                        }
+                    )
+        else:
+            source_lessons = hncode_course_lessons(src_session, source_slug, source) if include_lessons else []
+            source_lessons = [{**item, "source_slug": source_slug} for item in source_lessons]
         source_contests = hncode_course_contests(src_session, source_slug, source) if include_contests else []
         dest_lessons = hncode_course_lessons(dst_session, dest_slug, dest)
         dest_contests = hncode_course_contests(dst_session, dest_slug, dest)
@@ -4959,6 +5027,8 @@ def api_prepare_course_clone():
             log_lines.append(f"⚠ Chưa đọc được metadata Course: {course_metadata_error}. Vẫn tiếp tục đọc Lesson/Contest.")
         for item in source_lessons:
             try:
+                if item.get("prepare_error"):
+                    raise RuntimeError(item["prepare_error"])
                 row = build_course_lesson_prepare_row(
                     item, dst_session, dest_slug, dest, dest_lesson_titles
                 )
@@ -5011,6 +5081,7 @@ def api_prepare_course_clone():
             "course_metadata": course_metadata,
             "course_metadata_error": course_metadata_error,
             "destination_created": destination_created,
+            "selective_lessons": selective_lessons,
         }
         return jsonify(
             {
@@ -5039,8 +5110,12 @@ def api_confirm_course_clone():
     result_rows = []
     ok = True
     log_lines = [
-        "Sao chép Course",
-        f"Nguồn: {TARGETS[state.get('source', 'hncode')]['label']} / {state['source_slug']}",
+        "Thêm danh sách Lesson vào Course" if state.get("selective_lessons") else "Sao chép Course",
+        (
+            f"Nguồn: {TARGETS[state.get('source', 'hncode')]['label']} / các Lesson đã chọn"
+            if state.get("selective_lessons")
+            else f"Nguồn: {TARGETS[state.get('source', 'hncode')]['label']} / {state['source_slug']}"
+        ),
         f"Đích: {TARGETS[state.get('dest', 'hncode')]['label']} / {state['dest_slug']}",
         "Bài trùng ở đích được dùng lại; nguồn không bị thay đổi.",
     ]
@@ -5053,7 +5128,10 @@ def api_confirm_course_clone():
         dst_session = src_session if source == dest else login_target_account(dest, dest_account)
         root = RUNTIME / ("course_clone_" + prepare_id)
         root.mkdir(parents=True, exist_ok=True)
-        if state.get("destination_created"):
+        if state.get("selective_lessons") and not state.get("destination_created"):
+            metadata_synced = True
+            log_lines.append("Giữ nguyên tên, mô tả và setup hiện tại của Course đích.")
+        elif state.get("destination_created"):
             metadata_synced = True
             log_lines.append("✓ Course đích đã được tự tạo cùng metadata/setup ở bước Chuẩn bị dữ liệu.")
         else:
@@ -5092,10 +5170,11 @@ def api_confirm_course_clone():
             try:
                 if kind == "lesson":
                     lesson_problem_results: list[dict] = []
+                    lesson_source_slug = base.get("source_slug") or state["source_slug"]
                     if source == dest == "hncode":
                         link = clone_hncode_lesson_native(
                             dst_session,
-                            state["source_slug"],
+                            lesson_source_slug,
                             key,
                             base.get("title") or f"Lesson {key}",
                             state["dest_slug"],
@@ -5108,7 +5187,7 @@ def api_confirm_course_clone():
                             dst_session,
                             source,
                             dest,
-                            state["source_slug"],
+                            lesson_source_slug,
                             key,
                             base.get("title") or f"Lesson {key}",
                             state["dest_slug"],
@@ -9472,6 +9551,39 @@ def extract_hncode_lesson_ref(value: str) -> tuple[str, str]:
     if not match:
         raise RuntimeError("Không đọc được lesson. Hãy nhập URL dạng https://oj.hncode.edu.vn/course/<course>/lesson/<id>.")
     return html.unescape(match.group(1)), match.group(2)
+
+
+def parse_course_lesson_refs(value: str) -> list[dict]:
+    text = html.unescape(str(value or "")).replace("\\_", "_")
+    pattern = re.compile(
+        r"(?:(?:https?://)?[A-Za-z0-9.-]+)?/course/([^/?#\s]+)/"
+        r"(?:lesson|edit_lessons_new)/(\d+)",
+        re.I,
+    )
+    refs: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for match in pattern.finditer(text):
+        source_slug = html.unescape(match.group(1)).strip("/")
+        lesson_id = match.group(2)
+        identity = (source_slug.casefold(), lesson_id)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        raw_url = match.group(0)
+        refs.append(
+            {
+                "source_slug": source_slug,
+                "lesson_id": lesson_id,
+                "url": raw_url,
+                "target": structure_target_from_url(raw_url),
+            }
+        )
+    if text.strip() and not refs:
+        raise RuntimeError(
+            "Không đọc được Lesson nguồn. Hãy nhập mỗi dòng một URL dạng "
+            "https://hncode.edu.vn/course/<course>/lesson/<id>."
+        )
+    return refs
 
 
 def extract_lesson_or_course_destination(value: str) -> tuple[str, str, str]:

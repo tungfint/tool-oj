@@ -400,6 +400,113 @@ class StructureTransferTests(TestCase):
         self.assertIn("LQDOJ", response.get_json()["error"])
         self.assertIn("HNCode", response.get_json()["error"])
 
+    def test_parse_course_lesson_refs_keeps_order_and_removes_duplicates(self):
+        refs = web_app.parse_course_lesson_refs(
+            "https://hncode.edu.vn/course/tm69\\_nc2/lesson/3428\n"
+            "https://hncode.edu.vn/course/tm69_nc2/lesson/3429\n"
+            "https://hncode.edu.vn/course/tm69_nc2/lesson/3428"
+        )
+
+        self.assertEqual(
+            [(row["source_slug"], row["lesson_id"]) for row in refs],
+            [("tm69_nc2", "3428"), ("tm69_nc2", "3429")],
+        )
+
+    @patch("web_app.ensure_destination_course", return_value=("9", False))
+    @patch(
+        "web_app.fetch_course_metadata",
+        return_value={"name": "Nguồn", "about": "", "is_public": False, "is_open": False},
+    )
+    @patch("web_app.hncode_course_contests", return_value=[])
+    @patch("web_app.hncode_course_lessons")
+    @patch("web_app.login_target_account", return_value=object())
+    def test_course_prepare_accepts_selected_lesson_urls(
+        self, _login, course_lessons, _contests, _metadata, _ensure_course
+    ):
+        def lesson_rows(_session, slug, _target):
+            if slug == "tm69_nc2":
+                return [
+                    {"kind": "lesson", "key": "3428", "title": "Lesson A", "order": "8", "points": "100"},
+                    {"kind": "lesson", "key": "3429", "title": "Lesson B", "order": "9", "points": "100"},
+                ]
+            if slug == "hna26_tuyenams2":
+                return []
+            raise AssertionError(slug)
+
+        course_lessons.side_effect = lesson_rows
+        response = web_app.app.test_client().post(
+            "/api/prepare-course-clone",
+            json={
+                "source": "hncode",
+                "dest": "hncode",
+                "source_url": "https://hncode.edu.vn/course/ignored_source",
+                "lesson_urls": (
+                    "https://hncode.edu.vn/course/tm69_nc2/lesson/3428\n"
+                    "https://hncode.edu.vn/course/tm69_nc2/lesson/3429"
+                ),
+                "dest_url": "https://hncode.edu.vn/course/hna26_tuyenams2",
+                "include_lessons": True,
+                "include_contests": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        try:
+            self.assertEqual([row["key"] for row in data["rows"]], ["3428", "3429"])
+            self.assertEqual([row["source_slug"] for row in data["rows"]], ["tm69_nc2", "tm69_nc2"])
+            self.assertTrue(web_app.prepared_course_clones[data["prepare_id"]]["selective_lessons"])
+        finally:
+            web_app.prepared_course_clones.pop(data["prepare_id"], None)
+
+    @patch("web_app.clone_hncode_lesson_native")
+    @patch("web_app.sync_course_metadata")
+    @patch("web_app.login_target_account", return_value=object())
+    def test_selected_lessons_keep_destination_course_metadata(
+        self, _login, sync_metadata, clone_lesson
+    ):
+        prepare_id = "a" * 32
+        clone_lesson.side_effect = [
+            "https://hncode.edu.vn/course/dest/lesson/81",
+            "https://hncode.edu.vn/course/dest/lesson/82",
+        ]
+        web_app.prepared_course_clones[prepare_id] = {
+            "source_slug": "source_a",
+            "dest_slug": "dest",
+            "source": "hncode",
+            "dest": "hncode",
+            "dest_course_id": "9",
+            "destination_created": False,
+            "selective_lessons": True,
+            "rows": [
+                {"kind": "lesson", "key": "11", "title": "A", "source_slug": "source_a", "selected": True},
+                {"kind": "lesson", "key": "22", "title": "B", "source_slug": "source_b", "selected": True},
+            ],
+        }
+        try:
+            response = web_app.app.test_client().post(
+                "/api/confirm-course-clone",
+                json={
+                    "prepare_id": prepare_id,
+                    "source_account": {},
+                    "dest_account": {},
+                    "rows": [
+                        {"kind": "lesson", "key": "11", "selected": True},
+                        {"kind": "lesson", "key": "22", "selected": True},
+                    ],
+                },
+            )
+        finally:
+            web_app.prepared_course_clones.pop(prepare_id, None)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["ok"])
+        self.assertEqual(
+            [call.args[1] for call in clone_lesson.call_args_list],
+            ["source_a", "source_b"],
+        )
+        sync_metadata.assert_not_called()
+
     def test_problem_copy_report_continues_after_one_failure(self):
         log = []
 
