@@ -3452,11 +3452,11 @@ function renderCourseCloneTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#courseCloneTable', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Loại</th><th>Thứ tự</th><th>Course nguồn</th><th>Mã/ID nguồn</th><th>Tên</th><th>Mã contest đích</th><th>Trạng thái</th></tr></thead>
+    <thead><tr><th>Chọn</th><th>Loại</th><th>Thứ tự đích</th><th>Course nguồn</th><th>Mã/ID nguồn</th><th>Tên</th><th>Mã contest đích</th><th>Trạng thái</th></tr></thead>
     <tbody>${rows.map(row => `<tr data-kind="${escapeHtml(row.kind)}" data-key="${escapeHtml(row.key)}">
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""} ${row.can_clone ? "" : "disabled"}></td>
       <td>${row.kind === "contest" ? "Contest" : "Lesson"}</td>
-      <td>${escapeHtml(row.input_order || row.order || "")}</td>
+      <td>${escapeHtml(row.dest_order || row.order || "")}</td>
       <td>${escapeHtml(row.source_slug || "")}</td>
       <td>${escapeHtml(row.key || "")}</td>
       <td>${escapeHtml(row.title || "")}</td>
@@ -5012,6 +5012,21 @@ def api_prepare_course_clone():
         dest_contests = hncode_course_contests(dst_session, dest_slug, dest)
         dest_lesson_titles = {row["title"].strip().casefold() for row in dest_lessons}
         dest_contest_keys = {row["key"] for row in dest_contests}
+        selected_lesson_titles = {
+            str(item.get("title") or "").strip().casefold()
+            for item in source_lessons
+            if not item.get("prepare_error") and str(item.get("title") or "").strip()
+        }
+        lessons_kept_in_place = (
+            [
+                row
+                for row in dest_lessons
+                if str(row.get("title") or "").strip().casefold() not in selected_lesson_titles
+            ]
+            if selective_lessons
+            else dest_lessons
+        )
+        first_appended_lesson_order = next_course_lesson_order(lessons_kept_in_place)
         rows: list[dict] = []
         log_lines.extend(
             [
@@ -5025,13 +5040,15 @@ def api_prepare_course_clone():
             )
         if course_metadata_error:
             log_lines.append(f"⚠ Chưa đọc được metadata Course: {course_metadata_error}. Vẫn tiếp tục đọc Lesson/Contest.")
-        for item in source_lessons:
+        for lesson_index, item in enumerate(source_lessons):
             try:
                 if item.get("prepare_error"):
                     raise RuntimeError(item["prepare_error"])
                 row = build_course_lesson_prepare_row(
                     item, dst_session, dest_slug, dest, dest_lesson_titles
                 )
+                if selective_lessons:
+                    row["dest_order"] = str(first_appended_lesson_order + lesson_index)
             except Exception as item_exc:
                 row = {
                     **item,
@@ -5041,6 +5058,8 @@ def api_prepare_course_clone():
                     "error": str(item_exc),
                     "new_key": "",
                 }
+                if selective_lessons:
+                    row["dest_order"] = str(first_appended_lesson_order + lesson_index)
             rows.append(row)
             log_lines.append(f"Lesson {item['order']}. {item['title']}: {row['status']}")
         suffix = payload.get("contest_suffix", "")
@@ -5179,6 +5198,7 @@ def api_confirm_course_clone():
                             base.get("title") or f"Lesson {key}",
                             state["dest_slug"],
                             state["dest_course_id"],
+                            str(base.get("dest_order") or ""),
                         )
                         lesson_problem_results = []
                     else:
@@ -5195,6 +5215,7 @@ def api_confirm_course_clone():
                             log_lines,
                             lesson_problem_results,
                             base.get("existing_link", ""),
+                            str(base.get("dest_order") or ""),
                         )
                     base["problem_results"] = lesson_problem_results
                     failed_lesson_problems = [item for item in lesson_problem_results if item.get("error")]
@@ -8881,6 +8902,15 @@ def default_course_clone_contest_key(source_key: str, dest_slug: str, suffix: st
     return raw or source_key
 
 
+def next_course_lesson_order(rows: list[dict]) -> int:
+    numeric_orders = [
+        int(str(row.get("order") or "").strip())
+        for row in rows
+        if str(row.get("order") or "").strip().isdigit()
+    ]
+    return max(numeric_orders or [len(rows)]) + 1
+
+
 def build_course_lesson_prepare_row(
     item: dict,
     dst_session: requests.Session,
@@ -9093,7 +9123,15 @@ def copy_hncode_lesson_items(session: requests.Session, dest_course_slug: str, d
         raise RuntimeError("Form sửa lesson báo lỗi:\n" + "\n".join(errors))
 
 
-def clone_hncode_lesson_native(session: requests.Session, source_course: str, lesson_id: str, title: str, dest_course_slug: str, dest_course_id: str) -> str:
+def clone_hncode_lesson_native(
+    session: requests.Session,
+    source_course: str,
+    lesson_id: str,
+    title: str,
+    dest_course_slug: str,
+    dest_course_id: str,
+    order_override: str = "",
+) -> str:
     source_edit_url = hncode_course_page_url(source_course, f"/edit_lessons_new/{lesson_id}")
     source_page = session.get(source_edit_url, timeout=30)
     if not source_page.ok:
@@ -9101,7 +9139,7 @@ def clone_hncode_lesson_native(session: requests.Session, source_course: str, le
     title = input_value_from_page(source_page.text, "title", title) or title
     points = input_value_from_page(source_page.text, "points", "100") or "100"
     content = structure_content_for_target("hncode", "hncode", textarea_value(source_page.text, "content"))
-    order = input_value_from_page(source_page.text, "order", "")
+    order = str(order_override or input_value_from_page(source_page.text, "order", ""))
     existing_link = find_hncode_course_lesson_url(session, dest_course_slug, title)
     if existing_link:
         match = re.search(r"/lesson/(\d+)", existing_link)
@@ -9291,6 +9329,7 @@ def clone_course_lesson_between_sites(
     log_lines: list[str],
     problem_results: list[dict] | None = None,
     existing_link: str = "",
+    order_override: str = "",
 ) -> str:
     source_edit_url = hncode_course_page_url(source_course, f"/edit_lessons_new/{lesson_id}", source)
     source_page = src_session.get(source_edit_url, timeout=30)
@@ -9306,7 +9345,7 @@ def clone_course_lesson_between_sites(
         textarea_value(source_page.text, "content"),
         log_lines,
     )
-    order = input_value_from_page(source_page.text, "order", "")
+    order = str(order_override or input_value_from_page(source_page.text, "order", ""))
     existing_link = existing_link or find_hncode_course_lesson_url(
         dst_session, dest_course, title, dest
     ) or ""

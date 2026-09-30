@@ -430,7 +430,12 @@ class StructureTransferTests(TestCase):
                     {"kind": "lesson", "key": "3429", "title": "Lesson B", "order": "9", "points": "100"},
                 ]
             if slug == "hna26_tuyenams2":
-                return []
+                return [
+                    {"kind": "lesson", "key": "900", "title": "Đã có 1", "order": "9", "points": "100"},
+                    {"kind": "lesson", "key": "901", "title": "Đã có 2", "order": "10", "points": "100"},
+                    {"kind": "lesson", "key": "902", "title": "Lesson A", "order": "11", "points": "100"},
+                    {"kind": "lesson", "key": "903", "title": "Lesson B", "order": "12", "points": "100"},
+                ]
             raise AssertionError(slug)
 
         course_lessons.side_effect = lesson_rows
@@ -455,6 +460,7 @@ class StructureTransferTests(TestCase):
         try:
             self.assertEqual([row["key"] for row in data["rows"]], ["3428", "3429"])
             self.assertEqual([row["source_slug"] for row in data["rows"]], ["tm69_nc2", "tm69_nc2"])
+            self.assertEqual([row["dest_order"] for row in data["rows"]], ["11", "12"])
             self.assertTrue(web_app.prepared_course_clones[data["prepare_id"]]["selective_lessons"])
         finally:
             web_app.prepared_course_clones.pop(data["prepare_id"], None)
@@ -479,8 +485,8 @@ class StructureTransferTests(TestCase):
             "destination_created": False,
             "selective_lessons": True,
             "rows": [
-                {"kind": "lesson", "key": "11", "title": "A", "source_slug": "source_a", "selected": True},
-                {"kind": "lesson", "key": "22", "title": "B", "source_slug": "source_b", "selected": True},
+                {"kind": "lesson", "key": "11", "title": "A", "source_slug": "source_a", "dest_order": "11", "selected": True},
+                {"kind": "lesson", "key": "22", "title": "B", "source_slug": "source_b", "dest_order": "12", "selected": True},
             ],
         }
         try:
@@ -505,7 +511,19 @@ class StructureTransferTests(TestCase):
             [call.args[1] for call in clone_lesson.call_args_list],
             ["source_a", "source_b"],
         )
+        self.assertEqual(
+            [call.args[6] for call in clone_lesson.call_args_list],
+            ["11", "12"],
+        )
         sync_metadata.assert_not_called()
+
+    def test_next_course_lesson_order_uses_last_numeric_order(self):
+        self.assertEqual(
+            web_app.next_course_lesson_order(
+                [{"order": "2"}, {"order": "10"}, {"order": "không xác định"}]
+            ),
+            11,
+        )
 
     def test_problem_copy_report_continues_after_one_failure(self):
         log = []

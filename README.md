@@ -386,7 +386,7 @@ Nhập URL Lesson nguồn và URL Course đích, chọn HNCode/LQDOJ ở hai ph�
 Tab này có hai chế độ:
 
 - Sao chép toàn bộ Lesson và Contest đã chọn giữa HNCode và LQDOJ.
-- Nhập nhiều URL Lesson nguồn, mỗi dòng một link, để chỉ thêm các Lesson đó vào Course đích. Các Lesson được xử lý theo thứ tự nhập; có thể lấy Lesson từ nhiều Course nguồn. Ở chế độ này tên, mô tả và setup hiện tại của Course đích được giữ nguyên.
+- Nhập nhiều URL Lesson nguồn, mỗi dòng một link, để chỉ thêm các Lesson đó vào Course đích. Các Lesson được nối vào cuối Course đích và giữ đúng thứ tự các link đã nhập; có thể lấy Lesson từ nhiều Course nguồn. Ở chế độ này tên, mô tả và setup hiện tại của Course đích được giữ nguyên.
 
 Nếu Course đích chưa tồn tại, tool tự tạo Course bằng slug đã nhập rồi sao chép metadata cơ bản từ Course nguồn đầu tiên. Nếu Course đích đã tồn tại, slug, vai trò và thành viên hiện có được giữ nguyên; organization chỉ được đồng bộ khi sao chép toàn bộ Course và tìm thấy organization cùng tên ở đích.
 
