@@ -712,3 +712,43 @@ class StructureTransferTests(TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "chưa có ID ở trang đích"):
             web_app.append_contest_problem_row([], page, 0, {"code": "sample"}, "hnoj")
+
+    def test_existing_hncode_contest_keeps_required_setup_when_source_is_blank(self):
+        page = """
+        <form>
+          <input name="name" value="Contest cũ">
+          <textarea name="description">Mô tả cũ</textarea>
+          <select name="scoreboard_visibility"><option value="V" selected>Visible</option></select>
+          <select name="format_name"><option value="vnoj" selected>VNOJ</option></select>
+          <select name="view_contest_scoreboard">
+            <option value=""></option><option value="A" selected>All</option>
+          </select>
+          <input name="points_precision" value="2">
+          <input name="start_time_0" value="2026-10-01"><input name="start_time_1" value="08:00:00">
+          <input name="end_time_0" value="2026-10-01"><input name="end_time_1" value="10:00:00">
+          <input name="strict_violation_limit" value="3">
+          <input name="strict_grace_seconds" value="20">
+        </form>
+        """
+        base_data = [
+            ("view_contest_scoreboard", "A"),
+            ("strict_violation_limit", "3"),
+            ("strict_grace_seconds", "20"),
+        ]
+
+        result = web_app.apply_contest_metadata_to_existing_form(
+            base_data,
+            page,
+            {
+                "name": "Contest mới",
+                "view_contest_scoreboard": "",
+                "strict_violation_limit": "",
+                "strict_grace_seconds": "",
+            },
+            "hncode",
+        )
+
+        fields = dict(result)
+        self.assertEqual(fields["view_contest_scoreboard"], "A")
+        self.assertEqual(fields["strict_violation_limit"], "3")
+        self.assertEqual(fields["strict_grace_seconds"], "20")

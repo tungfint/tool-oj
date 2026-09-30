@@ -10156,15 +10156,20 @@ def append_contest_problem_fields(data: list[tuple[str, str]], page: str, rows: 
 def apply_contest_metadata_to_existing_form(
     data: list[tuple[str, str]], page: str, info: dict, dest: str
 ) -> list[tuple[str, str]]:
-    start_date, start_clock = split_datetime(info.get("start_time", ""))
-    end_date, end_clock = split_datetime(info.get("end_time", ""))
+    current_start = f"{input_value(page, 'start_time_0', '')} {input_value(page, 'start_time_1', '')}".strip()
+    current_end = f"{input_value(page, 'end_time_0', '')} {input_value(page, 'end_time_1', '')}".strip()
+    start_date, start_clock = split_datetime(info.get("start_time") or current_start)
+    end_date, end_clock = split_datetime(info.get("end_time") or current_end)
     updates = {
         "name": info.get("name") or input_value(page, "name", ""),
-        "description": statement_for_target(dest, info.get("description", "")),
+        "description": statement_for_target(
+            dest,
+            info.get("description") if "description" in info else textarea_value(page, "description"),
+        ),
         "scoreboard_visibility": valid_select_value(
             page, "scoreboard_visibility", info.get("scoreboard_visibility") or "", "V"
         ),
-        "points_precision": info.get("points_precision") or "3",
+        "points_precision": info.get("points_precision") or input_value(page, "points_precision", "3") or "3",
         "start_time_0": start_date,
         "start_time_1": start_clock,
         "end_time_0": end_date,
@@ -10172,8 +10177,17 @@ def apply_contest_metadata_to_existing_form(
         "format_name": valid_select_value(page, "format_name", info.get("format_name") or "", "vnoj"),
     }
     for name in CONTEST_TEXT_SETTING_FIELDS:
-        if form_has_field(page, name):
-            updates[name] = str(info.get(name) or "")
+        if not form_has_field(page, name):
+            continue
+        current_value = contest_text_setting(page, name)
+        if name not in info:
+            continue
+        value = str(info.get(name) or "")
+        if name == "view_contest_scoreboard":
+            value = valid_select_value(page, name, value, current_value)
+        elif name in {"strict_violation_limit", "strict_grace_seconds"} and not value:
+            value = current_value
+        updates[name] = value
     checkbox_names = {
         "is_visible",
         "is_rated",
