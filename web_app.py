@@ -10039,32 +10039,8 @@ def build_contest_post_data(page: str, info: dict, problem_ids: list[dict], dest
         if form_has_field(page, name):
             data = [(field, value) for field, value in data if field != name]
             data.append((name, str(info.get(name) or input_value(page, name, ""))))
-    has_quiz = form_has_field(page, "contest_problems-0-quiz") or form_has_field(page, "contest_problems-__prefix__-quiz")
-    has_result_hidden = form_has_field(page, "contest_problems-0-is_result_hidden") or form_has_field(page, "contest_problems-__prefix__-is_result_hidden")
-    has_show_testcases = form_has_field(page, "contest_problems-0-show_testcases") or form_has_field(page, "contest_problems-__prefix__-show_testcases")
     for idx, problem in enumerate(problem_ids):
-        data.extend(
-            [
-                (f"contest_problems-{idx}-id", ""),
-                (f"contest_problems-{idx}-contest", ""),
-                (f"contest_problems-{idx}-problem", str(problem["id"])),
-                (f"contest_problems-{idx}-points", str(problem.get("points") or "100")),
-                (f"contest_problems-{idx}-max_submissions", contest_max_submissions_value(problem, dest)),
-                (f"contest_problems-{idx}-hidden_subtasks", str(problem.get("hidden_subtasks") or "")),
-                (f"contest_problems-{idx}-output_prefix_override", ""),
-                (f"contest_problems-{idx}-order", str(problem.get("order", idx))),
-            ]
-        )
-        if has_quiz:
-            data.append((f"contest_problems-{idx}-quiz", str(problem.get("quiz") or "")))
-        if problem.get("partial", True):
-            data.append((f"contest_problems-{idx}-partial", "on"))
-        if problem.get("is_pretested"):
-            data.append((f"contest_problems-{idx}-is_pretested", "on"))
-        if has_result_hidden and problem.get("is_result_hidden"):
-            data.append((f"contest_problems-{idx}-is_result_hidden", "on"))
-        if has_show_testcases and problem.get("show_testcases"):
-            data.append((f"contest_problems-{idx}-show_testcases", "on"))
+        append_contest_problem_row(data, page, idx, problem, dest)
     return data
 
 
@@ -10103,6 +10079,67 @@ def contest_max_submissions_value(problem: dict, dest: str) -> str:
     return "0" if dest == "hncode" else ""
 
 
+def contest_problem_form_has_field(page: str, field: str) -> bool:
+    return any(
+        form_has_field(page, f"contest_problems-{prefix}-{field}")
+        for prefix in ("0", "__prefix__")
+    )
+
+
+def contest_problem_field_default(page: str, field: str, default: str = "") -> str:
+    for prefix in ("__prefix__", "0"):
+        name = f"contest_problems-{prefix}-{field}"
+        if not form_has_field(page, name):
+            continue
+        selected = selected_option(page, name, "")
+        if selected != "":
+            return selected
+        return input_value(page, name, default)
+    return default
+
+
+def append_contest_problem_row(
+    data: list[tuple[str, str]],
+    page: str,
+    idx: int,
+    problem: dict,
+    dest: str,
+) -> None:
+    problem_id = str(problem.get("id") or "").strip()
+    if not problem_id:
+        code = str(problem.get("code") or "").strip()
+        raise RuntimeError(f"Bài {code or idx + 1} chưa có ID ở trang đích nên không thể thêm vào contest.")
+
+    values = {
+        "id": str(problem.get("form_id") or ""),
+        "contest": str(problem.get("contest") or ""),
+        "problem": problem_id,
+        "points": str(problem.get("points") or "100"),
+        "max_submissions": contest_max_submissions_value(problem, dest),
+        "hidden_subtasks": str(problem.get("hidden_subtasks") or ""),
+        "output_prefix_override": str(
+            problem.get("output_prefix_override")
+            if problem.get("output_prefix_override") not in (None, "")
+            else contest_problem_field_default(page, "output_prefix_override", "")
+        ),
+        "order": str(problem.get("order", idx)),
+        "quiz": str(problem.get("quiz") or ""),
+    }
+    for field, value in values.items():
+        if contest_problem_form_has_field(page, field):
+            data.append((f"contest_problems-{idx}-{field}", value))
+
+    checkbox_values = {
+        "partial": problem.get("partial", True),
+        "is_pretested": problem.get("is_pretested"),
+        "is_result_hidden": problem.get("is_result_hidden"),
+        "show_testcases": problem.get("show_testcases"),
+    }
+    for field, checked in checkbox_values.items():
+        if checked and contest_problem_form_has_field(page, field):
+            data.append((f"contest_problems-{idx}-{field}", "on"))
+
+
 def append_contest_problem_fields(data: list[tuple[str, str]], page: str, rows: list[dict], initial_forms: int, dest: str) -> None:
     data.extend(
         [
@@ -10112,32 +10149,8 @@ def append_contest_problem_fields(data: list[tuple[str, str]], page: str, rows: 
             ("contest_problems-MAX_NUM_FORMS", "1000"),
         ]
     )
-    has_quiz = form_has_field(page, "contest_problems-0-quiz") or form_has_field(page, "contest_problems-__prefix__-quiz")
-    has_result_hidden = form_has_field(page, "contest_problems-0-is_result_hidden") or form_has_field(page, "contest_problems-__prefix__-is_result_hidden")
-    has_show_testcases = form_has_field(page, "contest_problems-0-show_testcases") or form_has_field(page, "contest_problems-__prefix__-show_testcases")
     for idx, problem in enumerate(rows):
-        data.extend(
-            [
-                (f"contest_problems-{idx}-id", str(problem.get("form_id") or "")),
-                (f"contest_problems-{idx}-contest", str(problem.get("contest") or "")),
-                (f"contest_problems-{idx}-problem", str(problem["id"])),
-                (f"contest_problems-{idx}-points", str(problem.get("points") or "100")),
-                (f"contest_problems-{idx}-max_submissions", contest_max_submissions_value(problem, dest)),
-                (f"contest_problems-{idx}-hidden_subtasks", str(problem.get("hidden_subtasks") or "")),
-                (f"contest_problems-{idx}-output_prefix_override", str(problem.get("output_prefix_override") or "")),
-                (f"contest_problems-{idx}-order", str(problem.get("order", idx))),
-            ]
-        )
-        if has_quiz:
-            data.append((f"contest_problems-{idx}-quiz", str(problem.get("quiz") or "")))
-        if problem.get("partial", True):
-            data.append((f"contest_problems-{idx}-partial", "on"))
-        if problem.get("is_pretested"):
-            data.append((f"contest_problems-{idx}-is_pretested", "on"))
-        if has_result_hidden and problem.get("is_result_hidden"):
-            data.append((f"contest_problems-{idx}-is_result_hidden", "on"))
-        if has_show_testcases and problem.get("show_testcases"):
-            data.append((f"contest_problems-{idx}-show_testcases", "on"))
+        append_contest_problem_row(data, page, idx, problem, dest)
 
 
 def apply_contest_metadata_to_existing_form(

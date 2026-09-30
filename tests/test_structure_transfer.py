@@ -648,3 +648,67 @@ class StructureTransferTests(TestCase):
         self.assertEqual(info["strict_violation_limit"], "3")
         self.assertEqual(info["problems"][0]["points"], "75")
         self.assertIn("/media/diagram.png", info["description"])
+
+    def test_hnoj_contest_problem_row_uses_numeric_output_prefix_default(self):
+        page = """
+        <form>
+          <input name="contest_problems-TOTAL_FORMS" value="0">
+          <input name="contest_problems-__prefix__-id" value="">
+          <input name="contest_problems-__prefix__-contest" value="">
+          <select name="contest_problems-__prefix__-problem"><option value=""></option></select>
+          <input name="contest_problems-__prefix__-points" value="">
+          <input name="contest_problems-__prefix__-max_submissions" value="">
+          <input name="contest_problems-__prefix__-output_prefix_override" value="0">
+          <input name="contest_problems-__prefix__-order" value="">
+          <input name="contest_problems-__prefix__-partial" type="checkbox">
+        </form>
+        """
+        data = []
+
+        web_app.append_contest_problem_fields(
+            data,
+            page,
+            [{"id": "55", "points": "100", "partial": True, "order": "0"}],
+            0,
+            "hnoj",
+        )
+
+        fields = dict(data)
+        self.assertEqual(fields["contest_problems-0-output_prefix_override"], "0")
+        self.assertEqual(fields["contest_problems-0-max_submissions"], "")
+        self.assertEqual(fields["contest_problems-0-problem"], "55")
+
+    def test_hncode_contest_problem_row_does_not_send_hnoj_only_field(self):
+        page = """
+        <form>
+          <input name="contest_problems-TOTAL_FORMS" value="0">
+          <input name="contest_problems-__prefix__-id" value="">
+          <input name="contest_problems-__prefix__-contest" value="">
+          <select name="contest_problems-__prefix__-problem"><option value=""></option></select>
+          <select name="contest_problems-__prefix__-quiz"><option value=""></option></select>
+          <input name="contest_problems-__prefix__-points" value="">
+          <input name="contest_problems-__prefix__-max_submissions" value="0">
+          <input name="contest_problems-__prefix__-hidden_subtasks" value="">
+          <input name="contest_problems-__prefix__-order" value="">
+          <input name="contest_problems-__prefix__-partial" type="checkbox">
+        </form>
+        """
+        data = []
+
+        web_app.append_contest_problem_fields(
+            data,
+            page,
+            [{"id": "81", "points": "100", "partial": True, "order": "0"}],
+            0,
+            "hncode",
+        )
+
+        fields = dict(data)
+        self.assertEqual(fields["contest_problems-0-max_submissions"], "0")
+        self.assertNotIn("contest_problems-0-output_prefix_override", fields)
+
+    def test_contest_problem_row_rejects_missing_destination_problem_id(self):
+        page = '<input name="contest_problems-__prefix__-problem" value="">'
+
+        with self.assertRaisesRegex(RuntimeError, "chưa có ID ở trang đích"):
+            web_app.append_contest_problem_row([], page, 0, {"code": "sample"}, "hnoj")
