@@ -2040,14 +2040,15 @@ PAGE = r"""
 
         <div class="tool-card">
           <h3 class="tool-title">Xuất đề bài</h3>
-          <p class="tool-subtitle">Lấy đề từ Contest, Lesson hoặc danh sách mã bài trên HNOJ, HNCode và TinHocTre. Đề PDF, đề dạng ảnh hoặc có link ảnh được xuất thành PDF; đề chỉ có văn bản được giữ ở Markdown và chuẩn hóa công thức về <code>$...$</code>.</p>
+          <p class="tool-subtitle">Lấy đề từ Contest, Lesson hoặc danh sách mã bài trên HNOJ, HNCode và TinHocTre. Có thể chọn tự động theo loại đề, xuất toàn bộ dưới dạng Markdown hoặc xuất toàn bộ dưới dạng PDF.</p>
           <div class="grid-2">
             <div><label>Web nguồn</label><select id="statementExportSite"><option value="hnoj">HNOJ</option><option value="hncode" selected>HNCode</option><option value="tinhoctre">TinHocTre</option></select><span id="statementExportLogin" class="login-badge">Chưa kiểm tra</span></div>
             <div><label>Loại dữ liệu nhập</label><select id="statementExportInputType"><option value="auto">Tự động nhận</option><option value="contest">Contest</option><option value="lesson">Lesson</option><option value="codes">Danh sách mã bài</option></select></div>
           </div>
           <label>Link Contest / Link Lesson / Mã contest / Danh sách mã bài</label>
           <textarea id="statementExportInput" rows="6" placeholder="Ví dụ:\nhttps://hncode.edu.vn/contest/nt26exam01\nhoặc mỗi dòng một mã bài"></textarea>
-          <div class="grid-2">
+          <div class="grid-3">
+            <div><label>Định dạng kết quả</label><select id="statementExportFormat"><option value="auto">Tự động theo đề</option><option value="markdown">Markdown</option><option value="pdf">PDF</option></select></div>
             <div><label>Cách đóng gói</label><select id="statementExportMode"><option value="separate">Mỗi bài một file đề</option><option value="combined">Tất cả trong một file đề</option></select></div>
             <div><label>File kết quả</label><input id="statementExportFilename" type="text" readonly placeholder="Tên file sẽ hiện sau khi xử lý"></div>
           </div>
@@ -3665,6 +3666,7 @@ document.getElementById("runStatementExport").onclick = async () => {
       input_type: document.getElementById("statementExportInputType").value,
       source_input: sourceInput,
       mode: document.getElementById("statementExportMode").value,
+      output_format: document.getElementById("statementExportFormat").value,
       account: accountPayload(site),
     });
     const rows = data.rows || [];
@@ -4186,6 +4188,7 @@ def api_misc_export_problem_statements():
     input_type = str(payload.get("input_type") or "auto").strip()
     source_input = str(payload.get("source_input") or "").strip()
     mode = str(payload.get("mode") or "separate").strip()
+    output_format = str(payload.get("output_format") or "auto").strip().lower()
     account = payload.get("account") or {}
     try:
         if site not in {"hnoj", "hncode", "tinhoctre"}:
@@ -4194,6 +4197,8 @@ def api_misc_export_problem_statements():
             raise ValueError("Chưa nhập nguồn Contest, Lesson hoặc danh sách mã bài.")
         if mode not in {"separate", "combined"}:
             raise ValueError("Cách đóng gói không hợp lệ.")
+        if output_format not in {"auto", "markdown", "pdf"}:
+            raise ValueError("Định dạng kết quả không hợp lệ.")
 
         base_url = TARGETS[site]["base_url"]
         session = login_problem_source(site, account, "")
@@ -4271,7 +4276,12 @@ def api_misc_export_problem_statements():
                     session, base_url, code, output_dir=source_dir
                 )
                 row["name"] = problem["name"]
-                row["format"] = "PDF" if export_service.requires_pdf(problem) else "Markdown"
+                if output_format == "markdown":
+                    row["format"] = "Markdown"
+                elif output_format == "pdf":
+                    row["format"] = "PDF"
+                else:
+                    row["format"] = "PDF" if export_service.requires_pdf(problem) else "Markdown"
                 row["status"] = "✓ Đã lấy đề"
                 exported.append(problem)
             except Exception as item_exc:
@@ -4284,23 +4294,35 @@ def api_misc_export_problem_statements():
             raise RuntimeError("Không lấy được đề bài nào. " + "; ".join(item["message"] for item in errors[:3]))
 
         output_path = export_service.write_export(
-            output_dir, exported, mode, site, source_label, session
+            output_dir,
+            exported,
+            mode,
+            site,
+            source_label,
+            session,
+            output_format,
         )
         manifest = {
             "filename": output_path.name,
             "path": str(output_path),
             "site": site,
             "source_type": resolved_type,
+            "output_format": output_format,
             "count": len(exported),
         }
         (output_dir / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        pdf_count = sum(1 for item in exported if export_service.requires_pdf(item))
-        message = (
-            f"Đã xuất {len(exported)}/{len(source_rows)} đề bài; "
-            f"{pdf_count} đề PDF/ảnh và {len(exported) - pdf_count} đề Markdown."
-        )
+        if output_format == "markdown":
+            message = f"Đã xuất {len(exported)}/{len(source_rows)} đề bài dưới dạng Markdown."
+        elif output_format == "pdf":
+            message = f"Đã xuất {len(exported)}/{len(source_rows)} đề bài dưới dạng PDF."
+        else:
+            pdf_count = sum(1 for item in exported if export_service.requires_pdf(item))
+            message = (
+                f"Đã xuất {len(exported)}/{len(source_rows)} đề bài; "
+                f"{pdf_count} đề PDF/ảnh và {len(exported) - pdf_count} đề Markdown."
+            )
         log_lines = [
             f"Nguồn: {source_label}",
             message,

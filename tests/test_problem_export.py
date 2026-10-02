@@ -182,6 +182,65 @@ class ProblemExportTest(unittest.TestCase):
             self.assertEqual(output.suffix, ".pdf")
             self.assertGreaterEqual(len(PdfReader(str(output)).pages), 2)
 
+    def test_forced_markdown_exports_pdf_and_image_problems_as_markdown(self) -> None:
+        problems = [
+            {
+                "code": "pdf_problem",
+                "name": "Đề PDF",
+                "statement": "",
+                "pdf_url": "https://example.test/source.pdf",
+            },
+            {
+                "code": "image_problem",
+                "name": "Đề có ảnh",
+                "statement": "Quan sát hình:\n\n![Hình](https://example.test/a.png)",
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            output = problem_export.write_export(
+                Path(temp),
+                problems,
+                "separate",
+                "hncode",
+                "HNCode",
+                output_format="markdown",
+            )
+            with zipfile.ZipFile(output) as archive:
+                self.assertEqual(
+                    archive.namelist(), ["pdf_problem.md", "image_problem.md"]
+                )
+                pdf_markdown = archive.read("pdf_problem.md").decode("utf-8-sig")
+                image_markdown = archive.read("image_problem.md").decode("utf-8-sig")
+                self.assertIn(
+                    "[Xem đề bài PDF gốc](https://example.test/source.pdf)",
+                    pdf_markdown,
+                )
+                self.assertIn("![Hình](https://example.test/a.png)", image_markdown)
+
+    def test_forced_combined_markdown_does_not_switch_to_pdf(self) -> None:
+        problems = [
+            {
+                "code": "pdf_problem",
+                "name": "Đề PDF",
+                "statement": "",
+                "pdf_url": "https://example.test/source.pdf",
+            },
+            {"code": "text_problem", "name": "Đề chữ", "statement": "Nội dung"},
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            output = problem_export.write_export(
+                Path(temp),
+                problems,
+                "combined",
+                "hncode",
+                "HNCode",
+                output_format="markdown",
+            )
+            self.assertEqual(output.suffix, ".md")
+            content = output.read_text(encoding="utf-8-sig")
+            self.assertIn("[Xem đề bài PDF gốc](https://example.test/source.pdf)", content)
+            self.assertIn("## 2. Đề chữ (`text_problem`)", content)
+
     def test_image_statement_is_rendered_to_pdf(self) -> None:
         image_buffer = io.BytesIO()
         Image.new("RGB", (120, 80), "white").save(image_buffer, format="PNG")

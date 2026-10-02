@@ -475,7 +475,13 @@ Tool lấy đề bài từ `HNOJ`, `HNCode` hoặc `TinHocTre`. Dữ liệu nh�
 - Link Lesson trên HNCode/TinHocTre.
 - Một mã bài, nhiều mã bài hoặc các link `/problem/<ma_bai>`.
 
-Chọn một trong hai kiểu kết quả:
+Chọn định dạng kết quả:
+
+- `Tự động theo đề`: đề văn bản xuất Markdown; đề PDF, ảnh hoặc có link ảnh xuất PDF.
+- `Markdown`: tất cả đề được xuất thành Markdown. Ảnh được giữ dưới dạng liên kết; nếu bài chỉ có PDF, Markdown chứa liên kết tới file PDF gốc.
+- `PDF`: tất cả đề được xuất thành PDF.
+
+Chọn một trong hai cách đóng gói:
 
 - `Mỗi bài một file đề`: tải ZIP chứa từng đề theo đúng định dạng phù hợp. Đề chỉ có văn bản là `<ma_bai>.md`; đề có PDF, ảnh hoặc link ảnh là `<ma_bai>.pdf`.
 - `Tất cả trong một file đề`: các bài giữ đúng thứ tự nguồn. Nếu tất cả đề chỉ có văn bản, kết quả là `tong_hop_de_bai_<web>.md`. Nếu có ít nhất một đề PDF/ảnh/link ảnh, toàn bộ được gộp thành `tong_hop_de_bai_<web>.pdf`.
@@ -499,11 +505,12 @@ Payload mẫu:
   "input_type": "contest",
   "source_input": "https://hncode.edu.vn/contest/nt26exam01",
   "mode": "separate",
+  "output_format": "markdown",
   "account": {"username": "...", "password": "..."}
 }
 ```
 
-`input_type` nhận `auto`, `contest`, `lesson`, `codes`; `mode` nhận `separate` hoặc `combined`.
+`input_type` nhận `auto`, `contest`, `lesson`, `codes`; `mode` nhận `separate` hoặc `combined`; `output_format` nhận `auto`, `markdown` hoặc `pdf`.
 
 ## Tool lẻ: Xuất đề Quiz
 

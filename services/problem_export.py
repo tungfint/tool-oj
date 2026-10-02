@@ -316,6 +316,8 @@ def one_problem_markdown(problem: dict[str, Any], site: str = "") -> str:
     statement = canonical_markdown_math(
         str(problem.get("statement") or ""), aggressive=site == "hnoj"
     ).strip()
+    if not statement and problem.get("pdf_url"):
+        statement = f"[Xem đề bài PDF gốc]({problem['pdf_url']})"
     return f"{title} | {problem['code']}\n\n{statement}\n"
 
 
@@ -326,13 +328,16 @@ def combined_markdown(
     lines = ["# Tổng hợp đề bài", "", f"Nguồn: **{source_label}**", ""]
     for index, problem in enumerate(rows, 1):
         title = (problem.get("name") or problem["code"]).strip()
+        statement = canonical_markdown_math(
+            str(problem.get("statement") or ""), aggressive=site == "hnoj"
+        ).strip()
+        if not statement and problem.get("pdf_url"):
+            statement = f"[Xem đề bài PDF gốc]({problem['pdf_url']})"
         lines.extend(
             [
                 f"## {index}. {title} (`{problem['code']}`)",
                 "",
-                canonical_markdown_math(
-                    str(problem.get("statement") or ""), aggressive=site == "hnoj"
-                ).strip(),
+                statement,
                 "",
             ]
         )
@@ -636,10 +641,16 @@ def write_export(
     site: str,
     source_label: str,
     session: requests.Session | None = None,
+    output_format: str = "auto",
 ) -> Path:
+    if output_format not in {"auto", "markdown", "pdf"}:
+        raise ValueError("Định dạng xuất đề không hợp lệ.")
     output_dir.mkdir(parents=True, exist_ok=True)
     if mode == "combined":
-        if any(requires_pdf(problem) for problem in problems):
+        use_pdf = output_format == "pdf" or (
+            output_format == "auto" and any(requires_pdf(problem) for problem in problems)
+        )
+        if use_pdf:
             return _combined_pdf(
                 output_dir / f"tong_hop_de_bai_{site}.pdf",
                 output_dir,
@@ -655,7 +666,10 @@ def write_export(
     path = output_dir / f"de_bai_{site}.zip"
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
         for problem in problems:
-            if requires_pdf(problem):
+            use_pdf = output_format == "pdf" or (
+                output_format == "auto" and requires_pdf(problem)
+            )
+            if use_pdf:
                 pdf_path = _problem_pdf_path(output_dir, problem, session)
                 archive.write(pdf_path, f"{problem['code']}.pdf")
             else:
