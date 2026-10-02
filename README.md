@@ -433,6 +433,28 @@ Ví dụ payload `prepare`:
 
 `confirm` sẽ thêm từng bài một thay vì gửi cả lô, để nếu HNCode bỏ qua hoặc lỗi một bài thì các bài khác vẫn được xử lý và trạng thái từng bài vẫn rõ ràng.
 
+## Tab Chấm bài HNCode
+
+Tab này nhận URL Contest HNCode và file ZIP bài làm theo cấu trúc:
+
+```text
+BaiLam/
+  <username_1>/
+    <TEN_BAI_1>.cpp
+    <TEN_BAI_2>.py
+  <username_2>/
+    <TEN_BAI_1>.cpp
+```
+
+Tool đọc danh sách bài và điểm trực tiếp từ contest, tự ánh xạ tên file với mã bài, cho kiểm tra/chọn từng file trước khi nộp, chờ kết quả chấm và xuất Excel.
+
+Có hai chế độ:
+
+- `Chấm bằng tài khoản admin`: không cần CSV. Tên thư mục được dùng làm tên học sinh/username trong Excel, nhưng mọi submission trên HNCode thuộc tài khoản admin và không đi vào bảng rank của từng học sinh.
+- `Nộp đúng tài khoản học sinh`: cần CSV có các cột `username,password,name`. Tool đăng nhập từng tài khoản, tham gia contest và nộp bài để kết quả được ghi đúng cho học sinh trong bảng rank.
+
+Quyền admin hiện cho phép xem người dùng và tạo lượt tham gia contest nhưng không cho tạo submission thay người dùng qua Django Admin (`/admin/judge/submission/add/` trả HTTP 403). Vì vậy không thể vừa bỏ CSV/mật khẩu học sinh vừa tạo submission mang danh tính từng em.
+
 ## Tool lẻ: Lấy list mã bài
 
 Tool này lấy danh sách mã bài theo đúng thứ tự để copy nhanh sang các chức năng khác.

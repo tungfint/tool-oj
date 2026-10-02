@@ -1550,6 +1550,19 @@ PAGE = r"""
     .account-separator { align-self:center; text-align:center; color:#98a2b3; font-weight:800; }
     .password-input { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:6px; }
     button.password-toggle { min-width:58px; padding:8px 10px; box-shadow:none; }
+    .grading-hero { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; padding-bottom:14px; border-bottom:1px solid var(--line); }
+    .grading-hero p { max-width:900px; margin-bottom:0; }
+    .grading-step { padding:18px 0; border-bottom:1px solid var(--line); }
+    .grading-step:last-of-type { border-bottom:0; }
+    .grading-step-title { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .grading-step-number { display:inline-grid; place-items:center; width:28px; height:28px; border-radius:50%; background:#e6f4f1; color:var(--accent); font-weight:800; }
+    .grading-step-title h3 { margin:0; font-size:16px; }
+    .grading-mode-note { margin-top:10px; border-left:4px solid var(--accent); background:#f0f9f7; color:#344054; padding:11px 12px; line-height:1.5; }
+    .grading-mode-note.warn { border-left-color:var(--warn); background:#fffaeb; }
+    .grading-summary-strip { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:14px; }
+    .grading-summary-item { border:1px solid var(--line); background:#f8fafc; border-radius:6px; padding:10px 12px; }
+    .grading-summary-item strong { display:block; color:#1d2939; margin-bottom:3px; }
+    .grading-table-wrap { overflow:auto; max-width:100%; }
     table { width:100%; border-collapse:collapse; margin-top:14px; font-size:13px; }
     th, td { border-bottom:1px solid var(--line); padding:8px; vertical-align:top; text-align:left; }
     th { background:#f8fafc; font-weight:700; }
@@ -1561,7 +1574,7 @@ PAGE = r"""
     .lang-list { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; margin-top:8px; }
     .check { display:flex; align-items:center; gap:7px; }
     .hidden { display:none; }
-    @media (max-width:980px) { main { display:block; padding:14px; } .log-panel { width:100%; max-width:none; margin-top:14px; resize:vertical; } .grid-2,.grid-3,.lang-list { grid-template-columns:1fr; } .account-row { grid-template-columns:1fr; } .account-separator { display:none; } }
+    @media (max-width:980px) { main { display:block; padding:14px; } .log-panel { width:100%; max-width:none; margin-top:14px; resize:vertical; } .grid-2,.grid-3,.lang-list,.grading-summary-strip { grid-template-columns:1fr; } .account-row { grid-template-columns:1fr; } .account-separator { display:none; } .grading-hero { display:block; } .grading-hero .login-badge { margin-top:10px; } }
   </style>
 </head>
 <body>
@@ -1586,6 +1599,10 @@ PAGE = r"""
         <button type="button" data-panel="contest-lesson-copy">Contest → Lesson</button>
         <button type="button" data-panel="lesson-transfer">Chuyển Lesson</button>
         <button type="button" data-panel="course-clone">Course</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-label">Chấm thi</span>
+        <button type="button" data-panel="grading">Chấm bài HNCode</button>
       </div>
       <div class="nav-group">
         <span class="nav-label">Khác</span>
@@ -2018,6 +2035,63 @@ PAGE = r"""
         <div id="quizUploadSummary"></div>
       </div>
 
+      <div class="panel" id="panel-grading">
+        <div class="grading-hero">
+          <div>
+            <h2>Chấm bài HNCode</h2>
+            <p>Đọc bài làm theo thư mục học sinh, tự đối chiếu tên file với các bài trong contest, nộp chấm và xuất bảng điểm Excel. Tài khoản HNCode admin lấy từ tab Tài khoản & Hướng dẫn.</p>
+          </div>
+          <span id="gradingLogin" class="login-badge">Chưa kiểm tra</span>
+        </div>
+
+        <div class="grading-step">
+          <div class="grading-step-title"><span class="grading-step-number">1</span><h3>Contest và chế độ chấm</h3></div>
+          <div class="grid-2">
+            <div><label>URL contest HNCode</label><input id="gradingContestUrl" type="text" value="https://hncode.edu.vn/contest/hna26_ams2_ex01" placeholder="https://hncode.edu.vn/contest/<ma_contest>"></div>
+            <div><label>Chế độ nộp bài</label><select id="gradingMode"><option value="admin" selected>Chấm bằng tài khoản admin - không cần CSV</option><option value="student">Nộp đúng tài khoản học sinh - cần CSV</option></select></div>
+          </div>
+          <div id="gradingAdminModeNote" class="grading-mode-note warn"><strong>Chế độ admin:</strong> tên thư mục được dùng làm tên học sinh/username trong báo cáo, nhưng submission trên HNCode thuộc tài khoản admin và không đi vào bảng rank của từng học sinh.</div>
+          <div id="gradingStudentModeNote" class="grading-mode-note hidden"><strong>Chế độ tài khoản học sinh:</strong> tool đăng nhập từng tài khoản, tham gia contest và submission được ghi đúng cho học sinh. CSV cần các cột <code>username,password,name</code>.</div>
+        </div>
+
+        <div class="grading-step">
+          <div class="grading-step-title"><span class="grading-step-number">2</span><h3>Dữ liệu bài làm</h3></div>
+          <label>File ZIP bài làm của học sinh</label>
+          <div class="row">
+            <div class="grow"><input id="gradingZipName" type="text" placeholder="Cấu trúc: BaiLam/<username>/<TEN_BAI>.cpp" readonly></div>
+            <button class="action" type="button" id="chooseGradingZip">Chọn file ZIP</button>
+            <input id="gradingZipFile" class="hidden" type="file" accept=".zip,application/zip">
+          </div>
+          <div id="gradingCsvRow" class="hidden">
+            <label>File CSV tài khoản nộp bài</label>
+            <div class="row">
+              <div class="grow"><input id="gradingCsvName" type="text" placeholder="CSV gồm username,password,name" readonly></div>
+              <button class="action" type="button" id="chooseGradingCsv">Chọn file CSV</button>
+              <input id="gradingCsvFile" class="hidden" type="file" accept=".csv,text/csv">
+            </div>
+            <div class="grid-2">
+              <div><label>Mật khẩu contest nếu có</label><div class="password-input"><input id="gradingContestPassword" type="password" autocomplete="off"><button class="action password-toggle" type="button" data-password-target="gradingContestPassword" aria-pressed="false">Hiện</button></div></div>
+              <div><label>Thời gian chờ mỗi submission</label><input id="gradingPollSeconds" type="text" value="Đến khi chấm xong" readonly></div>
+            </div>
+          </div>
+          <div class="grading-summary-strip">
+            <div class="grading-summary-item"><strong>Tự nhận học sinh</strong><span class="test-meta">Theo tên thư mục cấp đầu tiên.</span></div>
+            <div class="grading-summary-item"><strong>Tự nhận mã bài</strong><span class="test-meta">Theo tên file và danh sách bài contest.</span></div>
+            <div class="grading-summary-item"><strong>Kết quả</strong><span class="test-meta">Excel tổng hợp và chi tiết submission.</span></div>
+          </div>
+        </div>
+
+        <div class="grading-step">
+          <div class="grading-step-title"><span class="grading-step-number">3</span><h3>Kiểm tra và thực hiện</h3></div>
+          <div class="actions">
+            <button class="action primary" type="button" id="prepareGrading">Chuẩn bị dữ liệu</button>
+            <button class="action primary" type="button" id="confirmGrading" disabled>Xác nhận nộp và chấm</button>
+            <a class="action primary hidden" id="downloadGradingResult" href="#" download="bang_diem_hncode.xlsx">Tải bảng điểm Excel</a>
+          </div>
+          <div id="gradingSummary" class="grading-table-wrap"></div>
+        </div>
+      </div>
+
       <div class="panel" id="panel-misc-tools">
         <h2>Tool lẻ</h2>
         <p>Các chức năng phụ chạy ổn định trên local. Một số tool có dùng tài khoản OJ đã lưu ở tab Tài khoản.</p>
@@ -2099,37 +2173,6 @@ PAGE = r"""
             <button class="action primary" type="button" id="runLastSubmissions">Tạo zip last submissions</button>
           </div>
           <div id="lastSubmissionsSummary"></div>
-        </div>
-
-        <div class="tool-card">
-          <h3 class="tool-title">Chấm bài HNCode</h3>
-          <p class="tool-subtitle">Đọc file zip bài làm theo dạng <code>BaiLam/TenHocSinh/MABAI.cpp</code>, đọc file CSV tài khoản có cột <code>username,password,name</code>, đăng nhập từng tài khoản, tham gia contest và nộp các bài tương ứng. Kết quả xuất ra Excel.</p>
-          <label>File zip bài làm của học sinh</label>
-          <div class="row">
-            <div class="grow"><input id="gradingZipName" type="text" placeholder="Chưa chọn file BaiLam.zip" readonly></div>
-            <button class="action" type="button" id="chooseGradingZip">Chọn file</button>
-            <input id="gradingZipFile" class="hidden" type="file" accept=".zip,application/zip">
-          </div>
-          <label>File CSV tài khoản nộp bài</label>
-          <div class="row">
-            <div class="grow"><input id="gradingCsvName" type="text" placeholder="Chưa chọn file TaiKhoan.csv" readonly></div>
-            <button class="action" type="button" id="chooseGradingCsv">Chọn file</button>
-            <input id="gradingCsvFile" class="hidden" type="file" accept=".csv,text/csv">
-          </div>
-          <div class="grid-2">
-            <div><label>URL contest HNCode</label><input id="gradingContestUrl" type="text" value="https://hncode.edu.vn/contest/_nt26tst"></div>
-            <div><label>Mật khẩu contest nếu có</label><input id="gradingContestPassword" type="password" value="amsvodich*8*^^"></div>
-          </div>
-          <div class="grid-2">
-            <div><label>Thời gian chờ mỗi submission</label><input id="gradingPollSeconds" type="text" value="Đến khi chấm xong" readonly></div>
-            <div><label>Quy đổi điểm</label><input type="text" value="% chấm x điểm contest" readonly></div>
-          </div>
-          <div class="actions">
-            <button class="action primary" type="button" id="prepareGrading">Chuẩn bị dữ liệu</button>
-            <button class="action primary" type="button" id="confirmGrading" disabled>Xác nhận nộp và chấm</button>
-            <a class="action primary hidden" id="downloadGradingResult" href="#" download="bang_diem_hncode.xlsx">Tải bảng điểm Excel</a>
-          </div>
-          <div id="gradingSummary"></div>
         </div>
 
         <div class="tool-card">
@@ -3790,6 +3833,17 @@ document.getElementById("runLastSubmissions").onclick = async () => {
 
 document.getElementById("chooseGradingZip").onclick = () => document.getElementById("gradingZipFile").click();
 document.getElementById("chooseGradingCsv").onclick = () => document.getElementById("gradingCsvFile").click();
+function syncGradingModeUi() {
+  const studentMode = document.getElementById("gradingMode").value === "student";
+  document.getElementById("gradingCsvRow").classList.toggle("hidden", !studentMode);
+  document.getElementById("gradingAdminModeNote").classList.toggle("hidden", studentMode);
+  document.getElementById("gradingStudentModeNote").classList.toggle("hidden", !studentMode);
+  document.getElementById("confirmGrading").textContent = studentMode ? "Xác nhận nộp đúng tài khoản" : "Xác nhận chấm bằng admin";
+  preparedGrading = null;
+  document.getElementById("confirmGrading").disabled = true;
+  checkLogin("hncode", "gradingLogin");
+}
+document.getElementById("gradingMode").addEventListener("change", syncGradingModeUi);
 document.getElementById("gradingZipFile").addEventListener("change", event => {
   selectedGradingZipFile = event.target.files && event.target.files[0] || null;
   document.getElementById("gradingZipName").value = selectedGradingZipFile ? selectedGradingZipFile.name : "";
@@ -3803,11 +3857,12 @@ function renderGradingTable(rows) {
     <button class="action" type="button" onclick="setRowSelection('#gradingSummary', true)">Chọn tất cả</button>
     <button class="action" type="button" onclick="setRowSelection('#gradingSummary', false)">Bỏ chọn tất cả</button>
   </div><table>
-    <thead><tr><th>Chọn</th><th>Học sinh</th><th>Username</th><th>Mã bài</th><th>Tên bài</th><th>Điểm bài</th><th>File</th><th>%</th><th>Điểm</th><th>Trạng thái</th></tr></thead>
-    <tbody>${rows.map(row => `<tr data-original="${escapeHtml(row.original_key)}">
+    <thead><tr><th>STT</th><th>Chọn</th><th>Học sinh / thư mục</th><th>Tài khoản nộp</th><th>Mã bài</th><th>Tên bài</th><th>Điểm bài</th><th>File</th><th>%</th><th>Điểm</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map((row, index) => `<tr data-original="${escapeHtml(row.original_key)}">
+      <td>${index + 1}</td>
       <td><input type="checkbox" class="row-selected" ${row.selected ? "checked" : ""}></td>
       <td>${escapeHtml(row.student || "")}</td>
-      <td>${escapeHtml(row.username || "")}</td>
+      <td>${escapeHtml(row.submission_account || row.username || "")}</td>
       <td>${escapeHtml(row.problem || "")}</td>
       <td>${escapeHtml(row.problem_title || "")}</td>
       <td>${escapeHtml(row.contest_points || "")}</td>
@@ -3842,15 +3897,17 @@ document.getElementById("prepareGrading").onclick = async () => {
   const progressId = newProgressId();
   try {
     if (!selectedGradingZipFile) throw new Error("Hãy chọn file zip bài làm.");
-    if (!selectedGradingCsvFile) throw new Error("Hãy chọn file CSV tài khoản.");
+    const gradingMode = document.getElementById("gradingMode").value;
+    if (gradingMode === "student" && !selectedGradingCsvFile) throw new Error("Chế độ nộp đúng tài khoản học sinh cần file CSV tài khoản.");
     status("running");
     log("Đang chuẩn bị dữ liệu chấm HNCode...");
     document.getElementById("downloadGradingResult").classList.add("hidden");
     startProgressPolling(progressId, "#gradingSummary", "grading");
     const form = new FormData();
     form.append("zip_file", selectedGradingZipFile);
-    form.append("csv_file", selectedGradingCsvFile);
+    if (selectedGradingCsvFile) form.append("csv_file", selectedGradingCsvFile);
     form.append("contest_url", document.getElementById("gradingContestUrl").value.trim());
+    form.append("grading_mode", gradingMode);
     form.append("progress_id", progressId);
     form.append("admin_username", accountFields.hncode_user.value);
     form.append("admin_password", accountFields.hncode_pass.value);
@@ -3874,7 +3931,8 @@ document.getElementById("confirmGrading").onclick = async () => {
   try {
     if (!preparedGrading) throw new Error("Hãy bấm Chuẩn bị dữ liệu trước.");
     status("running");
-    log("Đang đăng nhập học sinh, tham gia contest và nộp bài...");
+    const gradingMode = document.getElementById("gradingMode").value;
+    log(gradingMode === "student" ? "Đang đăng nhập học sinh, tham gia contest và nộp bài..." : "Đang dùng tài khoản admin để nộp và chấm từng file...");
     markRowsProcessing("#gradingSummary", "Đang chấm...");
     startProgressPolling(progressId, "#gradingSummary", "grading");
     const data = await postJson("/api/confirm-hncode-grading", {
@@ -3900,6 +3958,7 @@ document.getElementById("confirmGrading").onclick = async () => {
     status("failed", "err");
   }
 };
+syncGradingModeUi();
 
 document.getElementById("chooseAiWarningZip").onclick = () => document.getElementById("aiWarningZipFile").click();
 document.getElementById("aiWarningZipFile").addEventListener("change", event => {
@@ -6043,6 +6102,36 @@ def grading_source_root(extract_root: Path) -> Path:
     return dirs[0] if len(dirs) == 1 and any(path.is_file() for path in dirs[0].rglob("*")) else extract_root
 
 
+def infer_hncode_grading_accounts(source_root: Path) -> list[dict]:
+    allowed_suffixes = {".cpp", ".cc", ".cxx", ".c", ".py", ".pas"}
+    accounts = []
+    student_dirs = sorted(
+        (item for item in source_root.iterdir() if item.is_dir()),
+        key=lambda path: path.name.lower(),
+    )
+    for student_dir in student_dirs:
+        if not any(
+            path.is_file() and path.suffix.lower() in allowed_suffixes
+            for path in student_dir.rglob("*")
+        ):
+            continue
+        accounts.append(
+            {
+                "index": len(accounts) + 1,
+                "username": student_dir.name,
+                "password": "",
+                "name": student_dir.name,
+                "inferred": True,
+            }
+        )
+    if not accounts:
+        raise RuntimeError(
+            "Không tìm thấy thư mục học sinh có file code trong ZIP. "
+            "Cấu trúc cần có dạng BaiLam/<username>/<TEN_BAI>.cpp."
+        )
+    return accounts
+
+
 def map_grading_problem_code(stem: str, contest_problems: list[dict]) -> str:
     raw = re.sub(r"[^A-Za-z0-9_]+", "", stem).lower()
     codes = [problem["code"] for problem in contest_problems]
@@ -6057,8 +6146,18 @@ def map_grading_problem_code(stem: str, contest_problems: list[dict]) -> str:
     return raw
 
 
-def collect_hncode_grading_files(source_root: Path, accounts: list[dict], contest_problems: list[dict]) -> tuple[list[dict], list[str]]:
-    account_by_key = {normalize_grading_key(account["name"]): account for account in accounts}
+def collect_hncode_grading_files(
+    source_root: Path,
+    accounts: list[dict],
+    contest_problems: list[dict],
+    submission_account: str = "",
+) -> tuple[list[dict], list[str]]:
+    account_by_key = {}
+    for account in accounts:
+        for value in (account.get("name"), account.get("username")):
+            key = normalize_grading_key(value)
+            if key:
+                account_by_key.setdefault(key, account)
     problem_by_code = {problem["code"]: problem for problem in contest_problems}
     allowed_suffixes = {".cpp", ".cc", ".cxx", ".c", ".py", ".pas"}
     rows: list[dict] = []
@@ -6080,6 +6179,7 @@ def collect_hncode_grading_files(source_root: Path, accounts: list[dict], contes
                 "selected": bool(problem),
                 "student": account["name"],
                 "username": account["username"],
+                "submission_account": submission_account or account["username"],
                 "problem": code,
                 "problem_title": problem["title"] if problem else "",
                 "contest_points": problem["points"] if problem else 0,
@@ -6094,7 +6194,7 @@ def collect_hncode_grading_files(source_root: Path, accounts: list[dict], contes
                 "message": "",
             })
     if not rows:
-        raise RuntimeError("Không tìm thấy file bài làm nào khớp tài khoản trong zip.")
+        raise RuntimeError("Không tìm thấy file bài làm nào khớp học sinh/tài khoản trong ZIP.")
     return rows, warnings
 
 
@@ -6356,12 +6456,15 @@ def api_prepare_hncode_grading():
     progress_id = request.form.get("progress_id")
     try:
         contest_key = extract_hncode_contest_key_any(request.form.get("contest_url", ""))
+        grading_mode = str(request.form.get("grading_mode") or "admin").strip().lower()
+        if grading_mode not in {"admin", "student"}:
+            raise RuntimeError("Chế độ chấm bài không hợp lệ.")
         zip_file = request.files.get("zip_file")
         csv_file = request.files.get("csv_file")
         if not zip_file or not zip_file.filename:
             return jsonify({"error": "Chưa chọn file zip bài làm."}), 400
-        if not csv_file or not csv_file.filename:
-            return jsonify({"error": "Chưa chọn file CSV tài khoản."}), 400
+        if grading_mode == "student" and (not csv_file or not csv_file.filename):
+            return jsonify({"error": "Chế độ nộp đúng tài khoản học sinh cần file CSV tài khoản."}), 400
         prepare_id = uuid.uuid4().hex
         root = RUNTIME / ("hncode_grading_" + prepare_id)
         source_zip = root / "bai_lam.zip"
@@ -6369,22 +6472,52 @@ def api_prepare_hncode_grading():
         extract_root = root / "extract"
         root.mkdir(parents=True, exist_ok=True)
         zip_file.save(source_zip)
-        csv_file.save(account_csv)
+        if csv_file and csv_file.filename:
+            csv_file.save(account_csv)
         progress_update(progress_id, phase="prepare-hncode-grading", done=0, total=3, rows=[], message="Đang đọc contest HNCode")
         admin_username = request.form.get("admin_username", "")
         admin_password = request.form.get("admin_password", "")
         admin_session = login_hncode(TARGETS["hncode"]["base_url"], admin_username, admin_password)
         contest_problems = parse_hncode_contest_problems(admin_session, contest_key)
-        accounts = read_hncode_grading_accounts(account_csv)
         safe_extract_zip(source_zip, extract_root)
         source_root = grading_source_root(extract_root)
-        rows, warnings = collect_hncode_grading_files(source_root, accounts, contest_problems)
-        prepared_hncode_grading[prepare_id] = {"root": root, "source_root": source_root, "contest_key": contest_key, "contest_problems": contest_problems, "accounts": accounts, "rows": rows, "output": "", "admin_username": admin_username}
-        log_lines = [f"Contest: {contest_key}", f"Đã đọc {len(contest_problems)} bài: " + ", ".join(problem["code"] for problem in contest_problems), f"Đã đọc {len(accounts)} tài khoản.", f"Đã tìm thấy {len(rows)} file bài làm."]
+        if grading_mode == "student":
+            accounts = read_hncode_grading_accounts(account_csv)
+            submission_account = ""
+        else:
+            accounts = infer_hncode_grading_accounts(source_root)
+            submission_account = admin_username
+        rows, warnings = collect_hncode_grading_files(
+            source_root,
+            accounts,
+            contest_problems,
+            submission_account=submission_account,
+        )
+        prepared_hncode_grading[prepare_id] = {
+            "root": root,
+            "source_root": source_root,
+            "contest_key": contest_key,
+            "contest_problems": contest_problems,
+            "accounts": accounts,
+            "rows": rows,
+            "output": "",
+            "admin_username": admin_username,
+            "grading_mode": grading_mode,
+        }
+        mode_label = "tài khoản học sinh" if grading_mode == "student" else f"tài khoản admin {admin_username}"
+        log_lines = [
+            f"Contest: {contest_key}",
+            f"Chế độ: {mode_label}.",
+            f"Đã đọc {len(contest_problems)} bài: " + ", ".join(problem["code"] for problem in contest_problems),
+            f"Đã nhận diện {len(accounts)} học sinh/thư mục.",
+            f"Đã tìm thấy {len(rows)} file bài làm.",
+        ]
+        if grading_mode == "admin":
+            log_lines.append("Lưu ý: submission thuộc admin; Excel vẫn tổng hợp theo tên thư mục nhưng bảng rank học sinh không thay đổi.")
         log_lines.extend(f"- {warning}" for warning in warnings)
         progress_update(progress_id, phase="prepare-hncode-grading", done=3, total=3, rows=rows, message="Đã chuẩn bị dữ liệu chấm")
         progress_finish(progress_id, True, "Đã chuẩn bị dữ liệu chấm")
-        return jsonify({"prepare_id": prepare_id, "rows": rows, "problems": contest_problems, "accounts": accounts, "log": "\n".join(log_lines)})
+        return jsonify({"prepare_id": prepare_id, "rows": rows, "problems": contest_problems, "accounts": accounts, "grading_mode": grading_mode, "log": "\n".join(log_lines)})
     except Exception as exc:
         progress_finish(progress_id, False, str(exc))
         return jsonify({"error": str(exc)}), 400
@@ -6410,8 +6543,17 @@ def api_confirm_hncode_grading():
         if not selected_rows:
             raise RuntimeError("Chưa chọn bài nào để nộp chấm.")
         contest_password = payload.get("contest_password", "")
+        grading_mode = state.get("grading_mode", "student")
         account_by_username = {account["username"]: account for account in state["accounts"]}
         sessions: dict[str, requests.Session] = {}
+        admin_session: requests.Session | None = None
+        if grading_mode == "admin":
+            admin_account = payload.get("admin_account", {})
+            admin_session = login_hncode(
+                TARGETS["hncode"]["base_url"],
+                admin_account.get("username", ""),
+                admin_account.get("password", ""),
+            )
         done = 0
         log_lines = [f"Chấm bài HNCode contest {state['contest_key']}: {len(selected_rows)} file được chọn."]
         progress_update(progress_id, phase="confirm-hncode-grading", done=0, total=len(selected_rows), rows=rows, message="Bắt đầu nộp bài")
@@ -6420,12 +6562,17 @@ def api_confirm_hncode_grading():
                 row["status"] = "Bỏ qua"
                 continue
             try:
-                account = account_by_username[row["username"]]
-                session = sessions.get(row["username"])
-                if session is None:
-                    session = hncode_student_session(account["username"], account["password"])
-                    log_lines.append(f"{account['name']} ({account['username']}): {join_hncode_contest_if_needed(session, state['contest_key'], contest_password)}.")
-                    sessions[row["username"]] = session
+                if grading_mode == "admin":
+                    session = admin_session
+                    if session is None:
+                        raise RuntimeError("Không tạo được phiên đăng nhập admin.")
+                else:
+                    account = account_by_username[row["username"]]
+                    session = sessions.get(row["username"])
+                    if session is None:
+                        session = hncode_student_session(account["username"], account["password"])
+                        log_lines.append(f"{account['name']} ({account['username']}): {join_hncode_contest_if_needed(session, state['contest_key'], contest_password)}.")
+                        sessions[row["username"]] = session
                 progress_update(progress_id, phase="confirm-hncode-grading", done=done, total=len(selected_rows), rows=rows, message=f"{row['student']} - {row['problem']}: đang nộp")
                 row["status"] = "Đang nộp"
                 row["submission_url"] = submit_hncode_grading_file(session, row["problem"], Path(row["local_path"]))
@@ -6446,6 +6593,8 @@ def api_confirm_hncode_grading():
         ranking_rows: list[dict] = []
         ranking_problem_codes: list[str] = []
         try:
+            if grading_mode == "admin":
+                raise RuntimeError("Chế độ admin không dùng bảng rank vì submission không thuộc tài khoản học sinh.")
             admin_account = payload.get("admin_account", {})
             rank_session = login_hncode(TARGETS["hncode"]["base_url"], admin_account.get("username", ""), admin_account.get("password", ""))
             ranking_rows, ranking_problem_codes = fetch_hncode_contest_ranking(rank_session, state["contest_key"])
